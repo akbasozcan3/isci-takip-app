@@ -32,9 +32,6 @@
         "UIRequiresFullScreen": false,
         "UIViewControllerBasedStatusBarAppearance": true,
         "ITSAppUsesNonExemptEncryption": false
-      },
-      "config": {
-        "googleMapsApiKey": "YOUR_IOS_GOOGLE_MAPS_API_KEY"
       }
     },
     "android": {
@@ -57,11 +54,6 @@
         "INTERNET",
         "ACCESS_NETWORK_STATE"
       ],
-      "config": {
-        "googleMaps": {
-          "apiKey": "YOUR_ANDROID_GOOGLE_MAPS_API_KEY"
-        }
-      },
       "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
@@ -91,7 +83,8 @@
       "reactCompiler": true
     },
     "extra": {
-      "apiBase": "http://192.168.0.173:4000",
+      "apiBase": "https://isci-takip-backend-production.up.railway.app",
+      "apiBaseDev": "http://192.168.0.173:4000",
       "router": {},
       "eas": {
         "projectId": "3122850c-b69c-40f3-b1fd-935cc91346fd"
