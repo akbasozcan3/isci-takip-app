@@ -1,5 +1,5 @@
 [build]
-  command = "echo 'Static site deployment'"
+  command = "ls -la && echo 'Static HTML deployment completed'"
   publish = "."
 
 [build.environment]
