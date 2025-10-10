@@ -1,6 +1,6 @@
 [build]
-  command = "npm run build:web"
-  publish = "dist"
+  command = "echo 'Static site deployment'"
+  publish = "."
 
 [build.environment]
   NODE_VERSION = "18"
