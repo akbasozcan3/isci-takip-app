@@ -1,10 +1,16 @@
 [build]
-  command = "ls -la && echo 'Static HTML deployment completed'"
+  command = "npm install"
   publish = "."
+  functions = "netlify/functions"
 
 [build.environment]
   NODE_VERSION = "18"
   NPM_VERSION = "9"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
 
 [[redirects]]
   from = "/*"

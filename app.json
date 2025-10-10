@@ -83,7 +83,7 @@
       "reactCompiler": true
     },
     "extra": {
-      "apiBase": "https://isci-takip-backend-production.up.railway.app",
+      "apiBase": "https://isci-takip-paneli.vercel.app",
       "apiBaseDev": "http://192.168.0.173:4000",
       "router": {},
       "eas": {
