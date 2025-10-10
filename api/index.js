@@ -1,5 +1,5 @@
-// Vercel API Route - Backend
-export default function handler(req, res) {
+// Vercel API Route - Main Backend Endpoint
+export default async function handler(req, res) {
   // CORS ayarları
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
