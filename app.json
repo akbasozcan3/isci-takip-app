@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "iscitakip",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
@@ -83,7 +82,7 @@
       "reactCompiler": true
     },
     "extra": {
-      "apiBase": "https://isci-takip-paneli.vercel.app",
+      "apiBase": "https://isci-takip-backend.onrender.com",
       "apiBaseDev": "http://192.168.0.173:4000",
       "router": {},
       "eas": {

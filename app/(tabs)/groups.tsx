@@ -11,24 +11,23 @@ import React from 'react';
 import {
   ActivityIndicator,
   Animated,
+  DeviceEventEmitter,
   Easing,
   Modal,
   Platform,
   Pressable,
-  ScrollView,
   RefreshControl,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
-  View,
-  DeviceEventEmitter
+  View
 } from 'react-native';
 import { Region } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState } from '../../components/EmptyState';
 import LeafletMap from '../../components/leaflet-map';
-import { useEffect } from 'react';
 import { SkeletonList } from '../../components/SkeletonLoader';
 import { getApiBase } from '../../utils/api';
 import { authFetch } from '../../utils/auth';
