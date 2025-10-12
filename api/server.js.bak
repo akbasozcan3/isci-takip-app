@@ -1110,9 +1110,4 @@ app.get('/api/reports/daily.csv', (req, res) => {
   app._router.handle(req, res, () => {});
 });
 
-// Server başlatma
-server.listen(PORT, () => {
-  console.log(`🚀 İşçi Takip API running on port ${PORT}`);
-  console.log(`📊 Environment: ${NODE_ENV}`);
-  console.log(`🏥 Health check: http://localhost:${PORT}/health`);
-});
+

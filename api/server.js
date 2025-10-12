@@ -17,6 +17,17 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 4000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
+// Production optimizations
+if (NODE_ENV === 'production') {
+  // Enable compression for production
+  const compression = require('compression');
+  app.use(compression());
+  
+  // Security headers with helmet
+  const helmet = require('helmet');
+  app.use(helmet());
+}
+
 // Enhanced CORS for Android/iOS compatibility
 app.use(cors({
   origin: '*',
@@ -1020,94 +1031,15 @@ app.get('/api/activities', (req, res) => {
   res.json(activities.slice(0, limit));
 });
 
-server.listen(PORT, () => console.log(`Server listening on ${PORT}`));
-function parseDateParam(dateStr) {
-  if (!dateStr) return new Date();
-  const d = new Date(dateStr);
-  return isNaN(d.getTime()) ? new Date() : d;
-}
-
-function startOfDay(ts) {
-  const d = new Date(ts);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
-function endOfDay(ts) {
-  const d = new Date(ts);
-  d.setHours(23, 59, 59, 999);
-  return d.getTime();
-}
-
-function distanceMeters(a, b) {
-  return haversineDistance(a.latitude, a.longitude, b.latitude, b.longitude);
-}
-
-function formatCsvRow(fields) {
-  return fields
-    .map((f) => {
-      if (f == null) return '';
-      const s = String(f);
-      if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-      return s;
-    })
-    .join(',');
-}
-
-// GET /api/reports/daily?groupId=...&date=YYYY-MM-DD
-app.get('/api/reports/daily', (req, res) => {
-  const { groupId, date } = req.query || {};
-  if (!groupId) return res.status(400).json({ error: 'groupId required' });
-  const group = groups[groupId];
-  if (!group) return res.status(404).json({ error: 'Group not found' });
-
-  const day = parseDateParam(date);
-  const from = startOfDay(day);
-  const to = endOfDay(day);
-
-  const members = groupMembers[groupId] || [];
-  const center = (group.lat != null && group.lng != null) ? { latitude: group.lat, longitude: group.lng } : null;
-  const radius = Number(group.workRadius || 150);
-
-  const rows = [];
-  let totalDistance = 0;
-  let totalOnlineMin = 0;
-  let totalViolations = 0;
-
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
-// GET /api/reports/daily.csv?groupId=...&date=YYYY-MM-DD
-app.get('/api/reports/daily.csv', (req, res) => {
-  const { groupId, date } = req.query || {};
-  if (!groupId) return res.status(400).send('groupId required');
-  const group = groups[groupId];
-  if (!group) return res.status(404).send('Group not found');
-
-  // Reuse JSON endpoint logic by forging a request
-  req.query = { groupId, date };
-  const _sendJson = res.json.bind(res);
-  res.json = (payload) => {
-    const headers = ['UserId', 'Name', 'DistanceMeters', 'OnlineMinutes', 'GeofenceViolations'];
-    const lines = [formatCsvRow(headers)];
-    for (const it of payload.items || []) {
-      lines.push(
-        formatCsvRow([
-          it.userId,
-          it.name,
-          it.distanceMeters,
-          it.onlineMinutes,
-          it.geofenceViolations,
-        ])
-      );
-    }
-    const csv = lines.join('\n');
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="daily_${groupId}_${(payload.group?.date)||'today'}.csv"`);
-    return res.send(csv);
-  };
-
-  // Call the JSON route handler programmatically
-  app._router.handle(req, res, () => {});
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Endpoint not found' });
 });
 
 // Server başlatma
@@ -1115,4 +1047,5 @@ server.listen(PORT, () => {
   console.log(`🚀 İşçi Takip API running on port ${PORT}`);
   console.log(`📊 Environment: ${NODE_ENV}`);
   console.log(`🏥 Health check: http://localhost:${PORT}/health`);
+  console.log(`🌐 API Base URL: http://localhost:${PORT}/api`);
 });
