@@ -433,7 +433,8 @@ app.delete('/api/groups/:groupId', (req, res) => {
 });
 
 app.post('/api/groups/:code/join-request', (req, res) => {
-  const { code } = req.params;
+  const codeParam = req.params.code;
+  const code = String(codeParam || '').toUpperCase();
   const { userId, displayName } = req.body;
   
   if (!userId || !displayName) {
@@ -441,7 +442,7 @@ app.post('/api/groups/:code/join-request', (req, res) => {
   }
   
   // Grup koduna göre grup bul
-  const group = Object.values(groups).find(g => g.code === code);
+  const group = Object.values(groups).find(g => String(g.code || '').toUpperCase() === code);
   if (!group) {
     return res.status(404).json({ error: 'Group not found' });
   }
@@ -467,6 +468,10 @@ app.post('/api/groups/:code/join-request', (req, res) => {
     requestedAt: Date.now()
   };
   
+  // Ensure requests array exists for this group (older data.json might miss it)
+  if (!groupRequests[group.id]) {
+    groupRequests[group.id] = [];
+  }
   groupRequests[group.id].push(request);
   
   // Admin'e gerçek zamanlı bildirim gönder
@@ -628,8 +633,9 @@ app.post('/api/groups/:groupId/requests/:requestId/reject', (req, res) => {
 });
 
 app.get('/api/groups/:code/info', (req, res) => {
-  const { code } = req.params;
-  const group = Object.values(groups).find(g => g.code === code);
+  const codeParam = req.params.code;
+  const code = String(codeParam || '').toUpperCase();
+  const group = Object.values(groups).find(g => String(g.code || '').toUpperCase() === code);
   if (!group) {
     return res.status(404).json({ error: 'Group not found' });
   }
@@ -762,6 +768,23 @@ app.post('/api/groups/:groupId/locations', (req, res) => {
     userId,
     location: groupLocations[groupId][userId]
   });
+  
+  // Geofence kontrolü: grup merkezi ve workRadius varsa ve kullanıcının konumu dışarıdaysa uyarı yayınla
+  const g = groups[groupId];
+  if (g && typeof g.lat === 'number' && typeof g.lng === 'number') {
+    const radius = Number(g.workRadius || 150);
+    const dist = haversineDistance(g.lat, g.lng, lat, lng); // metre
+    if (!Number.isNaN(dist) && dist > radius) {
+      io.to(`group_${groupId}`).emit('geofence_violation', {
+        groupId,
+        userId,
+        distance: Math.round(dist),
+        radius,
+        center: { lat: g.lat, lng: g.lng },
+        at: Date.now()
+      });
+    }
+  }
   
   scheduleSave();
   res.json({ success: true });

@@ -155,6 +155,7 @@ export default function GroupMapScreen() {
 
     const [loading, setLoading] = React.useState(false);
     const [userId, setUserId] = React.useState('');
+    const [mapType, setMapType] = React.useState<'standard' | 'hybrid'>('standard');
     
     // Animasyonlar
     const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -253,6 +254,18 @@ export default function GroupMapScreen() {
                 loadMembersWithLocations();
             } catch (e) {
                 console.error('[GroupMap] Member approved handler error:', e);
+            }
+        });
+        s.on('geofence_violation', (data: { groupId: string; userId: string; distance: number; radius: number; center: { lat: number; lng: number }; at: number }) => {
+            try {
+                if (!data || data.groupId !== groupId) return;
+                console.log('[GroupMap] ⚠️ Geofence violation:', data);
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                const meters = data.distance;
+                const msg = `Bir üye iş alanı dışında: ${meters} m (limit ${data.radius} m)`;
+                showWarning(msg);
+            } catch (e) {
+                console.warn('[GroupMap] geofence_violation handler error:', e);
             }
         });
         s.on('connect_error', (err: any) => console.error('[GroupMap] Socket connect error:', err));
@@ -719,6 +732,15 @@ export default function GroupMapScreen() {
                             <Ionicons name="scan-outline" size={20} color="#042f35" />
                         </Pressable>
                         
+                        {/* Harita türü: standard / hybrid */}
+                        <Pressable
+                            onPress={() => setMapType((t) => (t === 'standard' ? 'hybrid' : 'standard'))}
+                            style={[styles.actionButton]}
+                            accessibilityLabel="Harita türü"
+                        >
+                            <Ionicons name={mapType === 'standard' ? 'map-outline' : 'map'} size={18} color="#042f35" />
+                        </Pressable>
+
                         {/* persistent toggle (press to toggle persist) */}
                         <Pressable
                             onPress={async () => {
@@ -759,6 +781,7 @@ export default function GroupMapScreen() {
                     initialRegion={mapRegion}
                     onRegionChangeComplete={setMapRegion}
                     provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                    mapType={mapType}
                     showsUserLocation={false}
                     showsMyLocationButton={true}
                     showsCompass={true}
