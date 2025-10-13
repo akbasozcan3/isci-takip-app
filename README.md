@@ -39,31 +39,34 @@ Ardından:
 - Android Emulator için `a` tuşuna basın
 - Fiziksel cihazda test için Expo Go uygulamasını kullanın
 
-## ⚙️ Yapılandırma
+## Yapılandırma
 
 ### API Base URL
 
-Mobil uygulamanın backend'e bağlanması için `app.json` dosyasındaki `extra.apiBase` değerini güncelleyin:
+Üretim ortamında tüm istekler tek domaine gider. `app.json` → `expo.extra.apiBase` şu şekilde olmalıdır:
 
 ```json
 {
   "expo": {
     "extra": {
-      "apiBase": "http://10.0.2.2:4000"  // Android emulator
+      "apiBase": "https://isci-takip-paneli.onrender.com"
     }
   }
 }
 ```
 
-**Platform Bazlı Adresler:**
+**Geliştirme için (opsiyonel):**
 - **Android Emulator:** `http://10.0.2.2:4000`
 - **iOS Simulator:** `http://localhost:4000`
 - **Fiziksel Cihaz (LAN):** `http://<BILGISAYAR_IP>:4000`
 
-Alternatif olarak ortam değişkeni kullanabilirsiniz:
+Ortam değişkeni ile geçici override yapabilirsiniz:
 
 ```bash
-export EXPO_PUBLIC_API_BASE=http://192.168.1.100:4000
+# Windows PowerShell
+$env:EXPO_PUBLIC_API_BASE="https://isci-takip-paneli.onrender.com"
+# macOS/Linux
+export EXPO_PUBLIC_API_BASE=https://isci-takip-paneli.onrender.com
 ```
 
 ### Backend Ortam Değişkenleri
@@ -76,7 +79,7 @@ export CORS_ORIGIN=*
 export PORT=4000
 ```
 
-## 📡 API Endpoints
+## API Endpoints
 
 ### Auth
 - `POST /auth/register` - Yeni kullanıcı kaydı
@@ -115,7 +118,7 @@ export PORT=4000
 - `new_request` - Yeni katılma isteği
 - `member_approved` - Üye onaylandı
 
-## 🗂️ Proje Yapısı
+## Proje Yapısı
 
 ```
 my-app/
@@ -141,9 +144,9 @@ my-app/
 └── package.json
 ```
 
-## 🚀 Dağıtım
+## Dağıtım
 
-### 📱 Mobil Uygulama Build
+### Mobil Uygulama Build
 
 #### **Android APK Build (Hızlı Test)**
 
@@ -184,22 +187,22 @@ npx expo run:android
 npx expo run:ios
 ```
 
-### 🔧 Platform-Specific Optimizasyonlar
+### Platform-Specific Optimizasyonlar
 
 #### **Android**
-- ✅ Foreground service için `FOREGROUND_SERVICE_LOCATION` izni eklendi
-- ✅ Edge-to-edge UI aktif
-- ✅ Adaptive icon yapılandırıldı
-- ✅ Keyboard behavior: `pan` mode
-- ✅ ProGuard/R8 minification hazır
+- Foreground service için `FOREGROUND_SERVICE_LOCATION` izni eklendi
+- Edge-to-edge UI aktif
+- Adaptive icon yapılandırıldı
+- Keyboard behavior: `pan` mode
+- ProGuard/R8 minification hazır
 
 #### **iOS**
-- ✅ Background location tracking aktif
-- ✅ Status bar appearance yapılandırıldı
-- ✅ Tablet desteği aktif
-- ✅ Universal links hazır (`iscitakip://`)
+- Background location tracking aktif
+- Status bar appearance yapılandırıldı
+- Tablet desteği aktif
+- Universal links hazır (`iscitakip://`)
 
-### 🐳 Docker ile Backend
+### Docker ile Backend
 
 ```bash
 # Docker image oluştur
@@ -209,22 +212,23 @@ docker build -t worker-tracker-backend .
 docker run -p 4000:4000 -e CORS_ORIGIN="*" worker-tracker-backend
 ```
 
-### ☁️ Cloud Platformlar
+### Cloud Platformlar
 
 **Render / Railway / Heroku:**
 1. Node.js servisi oluştur
 2. Start command: `node api/server.js`
-3. Ortam değişkenlerini ayarla: `CORS_ORIGIN`, `PORT`
-4. Port'u expose et
+3. Ortam değişkenlerini ayarla: `CORS_ORIGIN=*`, `PORT=4000`, `NODE_ENV=production`
+4. Port'u expose et ve sağlığı `GET /health` ile kontrol et
+5. Public URL (Render): `https://isci-takip-paneli.onrender.com`
 
-### 📦 Build Profilleri (eas.json)
+### Build Profilleri (eas.json)
 
 - **development**: Debug build, simulator için
 - **preview**: Internal testing, APK format
 - **production**: App Store/Play Store için optimize
 - **production-apk**: Production APK (Play Store dışı dağıtım)
 
-## 📱 Ekranlar
+## Ekranlar
 
 1. **Ana Sayfa** - Uygulama özeti ve hızlı erişim
 2. **Gruplar** - Grup oluştur, katıl, yönet
@@ -235,17 +239,18 @@ docker run -p 4000:4000 -e CORS_ORIGIN="*" worker-tracker-backend
 7. **Rehber** - Uygulama kullanım kılavuzu
 8. **Auth** - Giriş, kayıt, OTP
 
-## 🔧 Geliştirme
+## Geliştirme
 
 Geliştirmeye **app** klasöründeki dosyaları düzenleyerek başlayabilirsiniz. Bu proje [Expo Router](https://docs.expo.dev/router/introduction) ile dosya tabanlı yönlendirme kullanır.
 
-## 🐛 Sorun Giderme
+## Sorun Giderme
 
 ### Backend'e bağlanamıyorum
-- Backend'in çalıştığından emin olun: `npm run server`
-- `app.json` dosyasındaki `apiBase` adresini kontrol edin
-- Firewall ayarlarını kontrol edin
-- Android emulator için `10.0.2.2`, iOS için `localhost` kullanın
+- Önce sağlık durumunu kontrol edin: `https://isci-takip-paneli.onrender.com/health`
+- `app.json > expo.extra.apiBase` değerinin domaini gösterdiğini doğrulayın
+- Expo dev oturumunda `Settings` ekranında “API Durumu: Çevrimiçi” olup olmadığını kontrol edin
+- Render free plan soğuk başlama sebebiyle ilk istekte 20–60 sn gecikme olabilir
+- Geliştirme modunda test edecekseniz: Android için `10.0.2.2`, iOS için `localhost` kullanın
 
 ### Konum izni alınamıyor
 - `app.json` dosyasındaki izin açıklamalarını kontrol edin
