@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { usePathname } from 'expo-router';
 
 type MessageType = 'success' | 'error' | 'info';
 
@@ -23,6 +24,7 @@ export function MessageProvider({ children }: { children: React.ReactNode }) {
   const idRef = useRef(1);
   const translate = useRef(new Animated.Value(-100)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  const pathname = usePathname?.() as string | undefined;
 
   const animateIn = useCallback(() => {
     Animated.parallel([
@@ -41,12 +43,15 @@ export function MessageProvider({ children }: { children: React.ReactNode }) {
   const show = useCallback((msg: Omit<Toast, 'id'>) => {
     const id = idRef.current++;
     const toast: Toast = { id, duration: 3200, ...msg };
-    setQueue((q) => [...q, toast]);
-    // show if first
-    if (queue.length === 0) {
-      animateIn();
-    }
-  }, [animateIn, queue.length]);
+    setQueue((q) => {
+      const next = [...q, toast];
+      // if adding first item, animate in on next frame
+      if (q.length === 0) {
+        requestAnimationFrame(() => animateIn());
+      }
+      return next;
+    });
+  }, [animateIn]);
 
   // Auto-dismiss currently visible toast
   React.useEffect(() => {
@@ -57,6 +62,14 @@ export function MessageProvider({ children }: { children: React.ReactNode }) {
     }, current.duration);
     return () => clearTimeout(t);
   }, [queue, animateOut]);
+
+  // Dismiss on route change to avoid lingering messages across screens
+  React.useEffect(() => {
+    if (!pathname) return;
+    if (queue.length === 0) return;
+    animateOut(() => setQueue([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   const ctx = useMemo<MessageContextValue>(() => ({ show }), [show]);
 

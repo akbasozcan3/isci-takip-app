@@ -1,13 +1,12 @@
-import React from 'react';
-import { View, Text, Animated, Easing } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
+import React from 'react';
+import { Animated, Easing, Text, View } from 'react-native';
 import { BrandLogo } from '../../components/BrandLogo';
-import { getApiBase } from '../../utils/api';
-import { saveToken } from '../../utils/auth';
 import { useMessage } from '../../components/MessageProvider';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
+import { getApiBase } from '../../utils/api';
+import { saveToken } from '../../utils/auth';
 
 export default function Login(): React.JSX.Element {
   const [email, setEmail] = React.useState('');
@@ -15,6 +14,10 @@ export default function Login(): React.JSX.Element {
   const [loading, setLoading] = React.useState(false);
   const router = useRouter();
   const message = useMessage();
+  const emailRef = React.useRef<any>(null);
+  const passRef = React.useRef<any>(null);
+  const [emailError, setEmailError] = React.useState<string | undefined>(undefined);
+  const [passwordError, setPasswordError] = React.useState<string | undefined>(undefined);
 
   const fade = React.useRef(new Animated.Value(0)).current;
   const translate = React.useRef(new Animated.Value(20)).current;
@@ -68,19 +71,30 @@ export default function Login(): React.JSX.Element {
       </View>
       <Text style={{ color: 'white', fontSize: 28, fontWeight: '700', marginBottom: 24 }}>Giriş Yap</Text>
       <Input
+        ref={emailRef}
         label="Email"
         autoCapitalize="none"
+        autoCorrect={false}
         keyboardType="email-address"
+        textContentType="emailAddress"
         value={email}
         onChangeText={setEmail}
         placeholder="ornek@mail.com"
+        returnKeyType="next"
+        onSubmitEditing={() => passRef.current?.focus()}
+        error={emailError}
       />
       <Input
+        ref={passRef}
         label="Şifre"
         secureTextEntry
+        textContentType="password"
         value={password}
         onChangeText={setPassword}
         placeholder="••••••••"
+        returnKeyType="go"
+        onSubmitEditing={() => !loading && onSubmit()}
+        error={passwordError}
       />
 
       <View style={{ alignItems: 'flex-end', marginBottom: 8 }}>

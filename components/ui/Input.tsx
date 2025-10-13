@@ -1,5 +1,5 @@
 import React from 'react';
-import { TextInput, View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { StyleSheet, Text, TextInput, View, ViewStyle } from 'react-native';
 import theme from './theme';
 
 interface Props extends React.ComponentProps<typeof TextInput> {
@@ -8,11 +8,12 @@ interface Props extends React.ComponentProps<typeof TextInput> {
   containerStyle?: ViewStyle;
 }
 
-export const Input: React.FC<Props> = ({ label, error, containerStyle, style, ...props }) => {
+export const Input = React.forwardRef<TextInput, Props>(({ label, error, containerStyle, style, ...props }, ref) => {
   return (
     <View style={[styles.container, containerStyle]}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <TextInput
+        ref={ref}
         placeholderTextColor={theme.colors.textMuted}
         style={[styles.input, style]}
         {...props}
@@ -20,7 +21,7 @@ export const Input: React.FC<Props> = ({ label, error, containerStyle, style, ..
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: { marginBottom: 12 },

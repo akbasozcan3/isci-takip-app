@@ -1,12 +1,12 @@
-import React from 'react';
-import { View, Text, Pressable, ActivityIndicator, Animated, Easing } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import React from 'react';
+import { Animated, Easing, Pressable, Text, View } from 'react-native';
 import { BrandLogo } from '../../components/BrandLogo';
-import { getApiBase } from '../../utils/api';
 import { useMessage } from '../../components/MessageProvider';
-import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
+import { getApiBase } from '../../utils/api';
 
 export default function ForgotPassword(): React.JSX.Element {
   const [email, setEmail] = React.useState('');
@@ -57,7 +57,7 @@ export default function ForgotPassword(): React.JSX.Element {
   return (
     <Animated.View style={{ flex: 1, backgroundColor: '#0f172a', padding: 24, justifyContent: 'center', opacity: fade, transform: [{ translateY: translate }] }}>
       <View style={{ position: 'absolute', top: 24, left: 24 }}>
-        <Pressable onPress={() => router.back()} hitSlop={10} style={{ padding: 6, borderRadius: 9999, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}>
+        <Pressable onPress={() => router.back()} hitSlop={10} style={{ padding: 10, borderRadius: 9999, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',top:25 }}>
           <Ionicons name="chevron-back" size={20} color="#e2e8f0" />
         </Pressable>
       </View>

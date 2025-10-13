@@ -71,6 +71,7 @@ class UserCreate(BaseModel):
     password: str
     name: Optional[str] = None
     phone: str
+    pre_token: Optional[str] = None  # short-lived token for pre-verified email
 
 class UserOut(BaseModel):
     id: int
@@ -231,6 +232,18 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def create_pre_email_token(email: str, minutes: int = 30) -> str:
+    return create_access_token({"pv": email}, timedelta(minutes=minutes))
+
+def validate_pre_email_token(token: Optional[str], email: str) -> bool:
+    if not token:
+        return False
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload.get("pv") == email
+    except Exception:
+        return False
 
 def get_user_by_email(db: Session, email: str) -> Optional[User]:
     return db.query(User).filter(User.email == email).first()
@@ -418,6 +431,40 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
         return None
     return user
 
+# --- Pre Email Verification (before user creation) ---
+class PreEmailIn(BaseModel):
+    email: str
+
+@app.post("/auth/pre-verify-email", tags=["auth"])
+def pre_verify_email(payload: PreEmailIn, db: Session = Depends(get_db)):
+    rate_limit(f"pre_verify_email:{payload.email}")
+    # Generate code without requiring existing user
+    code = create_email_verification(db, payload.email)
+    sent = False
+    try:
+        sent = send_email_code(payload.email, code, message_type="verify")
+    except Exception:
+        sent = False
+    res = {"ok": True}
+    if os.getenv("RESET_DEV_RETURN_CODE", "1") == "1" and not sent:
+        res.update({"dev_code": code})
+    return res
+
+class PreEmailVerifyIn(BaseModel):
+    email: str
+    code: str
+
+class PreEmailVerifyOut(BaseModel):
+    pre_token: str
+
+@app.post("/auth/pre-verify-email/verify", response_model=PreEmailVerifyOut, tags=["auth"])
+def pre_verify_email_verify(payload: PreEmailVerifyIn, db: Session = Depends(get_db)):
+    rate_limit(f"pre_verify_email_verify:{payload.email}")
+    if not consume_email_code(db, payload.email, payload.code):
+        raise HTTPException(status_code=400, detail="Invalid or expired code")
+    token = create_pre_email_token(payload.email, minutes=int(os.getenv("PRE_EMAIL_TOKEN_MIN", "30")))
+    return {"pre_token": token}
+
 async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -446,6 +493,10 @@ def health_alt():
 
 @app.post("/auth/register", response_model=UserOut, tags=["auth"])
 def register(user_in: UserCreate, db: Session = Depends(get_db)):
+    # Enforce pre-email verification if enabled
+    if os.getenv("ENFORCE_PRE_EMAIL", "1") == "1":
+        if not validate_pre_email_token(user_in.pre_token, user_in.email):
+            raise HTTPException(status_code=400, detail="Email not pre-verified")
     # Rate limit by email and phone
     rate_limit(f"register:{user_in.email}")
     rate_limit(f"register:{user_in.phone}")
