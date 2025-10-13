@@ -18,6 +18,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Toast, useToast } from '../../components/Toast';
 import { getApiBase } from '../../utils/api';
+import { BrandLogo } from '../../components/BrandLogo';
 import { authFetch, clearToken } from '../../utils/auth';
 
 const API_BASE = getApiBase();
@@ -49,8 +50,8 @@ export default function SettingsScreen() {
         
         // Backend health check
         try {
-          console.log('[Settings] Checking API health:', `${API_BASE}/health`);
-          const healthResponse = await fetch(`${API_BASE}/health`, { 
+          console.log('[Settings] Checking API health:', `${API_BASE}/`);
+          const healthResponse = await fetch(`${API_BASE}/`, { 
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
           });
@@ -60,24 +61,21 @@ export default function SettingsScreen() {
             console.log('[Settings] API is online');
             setApiStatus('online');
             
-            // Eğer kullanıcı varsa bilgilerini çek
-            if (stored) {
-              try {
-                console.log('[Settings] Fetching user profile...');
-                const response = await authFetch('/auth/me');
-                console.log('[Settings] Profile response status:', response.status);
-                if (response.ok) {
-                  const { user } = await response.json();
-                  console.log('[Settings] User profile:', user);
-                  if (user) {
-                    if (user.name) setDisplayName(user.name);
-                    if (user.email) setEmail(user.email);
-                    if (user.phone) setPhone(user.phone);
-                  }
+            try {
+              console.log('[Settings] Fetching user profile...');
+              const response = await authFetch('/users/me');
+              console.log('[Settings] Profile response status:', response.status);
+              if (response.ok) {
+                const user = await response.json();
+                console.log('[Settings] User profile:', user);
+                if (user) {
+                  if (user.name) setDisplayName(user.name);
+                  if (user.email) setEmail(user.email);
+                  if ((user as any).phone) setPhone((user as any).phone);
                 }
-              } catch (err) {
-                console.error('[Settings] User info fetch error:', err);
               }
+            } catch (err) {
+              console.error('[Settings] User info fetch error:', err);
             }
           } else {
             console.warn('[Settings] API is offline');
@@ -167,6 +165,21 @@ export default function SettingsScreen() {
     showSuccess('Konum Takip Sistemi v1.0 - ELEKS İntegrasyon');
   };
 
+  const handleLogout = async () => {
+    await safePress(async () => {
+      try {
+        await clearToken?.();
+        await SecureStore.deleteItemAsync('workerId');
+        await SecureStore.deleteItemAsync('displayName');
+        await SecureStore.deleteItemAsync('activeGroupId');
+        showSuccess('Çıkış yapıldı');
+        router.replace('/auth/login' as any);
+      } catch (e) {
+        showError('Çıkış yapılamadı');
+      }
+    });
+  };
+
   const initials = React.useMemo(() => {
     if (!displayName) return '';
     return displayName
@@ -185,7 +198,7 @@ export default function SettingsScreen() {
         <View style={styles.headerInner}>
           <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
             <View style={styles.headerIcon}>
-              <Ionicons name="settings" size={24} color="#06b6d4" />
+              <BrandLogo size={28} withSoftContainer={false} />
             </View>
             <View style={{ marginLeft: 12 }}>
               <Text style={styles.title}>Ayarlar</Text>
@@ -208,6 +221,16 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Uygulama</Text>
 
           <View style={styles.menuCard}>
+            <Pressable style={styles.menuItem} onPress={handleLogout} android_ripple={{ color: '#e6eef0' }}>
+              <View style={styles.menuLeft}>
+                <Ionicons name="log-out" size={22} color="#06b6d4" />
+                <Text style={styles.menuText}>Çıkış Yap</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#64748b" />
+            </Pressable>
+
+            <View style={styles.divider} />
+
             <Pressable style={styles.menuItem} onPress={handleAbout} android_ripple={{ color: '#e6eef0' }}>
               <View style={styles.menuLeft}>
                 <Ionicons name="information-circle" size={22} color="#06b6d4" />

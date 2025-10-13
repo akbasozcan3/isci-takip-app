@@ -27,6 +27,7 @@ import { io, Socket } from 'socket.io-client';
 import { Toast, useToast } from '../../components/Toast';
 import { getApiBase } from '../../utils/api';
 import { getToken } from '../../utils/auth';
+import ProfileBadge from '../../components/ProfileBadge';
 
 const { width } = Dimensions.get('window');
 
@@ -605,6 +606,7 @@ export default function HomeScreen(): React.JSX.Element {
           </View>
 
           <View style={styles.headerActions}>
+            <ProfileBadge size={44} />
             <Pressable onPress={() => router.push('/(tabs)/settings')} style={styles.headerIconButton}>
               <Ionicons name="settings-outline" size={22} color="#fff" />
             </Pressable>

@@ -20,6 +20,7 @@ import { SkeletonList } from '../../components/SkeletonLoader';
 import { Toast, useToast } from '../../components/Toast';
 import { getApiBase } from '../../utils/api';
 import { authFetch } from '../../utils/auth';
+import ProfileBadge from '../../components/ProfileBadge';
 
 const API_BASE = getApiBase();
 
@@ -275,9 +276,7 @@ export default function AdminScreen() {
             <Text style={styles.title}>Admin Paneli</Text>
             <Text style={styles.subtitle}>Grup başvurularını yönetin</Text>
           </View>
-          <Pressable onPress={() => router.replace('/guide')} style={styles.profileBadge} accessibilityRole={'button'} accessibilityLabel="Admin Ayarları">
-            <MaterialIcons name="admin-panel-settings" size={24} color="#fff" />
-          </Pressable>
+          {profileName ? <ProfileBadge name={profileName} size={48} /> : <ProfileBadge size={48} />}
         </View>
       </LinearGradient>
 

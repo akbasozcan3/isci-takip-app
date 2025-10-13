@@ -3,6 +3,8 @@ import { Slot, SplashScreen, usePathname, useRouter } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { MessageProvider } from '../components/MessageProvider';
+import { getToken } from '../utils/auth';
 
 // Splash screen'i manuel kontrol için
 SplashScreen.preventAutoHideAsync();
@@ -30,6 +32,18 @@ export default function RootLayout(): React.JSX.Element {
           } else {
             console.log('[RootLayout] User has seen onboarding or already on guide page');
           }
+        }
+
+        // Auth kontrolü
+        const token = await getToken();
+        const onAuthRoute = pathname?.startsWith('/auth');
+        if (!token && !onAuthRoute && pathname !== '/guide') {
+          console.log('[RootLayout] No token, redirecting to /auth/login');
+          router.replace('/auth/login' as any);
+        }
+        if (token && onAuthRoute) {
+          console.log('[RootLayout] Has token on auth route, redirecting to root');
+          router.replace('/' as any);
         }
       } catch (error) {
         console.error('[RootLayout] Root layout init error:', error);
@@ -64,7 +78,9 @@ export default function RootLayout(): React.JSX.Element {
   console.log('[RootLayout] Rendering main content with Slot');
   return (
     <ErrorBoundary>
-      <Slot />
+      <MessageProvider>
+        <Slot />
+      </MessageProvider>
     </ErrorBoundary>
   );
 }

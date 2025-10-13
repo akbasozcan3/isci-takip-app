@@ -30,6 +30,7 @@ import LeafletMap from '../../components/leaflet-map';
 import { SkeletonList } from '../../components/SkeletonLoader';
 import { getApiBase } from '../../utils/api';
 import { authFetch } from '../../utils/auth';
+import ProfileBadge from '../../components/ProfileBadge';
 
 const API_BASE = getApiBase();
 
@@ -59,7 +60,6 @@ interface Group {
   isAdmin?: boolean;
 }
 
-/* ---------- ConfirmModal (in-app confirm instead of Alert) ---------- */
 interface ConfirmModalProps {
   visible: boolean;
   title: string;
@@ -757,7 +757,7 @@ export default function GroupsScreen() {
             <Text style={styles.subtitle}>Konum paylaşım gruplarını yönetin</Text>
           </View>
           <View style={styles.headerButtons}>
-            {profileName ? (<View style={styles.profileBadge}><Text style={styles.profileBadgeText}>{profileName.split(' ').map((s: string) => s[0]).join('').slice(0,2).toUpperCase()}</Text></View>) : null}
+            {profileName ? (<ProfileBadge name={profileName} size={48} />) : null}
             <Pressable onPress={() => setShowJoinModal(true)} style={[styles.headerButton, styles.headerJoinButton]}><Ionicons name="person-add" size={20} color="#fff" /></Pressable>
             <Pressable onPress={() => setShowCreateModal(true)} style={[styles.headerButton, styles.headerCreateButton]}><Ionicons name="add" size={24} color="#fff" /></Pressable>
           </View>
