@@ -47,3 +47,7 @@ gradle_build_log.txt
 
 # Temporary files
 app-example
+.venv/
+api/pybackend/.venv/
+__pycache__/
+*.pyc
