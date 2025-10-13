@@ -23,7 +23,6 @@ import {
     View
 } from 'react-native';
 import MapView, { Circle, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-import LeafletLiveMap, { LiveMarker } from '../components/LeafletLiveMap';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { io, Socket } from 'socket.io-client';
 import { Toast, useToast } from '../components/Toast';

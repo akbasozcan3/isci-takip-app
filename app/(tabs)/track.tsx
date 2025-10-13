@@ -1225,7 +1225,7 @@ export default function TrackScreen(): React.JSX.Element {
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Gruplarım ({activeGroups.length})</Text>
-            <Pressable onPress={() => setShowGroupSelector(false)} style={styles.modalClose}><Ionicons name="close" size={20} color="#083344" /></Pressable>
+            <Pressable onPress={() => setShowGroupSelector(false)} style={styles.modalClose}><Ionicons name="close" size={20} color="white" /></Pressable>
           </View>
           <ScrollView style={styles.modalList} contentContainerStyle={{ flexGrow: 1 }}>
             {activeGroups.map((group) => (

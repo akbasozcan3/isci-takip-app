@@ -1,7 +1,6 @@
 // GroupsScreen.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import Constants from 'expo-constants';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
@@ -35,41 +34,13 @@ import { authFetch } from '../../utils/auth';
 const API_BASE = getApiBase();
 
 /**
- * Small helper that tries multiple base URLs (useful in dev with emulators / expo host)
+ * Cloud-only fetch helper. Always uses API_BASE (Render domain).
  */
 async function fetchWithFallback(path: string, init?: RequestInit) {
-  console.log('[Network] fetchWithFallback', path);
-  const bases: string[] = [];
-  const add = (u?: string) => { if (u && /^https?:\/\//i.test(u)) bases.push(u.replace(/\/$/, '')); };
-
-  add(API_BASE);
-
-  const hostUri: string | undefined = (Constants as any)?.expoConfig?.hostUri
-    || (Constants as any)?.manifest2?.extra?.expoClient?.hostUri
-    || (Constants as any)?.manifest?.hostUri;
-  if (hostUri) {
-    const host = hostUri.split(':')[0];
-    add(`http://${host}:4000`);
-  }
-  if (Platform.OS === 'android') add('http://10.0.2.2:4000');
-  add('http://localhost:4000');
-
-  console.log('[Network] Trying bases:', bases);
-  let lastError: any = null;
-  for (const base of bases) {
-    try {
-      const url = `${base}${path}`;
-      console.log('[Network] Attempt:', url);
-      const res = await fetch(url, init);
-      console.log('[Network] Success:', base, res.status);
-      return res;
-    } catch (e) {
-      console.warn('[Network] Failed for base:', base, e);
-      lastError = e;
-    }
-  }
-  console.error('[Network] All fetch attempts failed');
-  throw lastError || new Error('Network request failed');
+  const base = API_BASE.replace(/\/$/, '');
+  const url = `${base}${path}`;
+  console.log('[Network] request:', url);
+  return fetch(url, init);
 }
 
 /* ---------- Types ---------- */
