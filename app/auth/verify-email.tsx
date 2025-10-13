@@ -1,7 +1,7 @@
+import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import { View, Text, Pressable, ActivityIndicator, Animated, Easing } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { BrandLogo } from '../../components/BrandLogo';
 import { getApiBase } from '../../utils/api';
 import { useMessage } from '../../components/MessageProvider';
@@ -9,9 +9,13 @@ import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 
 export default function VerifyEmail(): React.JSX.Element {
-  const params = useLocalSearchParams<{ email?: string; phone?: string }>();
+  const params = useLocalSearchParams<{ email?: string; phone?: string; name?: string; password?: string; mode?: string }>();
   const [email, setEmail] = React.useState(params.email || '');
   const [phone] = React.useState(params.phone || '');
+  const [name] = React.useState(params.name || '');
+  const [password] = React.useState(params.password || '');
+  const [mode] = React.useState(params.mode || '');
+  const preRegister = String(mode) === 'pre-register';
   const [code, setCode] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [resending, setResending] = React.useState(false);
@@ -21,7 +25,6 @@ export default function VerifyEmail(): React.JSX.Element {
 
   const fade = React.useRef(new Animated.Value(0)).current;
   const translate = React.useRef(new Animated.Value(20)).current;
-
   React.useEffect(() => {
     Animated.parallel([
       Animated.timing(fade, { toValue: 1, duration: 400, easing: Easing.out(Easing.quad), useNativeDriver: true }),
@@ -36,6 +39,35 @@ export default function VerifyEmail(): React.JSX.Element {
     }
     try {
       setLoading(true);
+      if (preRegister) {
+        // Step 1: verify pre-email code to get pre_token
+        const v = await fetch(`${getApiBase()}/auth/pre-verify-email/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, code }),
+        });
+        if (!v.ok) {
+          const t = await v.text();
+          throw new Error(t || 'Doğrulama başarısız');
+        }
+        const vdata = await v.json();
+        const pre_token = String(vdata.pre_token || '');
+        if (!pre_token) throw new Error('Geçersiz pre-token');
+        // Step 2: complete registration
+        const r = await fetch(`${getApiBase()}/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, name: name || undefined, phone, pre_token }),
+        });
+        if (!r.ok) {
+          const raw = await r.text();
+          throw new Error(raw || 'Kayıt başarısız');
+        }
+        message.show({ type: 'success', title: 'Email Doğrulandı', description: 'Telefon doğrulamasına geçiliyor.' });
+        router.replace({ pathname: '/auth/verify-phone' as any, params: { phone } } as any);
+        return;
+      }
+      // Fallback: post-registration email verification
       const res = await fetch(`${getApiBase()}/auth/verify-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -60,12 +92,13 @@ export default function VerifyEmail(): React.JSX.Element {
     if (!email) return;
     try {
       setResending(true);
-      const res = await fetch(`${getApiBase()}/auth/send-email-code`, {
+      const url = preRegister ? '/auth/pre-verify-email' : '/auth/send-email-code';
+      const res = await fetch(`${getApiBase()}${url}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (data?.dev_code) setDevCode(String(data.dev_code));
       message.show({ type: 'success', title: 'Kod Gönderildi', description: 'Doğrulama kodu gönderildi.' });
     } catch (e: any) {
@@ -95,7 +128,7 @@ export default function VerifyEmail(): React.JSX.Element {
         </View>
       ) : null}
 
-      <Button title="Emaili Doğrula" onPress={verify} loading={loading} />
+      <Button title={preRegister ? 'Kodu Doğrula ve Devam Et' : 'Emaili Doğrula'} onPress={verify} loading={loading} />
 
       <Pressable onPress={resend} disabled={resending} style={{ padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 8, flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
         {resending ? (
