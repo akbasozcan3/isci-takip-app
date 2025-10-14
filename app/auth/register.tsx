@@ -45,7 +45,7 @@ export default function Register(): React.JSX.Element {
     if (!name.trim()) { setNameError('Ad zorunludur'); hasError = true; }
     if (!email.trim()) { setEmailError('Email zorunludur'); hasError = true; }
     if (!password.trim()) { setPasswordError('Şifre zorunludur'); hasError = true; }
-    if (!phone.trim()) { setPhoneError('Telefon zorunludur'); hasError = true; }
+    // Telefon opsiyoneldir; girilirse kontrol edilecek
 
     const emailOk = /.+@.+\..+/.test(email);
     if (email && !emailOk) { setEmailError('Geçersiz email adresi'); hasError = true; }
@@ -100,8 +100,7 @@ export default function Register(): React.JSX.Element {
       />
       <Input
         ref={phoneRef}
-        label="Telefon"
-        maxLength={10}
+        label="Telefon (opsiyonel)"
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="phone-pad"

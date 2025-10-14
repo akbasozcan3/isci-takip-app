@@ -1,12 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
-import { View, Text, Pressable, ActivityIndicator, Animated, Easing } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Pressable, Text, View } from 'react-native';
 import { BrandLogo } from '../../components/BrandLogo';
-import { getApiBase } from '../../utils/api';
 import { useMessage } from '../../components/MessageProvider';
-import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
+import { getApiBase } from '../../utils/api';
 
 export default function VerifyEmail(): React.JSX.Element {
   const params = useLocalSearchParams<{ email?: string; phone?: string; name?: string; password?: string; mode?: string }>();
@@ -25,12 +25,22 @@ export default function VerifyEmail(): React.JSX.Element {
 
   const fade = React.useRef(new Animated.Value(0)).current;
   const translate = React.useRef(new Animated.Value(20)).current;
+  const sentOnce = React.useRef(false);
   React.useEffect(() => {
     Animated.parallel([
       Animated.timing(fade, { toValue: 1, duration: 400, easing: Easing.out(Easing.quad), useNativeDriver: true }),
       Animated.timing(translate, { toValue: 0, duration: 400, easing: Easing.out(Easing.quad), useNativeDriver: true }),
     ]).start();
   }, [fade, translate]);
+
+  // Auto-send code once when email is available
+  React.useEffect(() => {
+    if (sentOnce.current) return;
+    if (!email) return;
+    sentOnce.current = true;
+    // fire and forget
+    resend().catch(() => {});
+  }, [email]);
 
   const verify = async () => {
     if (!email || !code) {

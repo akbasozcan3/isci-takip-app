@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 from typing import Optional
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,10 +13,11 @@ from pydantic import BaseModel
 from sqlalchemy import Column, Integer, String, DateTime, create_engine, and_, text
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
-# === Config ===
+load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
+
 SECRET_KEY = os.getenv("SECRET_KEY", "change_this_secret")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))  # 7 days
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))  
 
 DB_PATH = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 engine = create_engine(DB_PATH, connect_args={"check_same_thread": False} if DB_PATH.startswith("sqlite") else {})
@@ -70,7 +73,7 @@ class UserCreate(BaseModel):
     email: str
     password: str
     name: Optional[str] = None
-    phone: str
+    phone: Optional[str] = None
     pre_token: Optional[str] = None  # short-lived token for pre-verified email
 
 class UserOut(BaseModel):
@@ -393,8 +396,8 @@ def send_email_code(email: str, code: Optional[str] = None, message_type: str = 
     msg["To"] = email
     host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     port = int(os.getenv("SMTP_PORT", "587"))
-    user = os.getenv("SMTP_USER")
-    password = os.getenv("SMTP_PASS")
+    user = os.getenv("SMTP_USER") or "ozcanakbas38@gmail.com"
+    password = os.getenv("SMTP_PASS") or "thfw wdkv gbzy xbfz"
     if not user or not password:
         # dev mode: no send
         return False
@@ -405,7 +408,8 @@ def send_email_code(email: str, code: Optional[str] = None, message_type: str = 
     return True
 
 def send_sms_code(phone: str, code: str) -> bool:
-    # Twilio integration via env vars
+    if os.getenv("DISABLE_SMS", "1") == "1":
+        return False
     account_sid = os.getenv("TWILIO_ACCOUNT_SID")
     auth_token = os.getenv("TWILIO_AUTH_TOKEN")
     from_number = os.getenv("TWILIO_FROM")
@@ -497,16 +501,19 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
     if os.getenv("ENFORCE_PRE_EMAIL", "1") == "1":
         if not validate_pre_email_token(user_in.pre_token, user_in.email):
             raise HTTPException(status_code=400, detail="Email not pre-verified")
-    # Rate limit by email and phone
+    # Rate limit by email (and phone if provided)
     rate_limit(f"register:{user_in.email}")
-    rate_limit(f"register:{user_in.phone}")
+    if user_in.phone:
+        rate_limit(f"register:{user_in.phone}")
     if get_user_by_email(db, user_in.email):
         raise HTTPException(status_code=400, detail="Email already registered")
-    norm_phone = normalize_phone(user_in.phone)
-    if not norm_phone:
-        raise HTTPException(status_code=400, detail="Invalid phone number")
-    if get_user_by_phone(db, norm_phone):
-        raise HTTPException(status_code=400, detail="Phone already registered")
+    norm_phone = None
+    if user_in.phone:
+        norm_phone = normalize_phone(user_in.phone)
+        if not norm_phone:
+            raise HTTPException(status_code=400, detail="Invalid phone number")
+        if get_user_by_phone(db, norm_phone):
+            raise HTTPException(status_code=400, detail="Phone already registered")
     user = User(
         email=user_in.email,
         name=user_in.name,
@@ -516,17 +523,24 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
-    # Send verification codes
     email_code = create_email_verification(db, user.email)
-    phone_code = create_phone_verification(db, user.phone)
     try:
         send_email_code(user.email, email_code, message_type="verify")
     except Exception:
         pass
-    try:
-        send_sms_code(user.phone, phone_code)
-    except Exception:
-        pass
+    if os.getenv("DISABLE_SMS", "1") == "1" or not norm_phone:
+        try:
+            setattr(user, 'phone_verified', '1')
+            db.add(user)
+            db.commit()
+        except Exception:
+            pass
+    else:
+        phone_code = create_phone_verification(db, user.phone)
+        try:
+            send_sms_code(user.phone, phone_code)
+        except Exception:
+            pass
     return user
 
 @app.post("/auth/login", response_model=Token, tags=["auth"])
@@ -544,7 +558,8 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         phone_verified = str(getattr(user, 'phone_verified', '0')) == '1'
     except Exception:
         pass
-    if not email_verified or not phone_verified:
+    enforce_phone = os.getenv("REQUIRE_PHONE_VERIFICATION", "0") == "1"
+    if not email_verified or (enforce_phone and not phone_verified):
         raise HTTPException(status_code=403, detail="Account not verified. Please verify email and phone.")
     access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
@@ -567,6 +582,8 @@ def resend_email_code(payload: ForgotPasswordIn, db: Session = Depends(get_db)):
 
 @app.post("/auth/send-phone-code", tags=["auth"])
 def resend_phone_code(payload: VerifyPhoneIn, db: Session = Depends(get_db)):
+    if os.getenv("DISABLE_SMS", "1") == "1":
+        return {"ok": True}
     rate_limit(f"send_phone:{payload.phone}")
     norm_phone = normalize_phone(payload.phone)
     if not norm_phone:
@@ -600,6 +617,20 @@ def verify_email(payload: VerifyEmailIn, db: Session = Depends(get_db)):
 
 @app.post("/auth/verify-phone", tags=["auth"])
 def verify_phone(payload: VerifyPhoneIn, db: Session = Depends(get_db)):
+    if os.getenv("DISABLE_SMS", "1") == "1":
+        norm_phone = normalize_phone(payload.phone)
+        if not norm_phone:
+            raise HTTPException(status_code=400, detail="Invalid phone or code")
+        user = get_user_by_phone(db, norm_phone)
+        if not user:
+            raise HTTPException(status_code=400, detail="Invalid phone or code")
+        try:
+            setattr(user, 'phone_verified', '1')
+            db.add(user)
+            db.commit()
+        except Exception:
+            pass
+        return {"ok": True}
     rate_limit(f"verify_phone:{payload.phone}")
     norm_phone = normalize_phone(payload.phone)
     if not norm_phone:
