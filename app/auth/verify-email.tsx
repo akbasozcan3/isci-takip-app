@@ -79,7 +79,7 @@ export default function VerifyEmail(): React.JSX.Element {
         router.replace('/auth/login' as any);
         return;
       }
-      // Fallback: post-registration email verification (PHP API)
+      // Fallback: post-registration email verification (Node API on Render)
       const res = await fetch(`${getApiBase()}/api/auth/verify-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -105,13 +105,14 @@ export default function VerifyEmail(): React.JSX.Element {
     if (resending) return; // double click guard
     setResending(true);
     message.show({ type: 'info', title: 'Gönderiliyor', description: 'Kod gönderiliyor…' });
-    // Warm-up: Render soğuk başlama için health ping (fire-and-forget)
+    // Warm-up: soğuk başlama için health ping (Node API)
     try { fetch(`${getApiBase()}/health`).catch(() => {}); } catch {}
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25000); // 25s üstü bekletme
+    const base = getApiBase();
     const url = preRegister ? '/auth/pre-verify-email' : '/api/auth/resend-code';
     try {
-      const res = await fetch(`${getApiBase()}${url}`, {
+      const res = await fetch(`${base}${url}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),

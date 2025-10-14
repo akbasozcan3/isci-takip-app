@@ -28,4 +28,22 @@ export function getApiBase(): string {
   return 'https://isci-takip-app.onrender.com';
 }
 
+// Base URL for PHP API (PHPMailer service)
+// Priority: EXPO_PUBLIC_PHP_API_BASE -> extra.phpApiBaseDev (dev) / extra.phpApiBase -> fallback to getApiBase()
+export function getPhpApiBase(): string {
+  const envBase = process.env.EXPO_PUBLIC_PHP_API_BASE;
+  if (envBase && /^https?:\/\//i.test(envBase)) return envBase.replace(/\/$/, '');
+
+  const extra = (Constants?.expoConfig as any)?.extra || {};
+  if (__DEV__) {
+    const devBase = extra.phpApiBaseDev as string | undefined;
+    if (devBase && /^https?:\/\//i.test(devBase)) return devBase.replace(/\/$/, '');
+  }
+  const extraBase = extra.phpApiBase as string | undefined;
+  if (extraBase && /^https?:\/\//i.test(extraBase)) return extraBase.replace(/\/$/, '');
+
+  // Fallback to main API base if PHP base not provided
+  return getApiBase();
+}
+
 
