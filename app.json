@@ -83,7 +83,7 @@
     },
     "extra": {
       "apiBase": "https://isci-takip-app.onrender.com",
-      "apiBaseDev": "http://192.168.0.173:4000",
+      "apiBaseDev": "https://isci-takip-app.onrender.com",
       "router": {},
       "eas": {
         "projectId": "3122850c-b69c-40f3-b1fd-935cc91346fd"

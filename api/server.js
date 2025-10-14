@@ -18,6 +18,142 @@ const io = new Server(server, {
     methods: ["GET", "POST"]
   }
 });
+
+// === OTP registration flow (alternative) ===
+// Create user with email_verified=0 and send a 6-digit code. No pre_token required here.
+app.post('/api/auth/register-otp', async (req, res) => {
+  try {
+    const { email, password, name, phone, username } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: 'email/password required' });
+    const emailOk = /.+@.+\..+/.test(String(email));
+    if (!emailOk) return res.status(400).json({ error: 'Invalid email' });
+    if (String(password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+    // unique email
+    if (Object.values(users).some(u => String(u.email).toLowerCase() === String(email).toLowerCase())) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
+    // optional username
+    let uname = null;
+    if (typeof username === 'string' && username.trim()) {
+      const raw = username.trim();
+      const norm = raw.toLowerCase();
+      if (!/^[a-z0-9._-]{3,24}$/.test(norm)) return res.status(400).json({ error: 'Invalid username. Use 3-24 chars: a-z, 0-9, . _ -' });
+      const exists = Object.values(users).some(u => String(u.username || '').toLowerCase() === norm);
+      if (exists) return res.status(400).json({ error: 'Username already taken' });
+      uname = norm;
+    }
+
+    const id = generateId();
+    const hash = await bcrypt.hash(password, 10);
+    users[id] = {
+      id,
+      email,
+      username: uname,
+      name: name || null,
+      phone: phone || null,
+      createdAt: Date.now(),
+      email_verified: '0',
+      phone_verified: '0'
+    };
+    emailPasswords[email] = hash;
+
+    // generate and send OTP (15 minutes)
+    const code = generateCode();
+    const expiresAt = Date.now() + (Number(process.env.RESET_CODE_EXPIRE_MIN || '15') * 60 * 1000);
+    (emailVerifications[email] || []).forEach(v => { if (!v.usedAt) v.usedAt = Date.now(); });
+    pushRecord(emailVerifications, email, { code, expiresAt, usedAt: null, createdAt: Date.now() });
+
+    // update resend meta counters
+    const dk = getDayKey();
+    const meta = resendMeta[email] || { lastSentAt: 0, sentCountDay: 0, dayKey: dk };
+    if (meta.dayKey !== dk) { meta.dayKey = dk; meta.sentCountDay = 0; }
+    meta.lastSentAt = Date.now();
+    meta.sentCountDay += 1;
+    resendMeta[email] = meta;
+
+    scheduleSave();
+    let sent = false; try { sent = await sendEmailCode(email, code, 'verify'); } catch(_) {}
+    const body = { ok: true };
+    if ((process.env.RESET_DEV_RETURN_CODE || '1') === '1' && !sent) body.dev_code = code;
+    return res.json(body);
+  } catch (e) {
+    return res.status(500).json({ error: 'register failed' });
+  }
+});
+
+// Resend verification code with cooldown (60s) and daily limit (default 5)
+app.post('/api/auth/resend-code', async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) return res.status(400).json({ error: 'email required' });
+    const user = Object.values(users).find(u => u.email === email);
+    if (!user) return res.status(404).json({ error: 'not found' });
+    if (String(user.email_verified || '0') === '1') return res.json({ ok: true });
+
+    const now = Date.now();
+    const cooldownMs = 60 * 1000;
+    const limitPerDay = Number(process.env.OTP_DAILY_LIMIT || '5');
+    const dk = getDayKey(now);
+    const meta = resendMeta[email] || { lastSentAt: 0, sentCountDay: 0, dayKey: dk };
+    if (meta.dayKey !== dk) { meta.dayKey = dk; meta.sentCountDay = 0; }
+    if (now - (meta.lastSentAt || 0) < cooldownMs) {
+      return res.status(429).json({ error: 'Please wait before requesting another code' });
+    }
+    if (meta.sentCountDay >= limitPerDay) {
+      return res.status(429).json({ error: 'Daily resend limit reached' });
+    }
+
+    const code = generateCode();
+    const expiresAt = now + (Number(process.env.RESET_CODE_EXPIRE_MIN || '15') * 60 * 1000);
+    (emailVerifications[email] || []).forEach(v => { if (!v.usedAt) v.usedAt = now; });
+    pushRecord(emailVerifications, email, { code, expiresAt, usedAt: null, createdAt: now });
+    meta.lastSentAt = now;
+    meta.sentCountDay += 1;
+    resendMeta[email] = meta;
+    scheduleSave();
+
+    let sent = false; try { sent = await sendEmailCode(email, code, 'verify'); } catch(_) {}
+    const body = { ok: true };
+    if ((process.env.RESET_DEV_RETURN_CODE || '1') === '1' && !sent) body.dev_code = code;
+    return res.json(body);
+  } catch (e) {
+    return res.status(500).json({ error: 'resend failed' });
+  }
+});
+
+// Verify code: activate account (max 5 attempts before temporary lock)
+app.post('/api/auth/verify-code', (req, res) => {
+  try {
+    const { email, code } = req.body || {};
+    if (!email || !code) return res.status(400).json({ error: 'email/code required' });
+    const va = verifyAttempts[email] || { count: 0, lockedUntil: 0 };
+    const now = Date.now();
+    if (va.lockedUntil && now < va.lockedUntil) {
+      return res.status(429).json({ error: 'Too many attempts. Try later.' });
+    }
+
+    const hit = findValidCode(emailVerifications, email, code);
+    if (!hit) {
+      va.count = (va.count || 0) + 1;
+      if (va.count >= Number(process.env.OTP_MAX_ATTEMPTS || '5')) {
+        va.lockedUntil = now + 15 * 60 * 1000; // 15 dk kilit
+        va.count = 0; // reset after locking
+      }
+      verifyAttempts[email] = va;
+      return res.status(400).json({ error: 'Invalid or expired code' });
+    }
+
+    hit.r.usedAt = now;
+    const user = Object.values(users).find(u => u.email === email);
+    if (user) user.email_verified = '1';
+    verifyAttempts[email] = { count: 0, lockedUntil: 0 };
+    scheduleSave();
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ error: 'verify failed' });
+  }
+});
 const PORT = process.env.PORT || 4000;
 const SECRET_KEY = process.env.SECRET_KEY || 'change_this_secret';
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -69,6 +205,8 @@ let users = {}; // { userId: { id, phone?, email?, name?, createdAt, email_verif
 let tokens = {}; // { token: userId }
 let emailPasswords = {}; // { email: bcryptHash }
 let emailVerifications = {}; // { email: [ { code, expiresAt, usedAt, createdAt } ] }
+let resendMeta = {}; // { email: { lastSentAt, sentCountDay, dayKey } }
+let verifyAttempts = {}; // { email: { count, lockedUntil } }
 let passwordResets = {}; // { email: [ { code, expiresAt, usedAt, createdAt } ] }
 
 // ---- Articles (mock) ----
@@ -285,6 +423,11 @@ function findValidCode(map, key, code) {
     if (!r.usedAt && r.code === code && r.expiresAt > now) return { r, i };
   }
   return null;
+}
+
+function getDayKey(ts = Date.now()) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
 }
 
 // === Email verification endpoints ===

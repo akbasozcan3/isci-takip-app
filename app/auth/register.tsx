@@ -7,6 +7,7 @@ import { useMessage } from '../../components/MessageProvider';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import theme from '../../components/ui/theme';
+import { getApiBase } from '../../utils/api';
 
 const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const usernameRegex = /^[a-z0-9._-]{3,24}$/;
@@ -103,15 +104,34 @@ export default function Register(): React.JSX.Element {
       return;
     }
 
-    // Do not handle email verification here. Redirect to verify-email screen
-    // with form data. That screen will send/verify the pre-email code and
-    // complete the registration using the pre_token.
+    // Pre-register akışı: kullanıcı hemen oluşturulmaz, önce e‑posta kodu gönderilir
     setLoading(true);
     try {
-      router.push({
-        pathname: '/auth/verify-email' as any,
-        params: { email, phone, name, password, username, mode: 'pre-register' },
-      } as any);
+      // Hız: isteği arka planda gönder, kullanıcıyı anında doğrulama ekranına taşı
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), 8000); // 8 sn bekle, sonra iptal
+      // fire-and-forget: hata olursa logla, kullanıcıyı bekletme
+      fetch(`${getApiBase()}/auth/send-email-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+        signal: controller.signal,
+      })
+        .then(async (res) => {
+          const text = await res.text();
+          let data: any = {}; try { data = text ? JSON.parse(text) : {}; } catch { data = {}; }
+          if (!res.ok) throw new Error(data?.error || data?.message || text || 'Gönderim başarısız');
+          if (data?.dev_code) console.log('[register] dev_code', data.dev_code);
+        })
+        .catch((err) => console.log('[register] send-email-code background error:', err?.message || err));
+
+      message.show({ type: 'success', title: 'Kod Gönderiliyor', description: 'Doğrulama ekranına yönlendiriliyorsunuz…' });
+      router.push({ pathname: '/auth/verify-email' as any, params: { email, name, password, phone, username, mode: 'pre-register' } } as any);
+    } catch (e: any) {
+      const raw = e?.message || 'Kayıt sırasında beklenmeyen bir hata';
+      // Debug log for investigation
+      console.log('[register-otp] error', raw);
+      message.show({ type: 'error', title: 'Kayıt Hatası', description: raw });
     } finally {
       setLoading(false);
     }

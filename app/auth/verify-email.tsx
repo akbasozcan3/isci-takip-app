@@ -7,6 +7,7 @@ import { useMessage } from '../../components/MessageProvider';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { getApiBase } from '../../utils/api';
+import { mapApiError } from '../../utils/errorMap';
 
 export default function VerifyEmail(): React.JSX.Element {
   const params = useLocalSearchParams<{ email?: string; phone?: string; name?: string; password?: string; username?: string; mode?: string }>();
@@ -78,8 +79,8 @@ export default function VerifyEmail(): React.JSX.Element {
         router.replace('/auth/login' as any);
         return;
       }
-      // Fallback: post-registration email verification
-      const res = await fetch(`${getApiBase()}/auth/verify-email`, {
+      // Fallback: post-registration email verification (PHP API)
+      const res = await fetch(`${getApiBase()}/api/auth/verify-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code }),
@@ -93,7 +94,7 @@ export default function VerifyEmail(): React.JSX.Element {
     } catch (e: any) {
       let msg = e?.message || 'Bilinmeyen hata';
       try { const p = JSON.parse(msg); msg = p?.detail || msg; } catch {}
-      message.show({ type: 'error', title: 'Hata', description: msg });
+      message.show({ type: 'error', title: 'Hata', description: mapApiError(msg) });
     } finally {
       setLoading(false);
     }
@@ -101,20 +102,31 @@ export default function VerifyEmail(): React.JSX.Element {
 
   const resend = async () => {
     if (!email) return;
+    if (resending) return; // double click guard
+    setResending(true);
+    message.show({ type: 'info', title: 'Gönderiliyor', description: 'Kod gönderiliyor…' });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000); // 12s üstü bekletme
+    const url = preRegister ? '/auth/pre-verify-email' : '/api/auth/resend-code';
     try {
-      setResending(true);
-      const url = preRegister ? '/auth/pre-verify-email' : '/auth/send-email-code';
       const res = await fetch(`${getApiBase()}${url}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
+        signal: controller.signal,
       });
       const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data?.error || data?.message || 'Mail gönderilemedi, lütfen tekrar deneyin';
+        throw new Error(msg);
+      }
       if (data?.dev_code) setDevCode(String(data.dev_code));
-      message.show({ type: 'success', title: 'Kod Gönderildi', description: 'Doğrulama kodu gönderildi.' });
+      message.show({ type: 'success', title: 'Kod gönderildi', description: 'E‑posta kutunuzu kontrol edin.' });
     } catch (e: any) {
-      message.show({ type: 'error', title: 'Hata', description: e?.message || 'Bilinmeyen hata' });
+      const msg = e?.name === 'AbortError' ? 'İstek zaman aşımına uğradı, lütfen tekrar deneyin' : (e?.message || 'Mail gönderilemedi, lütfen tekrar deneyin');
+      message.show({ type: 'error', title: 'Hata', description: mapApiError(msg) });
     } finally {
+      clearTimeout(timer);
       setResending(false);
     }
   };

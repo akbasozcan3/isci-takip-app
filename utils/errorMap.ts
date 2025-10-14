@@ -13,6 +13,13 @@ export function mapApiError(raw: string | undefined | null): string {
   if (s.includes('not found')) return 'Kayıt bulunamadı.';
   if (s.includes('invalid or expired code')) return 'Kod hatalı veya süresi dolmuş.';
   if (s.includes('invalid email or code')) return 'Geçersiz e‑posta veya kod.';
+  // OTP flow
+  if (s.includes('please wait before requesting another code')) return 'Lütfen yeni kod istemeden önce biraz bekleyin.';
+  if (s.includes('daily resend limit reached')) return 'Günlük kod gönderme limitine ulaşıldı.';
+  if (s.includes('too many attempts')) return 'Çok fazla deneme yapıldı. Lütfen daha sonra tekrar deneyin.';
+  if (s.includes('register failed')) return 'Kayıt işlemi başarısız.';
+  if (s.includes('resend failed')) return 'Kod gönderme başarısız.';
+  if (s.includes('verify failed')) return 'Doğrulama başarısız.';
   // Fallback
   return raw || 'İşlem başarısız. Lütfen tekrar deneyin.';
 }

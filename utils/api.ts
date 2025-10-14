@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 export function getApiBase(): string {
   const envBase = process.env.EXPO_PUBLIC_API_BASE;
@@ -19,7 +20,9 @@ export function getApiBase(): string {
 
   // Default: Local development
   if (__DEV__) {
-    return 'http://localhost:4000';
+    // Use Android emulator loopback if needed
+    const host = Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000';
+    return host;
   }
   // Production: Render domain
   return 'https://isci-takip-app.onrender.com';
