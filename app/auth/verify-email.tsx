@@ -9,11 +9,12 @@ import Input from '../../components/ui/Input';
 import { getApiBase } from '../../utils/api';
 
 export default function VerifyEmail(): React.JSX.Element {
-  const params = useLocalSearchParams<{ email?: string; phone?: string; name?: string; password?: string; mode?: string }>();
+  const params = useLocalSearchParams<{ email?: string; phone?: string; name?: string; password?: string; username?: string; mode?: string }>();
   const [email, setEmail] = React.useState(params.email || '');
   const [phone] = React.useState(params.phone || '');
   const [name] = React.useState(params.name || '');
   const [password] = React.useState(params.password || '');
+  const [username] = React.useState(params.username || '');
   const [mode] = React.useState(params.mode || '');
   const preRegister = String(mode) === 'pre-register';
   const [code, setCode] = React.useState('');
@@ -67,14 +68,14 @@ export default function VerifyEmail(): React.JSX.Element {
         const r = await fetch(`${getApiBase()}/auth/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password, name: name || undefined, phone, pre_token }),
+          body: JSON.stringify({ email, password, name: name || undefined, phone, username: username || undefined, pre_token }),
         });
         if (!r.ok) {
           const raw = await r.text();
           throw new Error(raw || 'Kayıt başarısız');
         }
-        message.show({ type: 'success', title: 'Email Doğrulandı', description: 'Telefon doğrulamasına geçiliyor.' });
-        router.replace({ pathname: '/auth/verify-phone' as any, params: { phone } } as any);
+        message.show({ type: 'success', title: 'Email Doğrulandı', description: 'Hesabınız oluşturuldu. Giriş ekranına yönlendiriliyorsunuz.' });
+        router.replace('/auth/login' as any);
         return;
       }
       // Fallback: post-registration email verification
@@ -87,8 +88,8 @@ export default function VerifyEmail(): React.JSX.Element {
         const errText = await res.text();
         throw new Error(errText || 'Doğrulama başarısız');
       }
-      message.show({ type: 'success', title: 'Email Doğrulandı', description: 'Telefon doğrulamasına geçiliyor.' });
-      router.replace({ pathname: '/auth/verify-phone' as any, params: { phone } } as any);
+      message.show({ type: 'success', title: 'Email Doğrulandı', description: 'Giriş ekranına yönlendiriliyorsunuz.' });
+      router.replace('/auth/login' as any);
     } catch (e: any) {
       let msg = e?.message || 'Bilinmeyen hata';
       try { const p = JSON.parse(msg); msg = p?.detail || msg; } catch {}
