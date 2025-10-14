@@ -176,7 +176,10 @@ function createTransport() {
 
 async function sendEmailCode(email, code, type = 'verify') {
   const transporter = createTransport();
-  if (!transporter) return false;
+  if (!transporter) {
+    console.error('[smtp] transporter not configured: check SMTP_USER/SMTP_PASS');
+    return false;
+  }
   const subject = type === 'reset' ? EMAIL_SUBJECT_RESET : EMAIL_SUBJECT_VERIFY;
   const minutes = type === 'reset' ? (process.env.RESET_CODE_EXPIRE_MIN || '15') : (process.env.VERIFY_CODE_EXPIRE_MIN || '30');
   const html = `
@@ -187,8 +190,44 @@ async function sendEmailCode(email, code, type = 'verify') {
     </div>
   `;
   const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@example.com';
-  await transporter.sendMail({ from, to: email, subject, html });
-  return true;
+  try {
+    if (process.env.DEBUG_SMTP === '1') {
+      try { await transporter.verify(); console.log('[smtp] verify ok'); } catch (e) { console.error('[smtp] verify fail:', e?.message || e); }
+    }
+    const info = await transporter.sendMail({ from, to: email, subject, html });
+    if (process.env.DEBUG_SMTP === '1') console.log('[smtp] sent:', info?.messageId, info?.response);
+    return true;
+  } catch (err) {
+    console.error('[smtp] sendMail error:', err?.message || err);
+    return false;
+  }
+}
+
+// Optional SMTP debug endpoints (enable with DEBUG_SMTP=1)
+if (process.env.DEBUG_SMTP === '1') {
+  app.get('/debug/smtp-verify', async (_req, res) => {
+    try {
+      const tr = createTransport();
+      if (!tr) return res.status(400).json({ ok: false, error: 'transporter not configured' });
+      await tr.verify();
+      return res.json({ ok: true });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+  app.post('/debug/smtp-send', async (req, res) => {
+    try {
+      const { to } = req.body || {};
+      if (!to) return res.status(400).json({ ok: false, error: 'to required' });
+      const tr = createTransport();
+      if (!tr) return res.status(400).json({ ok: false, error: 'transporter not configured' });
+      const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+      const info = await tr.sendMail({ from, to, subject: 'SMTP Test', text: 'Test mesajı - İŞÇİ TAKİP', html: '<b>SMTP Test</b>' });
+      return res.json({ ok: true, messageId: info?.messageId, response: info?.response });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
 }
 
 // === Auth helpers ===
