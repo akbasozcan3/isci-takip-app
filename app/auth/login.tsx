@@ -1,5 +1,5 @@
-import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Link, useRouter } from 'expo-router';
 import React from 'react';
 import {
   Animated,
@@ -124,9 +124,11 @@ export default function Login(): React.JSX.Element {
         const rawMsg = parsed?.message || parsed?.error || text || 'Giriş başarısız.';
         if (res.status === 403) {
           const emailId = looksLikeEmail(identifier) ? identifier.trim() : '';
-          message.show({ type: 'error', title: 'Hesap Doğrulanmadı', description: mapApiError(rawMsg) });
+          message.show({ type: 'warning', title: '⚠️ E-posta Doğrulanmadı', description: 'Hesabınızı kullanabilmek için önce e-posta adresinizi doğrulamanız gerekiyor.' });
           if (emailId) {
-            router.push({ pathname: '/auth/verify-email' as any, params: { email: emailId, mode: 'post-register' } } as any);
+            setTimeout(() => {
+              router.push({ pathname: '/auth/verify-email' as any, params: { email: emailId, mode: 'post-register' } } as any);
+            }, 1500);
           }
           return;
         }

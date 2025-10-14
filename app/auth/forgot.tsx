@@ -45,7 +45,7 @@ export default function ForgotPassword(): React.JSX.Element {
       if (data.dev_code) {
         setDevCode(String(data.dev_code));
       }
-      message.show({ type: 'success', title: 'Kod Gönderildi', description: 'Eğer email kayıtlıysa, kod gönderildi.' });
+      message.show({ type: 'success', title: '📧 Şifre Sıfırlama Kodu Gönderildi', description: 'E-posta adresinize şifre sıfırlama kodu gönderildi. E-posta kutunuzu kontrol edin.' });
       router.push({ pathname: '/auth/reset' as any, params: { email } } as any);
     } catch (e: any) {
       message.show({ type: 'error', title: 'Hata', description: e?.message || 'Bilinmeyen hata' });

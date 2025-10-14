@@ -1,12 +1,12 @@
-import React from 'react';
-import { View, Text, Pressable, ActivityIndicator, Animated, Easing } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React from 'react';
+import { Animated, Easing, Pressable, Text, View } from 'react-native';
 import { BrandLogo } from '../../components/BrandLogo';
-import { getApiBase } from '../../utils/api';
 import { useMessage } from '../../components/MessageProvider';
-import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
+import { getApiBase } from '../../utils/api';
 
 export default function ResetPassword(): React.JSX.Element {
   const params = useLocalSearchParams<{ email?: string }>();
@@ -43,8 +43,10 @@ export default function ResetPassword(): React.JSX.Element {
         const errText = await res.text();
         throw new Error(errText || 'İşlem başarısız');
       }
-      message.show({ type: 'success', title: 'Şifre Güncellendi', description: 'Giriş yapabilirsiniz.' });
-      router.replace('/auth/login' as any);
+      message.show({ type: 'success', title: '🎉 Şifre Başarıyla Güncellendi!', description: 'Yeni şifrenizle giriş yapabilirsiniz. Giriş sayfasına yönlendiriliyorsunuz...' });
+      setTimeout(() => {
+        router.replace('/auth/login' as any);
+      }, 2000);
     } catch (e: any) {
       let msg = e?.message || 'Bilinmeyen hata';
       try {

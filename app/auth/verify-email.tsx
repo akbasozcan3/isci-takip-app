@@ -75,8 +75,10 @@ export default function VerifyEmail(): React.JSX.Element {
           const raw = await r.text();
           throw new Error(raw || 'Kayıt başarısız');
         }
-        message.show({ type: 'success', title: 'Email Doğrulandı', description: 'Hesabınız oluşturuldu. Giriş ekranına yönlendiriliyorsunuz.' });
-        router.replace('/auth/login' as any);
+        message.show({ type: 'success', title: '🎉 E-posta Doğrulandı!', description: 'Hesabınız başarıyla oluşturuldu. Giriş ekranına yönlendiriliyorsunuz...' });
+        setTimeout(() => {
+          router.replace('/auth/login' as any);
+        }, 2000);
         return;
       }
       // Fallback: post-registration email verification (Node API on Render)
@@ -89,8 +91,10 @@ export default function VerifyEmail(): React.JSX.Element {
         const errText = await res.text();
         throw new Error(errText || 'Doğrulama başarısız');
       }
-      message.show({ type: 'success', title: 'Email Doğrulandı', description: 'Giriş ekranına yönlendiriliyorsunuz.' });
-      router.replace('/auth/login' as any);
+      message.show({ type: 'success', title: '🎉 E-posta Doğrulandı!', description: 'Hesabınız başarıyla doğrulandı. Giriş ekranına yönlendiriliyorsunuz...' });
+      setTimeout(() => {
+        router.replace('/auth/login' as any);
+      }, 2000);
     } catch (e: any) {
       let msg = e?.message || 'Bilinmeyen hata';
       try { const p = JSON.parse(msg); msg = p?.detail || msg; } catch {}

@@ -111,7 +111,7 @@ export default function Register(): React.JSX.Element {
       const controller = new AbortController();
       setTimeout(() => controller.abort(), 8000); // 8 sn bekle, sonra iptal
       // fire-and-forget: hata olursa logla, kullanıcıyı bekletme
-      fetch(`${getApiBase()}/auth/send-email-code`, {
+      fetch(`${getApiBase()}/auth/pre-verify-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -125,7 +125,7 @@ export default function Register(): React.JSX.Element {
         })
         .catch((err) => console.log('[register] send-email-code background error:', err?.message || err));
 
-      message.show({ type: 'success', title: 'Kod Gönderiliyor', description: 'Doğrulama ekranına yönlendiriliyorsunuz…' });
+      message.show({ type: 'success', title: '📧 E-posta Kodu Gönderiliyor', description: 'Doğrulama kodunuz e-posta adresinize gönderildi. Doğrulama ekranına yönlendiriliyorsunuz...' });
       router.push({ pathname: '/auth/verify-email' as any, params: { email, name, password, phone, username, mode: 'pre-register' } } as any);
     } catch (e: any) {
       const raw = e?.message || 'Kayıt sırasında beklenmeyen bir hata';
