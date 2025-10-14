@@ -124,7 +124,7 @@ export default function Login(): React.JSX.Element {
         const rawMsg = parsed?.message || parsed?.error || text || 'Giriş başarısız.';
         if (res.status === 403) {
           const emailId = looksLikeEmail(identifier) ? identifier.trim() : '';
-          message.show({ type: 'warning', title: '⚠️ E-posta Doğrulanmadı', description: 'Hesabınızı kullanabilmek için önce e-posta adresinizi doğrulamanız gerekiyor.' });
+          message.show({ type: 'error', title: '⚠️ E-posta Doğrulanmadı', description: 'Hesabınızı kullanabilmek için önce e-posta adresinizi doğrulamanız gerekiyor.' });
           if (emailId) {
             setTimeout(() => {
               router.push({ pathname: '/auth/verify-email' as any, params: { email: emailId, mode: 'post-register' } } as any);
