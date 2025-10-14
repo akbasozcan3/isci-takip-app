@@ -17,7 +17,11 @@ export function getApiBase(): string {
     return extraBase.replace(/\/$/, '');
   }
 
-  // Default: Render domain
+  // Default: Local development
+  if (__DEV__) {
+    return 'http://localhost:4000';
+  }
+  // Production: Render domain
   return 'https://isci-takip-paneli.onrender.com';
 }
 

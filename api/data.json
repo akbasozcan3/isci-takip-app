@@ -3306,7 +3306,30 @@
       }
     }
   },
-  "users": {},
+  "users": {
+    "agqoh47be": {
+      "id": "agqoh47be",
+      "email": "ozcanakbas38@gmail.com",
+      "name": "�-zcan",
+      "phone": null,
+      "createdAt": 1760405129318,
+      "email_verified": "1",
+      "phone_verified": "1"
+    }
+  },
   "tokens": {},
-  "emailPasswords": {}
+  "emailPasswords": {
+    "ozcanakbas38@gmail.com": "$2a$10$wcgrOyRPRVVSrBaeVSVbCuW5nmRTT2hthwCncV/JWmRPe1tcNyiAu"
+  },
+  "emailVerifications": {
+    "ozcanakbas38@gmail.com": [
+      {
+        "code": "710414",
+        "expiresAt": 1760406902274,
+        "usedAt": 1760405129221,
+        "createdAt": 1760405102274
+      }
+    ]
+  },
+  "passwordResets": {}
 }
