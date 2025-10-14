@@ -16,7 +16,8 @@
     "build:ios": "eas build --platform ios",
     "build:all": "eas build --platform all",
     "submit:android": "eas submit --platform android",
-    "submit:ios": "eas submit --platform ios"
+    "submit:ios": "eas submit --platform ios",
+    "server": "node api/server.js"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.2.3",

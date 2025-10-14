@@ -21,6 +21,10 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 4000;
 const SECRET_KEY = process.env.SECRET_KEY || 'change_this_secret';
 const NODE_ENV = process.env.NODE_ENV || 'development';
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '*')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 // Production optimizations
 if (NODE_ENV === 'production') {
@@ -35,7 +39,15 @@ if (NODE_ENV === 'production') {
 
 // Enhanced CORS for Android/iOS compatibility
 app.use(cors({
-  origin: '*',
+  origin: function (origin, callback) {
+    // Allow mobile apps / curl (no Origin header)
+    if (!origin) return callback(null, true);
+    // Wildcard or explicit allow-list
+    if (ALLOWED_ORIGINS.includes('*') || ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: false

@@ -22,7 +22,7 @@ export function getApiBase(): string {
     return 'http://localhost:4000';
   }
   // Production: Render domain
-  return 'https://isci-takip-paneli.onrender.com';
+  return 'https://isci-takip-app.onrender.com';
 }
 
 
