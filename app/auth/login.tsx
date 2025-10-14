@@ -3,6 +3,7 @@ import { Link, useRouter } from 'expo-router';
 import React from 'react';
 import {
   Animated,
+  Dimensions,
   Easing,
   Keyboard,
   KeyboardAvoidingView,
@@ -10,10 +11,9 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { BrandLogo } from '../../components/BrandLogo';
 import { useMessage } from '../../components/MessageProvider';
@@ -21,8 +21,10 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import theme from '../../components/ui/theme';
 import { getApiBase } from '../../utils/api';
-import { saveToken } from '../../utils/auth'; // senin util'in zaten varsa bırak
+import { saveToken } from '../../utils/auth';
 import { mapApiError } from '../../utils/errorMap';
+
+const { width, height } = Dimensions.get('window');
 
 const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 function looksLikeEmail(v: string): boolean { return v.includes('@'); }
@@ -43,15 +45,62 @@ export default function Login(): React.JSX.Element {
   const [identifierError, setIdentifierError] = React.useState<string | undefined>(undefined);
   const [passwordError, setPasswordError] = React.useState<string | undefined>(undefined);
 
+  // Advanced animations
   const fade = React.useRef(new Animated.Value(0)).current;
-  const translate = React.useRef(new Animated.Value(20)).current;
+  const slideUp = React.useRef(new Animated.Value(50)).current;
+  const scale = React.useRef(new Animated.Value(0.9)).current;
+  const logoScale = React.useRef(new Animated.Value(0.8)).current;
+  const logoRotate = React.useRef(new Animated.Value(0)).current;
+  const backgroundOpacity = React.useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fade, { toValue: 1, duration: 420, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-      Animated.timing(translate, { toValue: 0, duration: 420, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+    // Staggered entrance animation
+    Animated.sequence([
+      // Background fade in
+      Animated.timing(backgroundOpacity, {
+        toValue: 1,
+        duration: 800,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      // Logo animation
+      Animated.parallel([
+        Animated.spring(logoScale, {
+          toValue: 1,
+          tension: 50,
+          friction: 7,
+          useNativeDriver: true,
+        }),
+        Animated.timing(logoRotate, {
+          toValue: 1,
+          duration: 1000,
+          easing: Easing.out(Easing.back(1.2)),
+          useNativeDriver: true,
+        }),
+      ]),
+      // Form elements
+      Animated.parallel([
+        Animated.timing(fade, {
+          toValue: 1,
+          duration: 600,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideUp, {
+          toValue: 0,
+          duration: 600,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.spring(scale, {
+          toValue: 1,
+          tension: 50,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+      ]),
     ]).start();
-  }, [fade, translate]);
+  }, [fade, slideUp, scale, logoScale, logoRotate, backgroundOpacity]);
 
   // Keep important controls visible when keyboard is open
   const [kbShown, setKbShown] = React.useState(false);
@@ -157,79 +206,134 @@ export default function Login(): React.JSX.Element {
     }
   };
 
+  const logoRotation = logoRotate.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#0f172a' }}>
+    <SafeAreaView style={styles.container}>
+      {/* Animated Background */}
+      <Animated.View style={[styles.background, { opacity: backgroundOpacity }]}>
+        <View style={styles.gradientOverlay} />
+        <View style={styles.decorativeCircle1} />
+        <View style={styles.decorativeCircle2} />
+        <View style={styles.decorativeCircle3} />
+      </Animated.View>
+
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           ref={(r) => { scrollRef.current = r; }}
-          contentContainerStyle={{ flexGrow: 1, paddingBottom: kbShown ? 32 : 16 }}
+          contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Animated.View style={[styles.container, { opacity: fade, transform: [{ translateY: translate }] }]}> 
-            <View style={styles.header}>
-              <BrandLogo size={72} />
-              <Text style={styles.title}>Giriş Yap</Text>
-              <Text style={styles.subtitle}>Email veya Kullanıcı Adı ile giriş yapın</Text>
+          {/* Header Section */}
+          <Animated.View style={[styles.header, { 
+            opacity: fade, 
+            transform: [
+              { scale: logoScale },
+              { rotate: logoRotation }
+            ] 
+          }]}>
+            <View style={styles.logoContainer}>
+              <BrandLogo size={80} />
+            </View>
+            <Text style={styles.title}>Hoş Geldiniz</Text>
+            <Text style={styles.subtitle}>Hesabınıza giriş yapın</Text>
+          </Animated.View>
+
+          {/* Form Card */}
+          <Animated.View style={[
+            styles.formCard, 
+            { 
+              opacity: fade, 
+              transform: [
+                { translateY: slideUp },
+                { scale: scale }
+              ] 
+            }
+          ]}>
+            <View style={styles.formHeader}>
+              <Text style={styles.formTitle}>Giriş Yap</Text>
+              <Text style={styles.formSubtitle}>E-posta veya kullanıcı adınızla devam edin</Text>
             </View>
 
-            <Input
-              ref={emailRef}
-              label="Email veya Kullanıcı Adı"
-              autoCapitalize="none"
-              autoCorrect={false}
-              value={identifier}
-              onChangeText={(t) => setIdentifier(t)}
-              placeholder="E-posta veya Kullanıcı Adı"
-              returnKeyType="next"
-              onFocus={() => { /* first field, no-op */ }}
-              onSubmitEditing={() => passRef.current?.focus()}
-              error={identifierError}
-              leftElement={<Ionicons name="person-outline" size={18} color={theme.colors.textMuted} />}
-            />
+            <View style={styles.inputContainer}>
+              <Input
+                ref={emailRef}
+                label="E-posta veya Kullanıcı Adı"
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={identifier}
+                onChangeText={(t) => setIdentifier(t)}
+                placeholder="ornek@email.com"
+                returnKeyType="next"
+                onFocus={() => { /* first field, no-op */ }}
+                onSubmitEditing={() => passRef.current?.focus()}
+                error={identifierError}
+                leftElement={<Ionicons name="person-outline" size={20} color={theme.colors.textMuted} />}
+              />
 
-            <Input
-              ref={passRef}
-              label="Şifre"
-              secureTextEntry={!showPassword}
-              textContentType="password"
-              value={password}
-              onChangeText={setPassword}
-              placeholder="••••••••"
-              returnKeyType="go"
-              onFocus={scrollToEndLightly}
-              onSubmitEditing={() => !loading && onSubmit()}
-              error={passwordError}
-              leftElement={<Ionicons name="lock-closed-outline" size={18} color={theme.colors.textMuted} />}
-              rightElement={
-                <TouchableOpacity onPress={() => setShowPassword((s) => !s)} accessibilityLabel={showPassword ? 'Şifreyi gizle' : 'Şifreyi göster'}>
-                  <Text style={{ color: '#06b6d4', fontWeight: '600', marginRight: 8 }}>{showPassword ? 'Gizle' : 'Göster'}</Text>
-                </TouchableOpacity>
-              }
-            />
+              <Input
+                ref={passRef}
+                label="Şifre"
+                secureTextEntry={!showPassword}
+                textContentType="password"
+                value={password}
+                onChangeText={setPassword}
+                placeholder="••••••••"
+                returnKeyType="go"
+                onFocus={scrollToEndLightly}
+                onSubmitEditing={() => !loading && onSubmit()}
+                error={passwordError}
+                leftElement={<Ionicons name="lock-closed-outline" size={20} color={theme.colors.textMuted} />}
+                rightElement={
+                  <TouchableOpacity 
+                    onPress={() => setShowPassword((s) => !s)} 
+                    style={styles.passwordToggle}
+                    accessibilityLabel={showPassword ? 'Şifreyi gizle' : 'Şifreyi göster'}
+                  >
+                    <Ionicons 
+                      name={showPassword ? "eye-off-outline" : "eye-outline"} 
+                      size={20} 
+                      color={theme.colors.primary} 
+                    />
+                  </TouchableOpacity>
+                }
+              />
+            </View>
 
-            <View style={styles.rowBetween}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Switch
-                  value={rememberMe}
-                  onValueChange={setRememberMe}
-                  trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-                  thumbColor={rememberMe ? theme.colors.primaryDark : theme.colors.white}
-                  ios_backgroundColor={theme.colors.border}
-                />
-                <Text style={{ color: '#94a3b8', marginLeft: 8 }}>Beni Hatırla</Text>
-              </View>
+            <View style={styles.optionsContainer}>
+              <TouchableOpacity 
+                style={styles.rememberMeContainer}
+                onPress={() => setRememberMe(!rememberMe)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.checkbox, rememberMe && styles.checkboxActive]}>
+                  {rememberMe && <Ionicons name="checkmark" size={16} color={theme.colors.white} />}
+                </View>
+                <Text style={styles.rememberMeText}>Beni Hatırla</Text>
+              </TouchableOpacity>
 
-              <Link href={"/auth/forgot" as any} style={{ color: '#06b6d4', fontWeight: '600' }}>
-                Şifremi Unuttum?
+              <Link href={"/auth/forgot" as any} style={styles.forgotPassword}>
+                <Text style={styles.forgotPasswordText}>Şifremi Unuttum?</Text>
               </Link>
             </View>
 
-            <Button title="Giriş" onPress={onSubmit} loading={loading} disabled={loading} accessibilityLabel="Giriş yap" />
+            <Button 
+              title="Giriş Yap" 
+              onPress={onSubmit} 
+              loading={loading} 
+              disabled={loading} 
+              style={styles.loginButton}
+              accessibilityLabel="Giriş yap" 
+            />
 
-            <View style={{ flexDirection: 'row', marginTop: 10, justifyContent: 'center' }}>
-              <Text style={{ color: '#94a3b8' }}>Hesabın yok mu? </Text>
-              <Link href={"/auth/register" as any} style={{ color: '#06b6d4', fontWeight: '600' }}>
-                Kayıt Ol
+            <View style={styles.signupContainer}>
+              <Text style={styles.signupText}>Hesabın yok mu? </Text>
+              <Link href={"/auth/register" as any} style={styles.signupLink}>
+                <Text style={styles.signupLinkText}>Kayıt Ol</Text>
               </Link>
             </View>
           </Animated.View>
@@ -242,11 +346,168 @@ export default function Login(): React.JSX.Element {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 24,
-    justifyContent: 'center',
+    backgroundColor: theme.colors.bg,
   },
-  header: { alignItems: 'center', marginBottom: 16 },
-  title: { color: 'white', fontSize: 28, fontWeight: '800', marginTop: 8 },
-  subtitle: { color: '#94a3b8', marginTop: 6, marginBottom: 12 },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  background: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  gradientOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: theme.colors.bg,
+  },
+  decorativeCircle1: {
+    position: 'absolute',
+    top: -100,
+    right: -100,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: theme.colors.primary,
+    opacity: 0.1,
+  },
+  decorativeCircle2: {
+    position: 'absolute',
+    bottom: -150,
+    left: -150,
+    width: 400,
+    height: 400,
+    borderRadius: 200,
+    backgroundColor: theme.colors.accent,
+    opacity: 0.08,
+  },
+  decorativeCircle3: {
+    position: 'absolute',
+    top: height * 0.3,
+    right: -50,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: theme.colors.info,
+    opacity: 0.06,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: theme.spacing(6),
+    paddingTop: theme.spacing(8),
+    paddingBottom: theme.spacing(4),
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: theme.spacing(8),
+  },
+  logoContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: theme.colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing(4),
+    ...theme.shadow.lg,
+  },
+  title: {
+    ...theme.typography.h1,
+    color: theme.colors.text,
+    textAlign: 'center',
+    marginBottom: theme.spacing(2),
+  },
+  subtitle: {
+    ...theme.typography.body,
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+  },
+  formCard: {
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.xl,
+    padding: theme.spacing(6),
+    ...theme.shadow.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  formHeader: {
+    marginBottom: theme.spacing(6),
+    alignItems: 'center',
+  },
+  formTitle: {
+    ...theme.typography.h3,
+    color: theme.colors.text,
+    marginBottom: theme.spacing(2),
+  },
+  formSubtitle: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+  },
+  inputContainer: {
+    marginBottom: theme.spacing(6),
+  },
+  passwordToggle: {
+    padding: theme.spacing(2),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  optionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing(6),
+  },
+  rememberMeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: theme.radius.xs,
+    borderWidth: 2,
+    borderColor: theme.colors.border,
+    marginRight: theme.spacing(2),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  rememberMeText: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.textSecondary,
+  },
+  forgotPassword: {
+    padding: theme.spacing(1),
+  },
+  forgotPasswordText: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.primary,
+    fontWeight: '600',
+  },
+  loginButton: {
+    marginBottom: theme.spacing(6),
+  },
+  signupContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  signupText: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.textMuted,
+  },
+  signupLink: {
+    padding: theme.spacing(1),
+  },
+  signupLinkText: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.primary,
+    fontWeight: '600',
+  },
 });
