@@ -81,7 +81,7 @@ SMTP_FROM=ozcanakbas38@gmail.com
 
 ### Environment Variables (Render Settings)
 ```
-SECRET_KEY=güçlü_bir_anahtar_buraya
+SECRET_KEY=cfd1df8df3a71c6c0a47cb55a55fe8e8bd1dda006e10c8eab9685719d2da7d11efdd2fb1e10e8ae7ae1214e729ebe05a
 ALLOWED_ORIGINS=https://isci-takip-paneli.onrender.com,http://localhost:19006
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587

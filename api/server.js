@@ -203,32 +203,41 @@ async function sendEmailCode(email, code, type = 'verify') {
   }
 }
 
-// Optional SMTP debug endpoints (enable with DEBUG_SMTP=1)
-if (process.env.DEBUG_SMTP === '1') {
-  app.get('/debug/smtp-verify', async (_req, res) => {
-    try {
-      const tr = createTransport();
-      if (!tr) return res.status(400).json({ ok: false, error: 'transporter not configured' });
-      await tr.verify();
-      return res.json({ ok: true });
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: String(e?.message || e) });
-    }
-  });
-  app.post('/debug/smtp-send', async (req, res) => {
-    try {
-      const { to } = req.body || {};
-      if (!to) return res.status(400).json({ ok: false, error: 'to required' });
-      const tr = createTransport();
-      if (!tr) return res.status(400).json({ ok: false, error: 'transporter not configured' });
-      const from = process.env.SMTP_FROM || process.env.SMTP_USER;
-      const info = await tr.sendMail({ from, to, subject: 'SMTP Test', text: 'Test mesajı - İŞÇİ TAKİP', html: '<b>SMTP Test</b>' });
-      return res.json({ ok: true, messageId: info?.messageId, response: info?.response });
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: String(e?.message || e) });
-    }
-  });
+// SMTP debug endpoints with token guard
+const DEBUG_TOKEN = process.env.DEBUG_SMTP_TOKEN || process.env.SECRET_KEY || '';
+function smtpGuard(req, res, next) {
+  // Allow if DEBUG_SMTP=1 (explicit debug mode)
+  if (process.env.DEBUG_SMTP === '1') return next();
+  // Otherwise require matching token via header or query
+  const provided = req.headers['x-debug-token'] || req.query.token;
+  if (DEBUG_TOKEN && provided === DEBUG_TOKEN) return next();
+  return res.status(404).json({ error: 'not found' });
 }
+
+app.get('/debug/smtp-verify', smtpGuard, async (_req, res) => {
+  try {
+    const tr = createTransport();
+    if (!tr) return res.status(400).json({ ok: false, error: 'transporter not configured' });
+    await tr.verify();
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+app.post('/debug/smtp-send', smtpGuard, async (req, res) => {
+  try {
+    const { to } = req.body || {};
+    if (!to) return res.status(400).json({ ok: false, error: 'to required' });
+    const tr = createTransport();
+    if (!tr) return res.status(400).json({ ok: false, error: 'transporter not configured' });
+    const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+    const info = await tr.sendMail({ from, to, subject: 'SMTP Test', text: 'Test mesajı - İŞÇİ TAKİP', html: '<b>SMTP Test</b>' });
+    return res.json({ ok: true, messageId: info?.messageId, response: info?.response });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
 
 // === Auth helpers ===
 const ACCESS_TOKEN_MIN = Number(process.env.ACCESS_TOKEN_EXPIRE_MIN || '10080'); // 7 gün
