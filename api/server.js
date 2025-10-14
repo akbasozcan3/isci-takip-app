@@ -1,5 +1,11 @@
 // server.js
-require('dotenv').config();
+const path = require('path');
+// Load env from api/.env if exists (local dev), otherwise rely on Render env
+try {
+  require('dotenv').config({ path: path.join(__dirname, '.env') });
+} catch (_) {
+  try { require('dotenv').config(); } catch (_) {}
+}
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -7,7 +13,7 @@ const { Server } = require('socket.io');
 const http = require('http');
 const app = express();
 const fs = require('fs');
-const path = require('path');
+// path already required above
 const nodemailer = require('nodemailer');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');

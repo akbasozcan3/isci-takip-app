@@ -105,8 +105,10 @@ export default function VerifyEmail(): React.JSX.Element {
     if (resending) return; // double click guard
     setResending(true);
     message.show({ type: 'info', title: 'Gönderiliyor', description: 'Kod gönderiliyor…' });
+    // Warm-up: Render soğuk başlama için health ping (fire-and-forget)
+    try { fetch(`${getApiBase()}/health`).catch(() => {}); } catch {}
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000); // 12s üstü bekletme
+    const timer = setTimeout(() => controller.abort(), 25000); // 25s üstü bekletme
     const url = preRegister ? '/auth/pre-verify-email' : '/api/auth/resend-code';
     try {
       const res = await fetch(`${getApiBase()}${url}`, {
@@ -123,8 +125,13 @@ export default function VerifyEmail(): React.JSX.Element {
       if (data?.dev_code) setDevCode(String(data.dev_code));
       message.show({ type: 'success', title: 'Kod gönderildi', description: 'E‑posta kutunuzu kontrol edin.' });
     } catch (e: any) {
-      const msg = e?.name === 'AbortError' ? 'İstek zaman aşımına uğradı, lütfen tekrar deneyin' : (e?.message || 'Mail gönderilemedi, lütfen tekrar deneyin');
-      message.show({ type: 'error', title: 'Hata', description: mapApiError(msg) });
+      if (e?.name === 'AbortError') {
+        // Zaman aşımı olsa da arka planda gönderim başarıya ulaşabilir; agresif hata göstermeyelim
+        message.show({ type: 'info', title: 'Gönderim Başlatıldı', description: 'Kod kısa süre içinde ulaşacaktır.' });
+      } else {
+        const msg = e?.message || 'Mail gönderilemedi, lütfen tekrar deneyin';
+        message.show({ type: 'error', title: 'Hata', description: mapApiError(msg) });
+      }
     } finally {
       clearTimeout(timer);
       setResending(false);
