@@ -18,6 +18,142 @@ const io = new Server(server, {
     methods: ["GET", "POST"]
   }
 });
+
+// === OTP registration flow (alternative) ===
+// Create user with email_verified=0 and send a 6-digit code. No pre_token required here.
+app.post('/api/auth/register-otp', async (req, res) => {
+  try {
+    const { email, password, name, phone, username } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: 'email/password required' });
+    const emailOk = /.+@.+\..+/.test(String(email));
+    if (!emailOk) return res.status(400).json({ error: 'Invalid email' });
+    if (String(password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+    // unique email
+    if (Object.values(users).some(u => String(u.email).toLowerCase() === String(email).toLowerCase())) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
+    // optional username
+    let uname = null;
+    if (typeof username === 'string' && username.trim()) {
+      const raw = username.trim();
+      const norm = raw.toLowerCase();
+      if (!/^[a-z0-9._-]{3,24}$/.test(norm)) return res.status(400).json({ error: 'Invalid username. Use 3-24 chars: a-z, 0-9, . _ -' });
+      const exists = Object.values(users).some(u => String(u.username || '').toLowerCase() === norm);
+      if (exists) return res.status(400).json({ error: 'Username already taken' });
+      uname = norm;
+    }
+
+    const id = generateId();
+    const hash = await bcrypt.hash(password, 10);
+    users[id] = {
+      id,
+      email,
+      username: uname,
+      name: name || null,
+      phone: phone || null,
+      createdAt: Date.now(),
+      email_verified: '0',
+      phone_verified: '0'
+    };
+    emailPasswords[email] = hash;
+
+    // generate and send OTP (15 minutes)
+    const code = generateCode();
+    const expiresAt = Date.now() + (Number(process.env.RESET_CODE_EXPIRE_MIN || '15') * 60 * 1000);
+    (emailVerifications[email] || []).forEach(v => { if (!v.usedAt) v.usedAt = Date.now(); });
+    pushRecord(emailVerifications, email, { code, expiresAt, usedAt: null, createdAt: Date.now() });
+
+    // update resend meta counters
+    const dk = getDayKey();
+    const meta = resendMeta[email] || { lastSentAt: 0, sentCountDay: 0, dayKey: dk };
+    if (meta.dayKey !== dk) { meta.dayKey = dk; meta.sentCountDay = 0; }
+    meta.lastSentAt = Date.now();
+    meta.sentCountDay += 1;
+    resendMeta[email] = meta;
+
+    scheduleSave();
+    let sent = false; try { sent = await sendEmailCode(email, code, 'verify'); } catch(_) {}
+    const body = { ok: true };
+    if ((process.env.RESET_DEV_RETURN_CODE || '1') === '1' && !sent) body.dev_code = code;
+    return res.json(body);
+  } catch (e) {
+    return res.status(500).json({ error: 'register failed' });
+  }
+});
+
+// Resend verification code with cooldown (60s) and daily limit (default 5)
+app.post('/api/auth/resend-code', async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) return res.status(400).json({ error: 'email required' });
+    const user = Object.values(users).find(u => u.email === email);
+    if (!user) return res.status(404).json({ error: 'not found' });
+    if (String(user.email_verified || '0') === '1') return res.json({ ok: true });
+
+    const now = Date.now();
+    const cooldownMs = 60 * 1000;
+    const limitPerDay = Number(process.env.OTP_DAILY_LIMIT || '5');
+    const dk = getDayKey(now);
+    const meta = resendMeta[email] || { lastSentAt: 0, sentCountDay: 0, dayKey: dk };
+    if (meta.dayKey !== dk) { meta.dayKey = dk; meta.sentCountDay = 0; }
+    if (now - (meta.lastSentAt || 0) < cooldownMs) {
+      return res.status(429).json({ error: 'Please wait before requesting another code' });
+    }
+    if (meta.sentCountDay >= limitPerDay) {
+      return res.status(429).json({ error: 'Daily resend limit reached' });
+    }
+
+    const code = generateCode();
+    const expiresAt = now + (Number(process.env.RESET_CODE_EXPIRE_MIN || '15') * 60 * 1000);
+    (emailVerifications[email] || []).forEach(v => { if (!v.usedAt) v.usedAt = now; });
+    pushRecord(emailVerifications, email, { code, expiresAt, usedAt: null, createdAt: now });
+    meta.lastSentAt = now;
+    meta.sentCountDay += 1;
+    resendMeta[email] = meta;
+    scheduleSave();
+
+    let sent = false; try { sent = await sendEmailCode(email, code, 'verify'); } catch(_) {}
+    const body = { ok: true };
+    if ((process.env.RESET_DEV_RETURN_CODE || '1') === '1' && !sent) body.dev_code = code;
+    return res.json(body);
+  } catch (e) {
+    return res.status(500).json({ error: 'resend failed' });
+  }
+});
+
+// Verify code: activate account (max 5 attempts before temporary lock)
+app.post('/api/auth/verify-code', (req, res) => {
+  try {
+    const { email, code } = req.body || {};
+    if (!email || !code) return res.status(400).json({ error: 'email/code required' });
+    const va = verifyAttempts[email] || { count: 0, lockedUntil: 0 };
+    const now = Date.now();
+    if (va.lockedUntil && now < va.lockedUntil) {
+      return res.status(429).json({ error: 'Too many attempts. Try later.' });
+    }
+
+    const hit = findValidCode(emailVerifications, email, code);
+    if (!hit) {
+      va.count = (va.count || 0) + 1;
+      if (va.count >= Number(process.env.OTP_MAX_ATTEMPTS || '5')) {
+        va.lockedUntil = now + 15 * 60 * 1000; // 15 dk kilit
+        va.count = 0; // reset after locking
+      }
+      verifyAttempts[email] = va;
+      return res.status(400).json({ error: 'Invalid or expired code' });
+    }
+
+    hit.r.usedAt = now;
+    const user = Object.values(users).find(u => u.email === email);
+    if (user) user.email_verified = '1';
+    verifyAttempts[email] = { count: 0, lockedUntil: 0 };
+    scheduleSave();
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ error: 'verify failed' });
+  }
+});
 const PORT = process.env.PORT || 4000;
 const SECRET_KEY = process.env.SECRET_KEY || 'change_this_secret';
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -69,6 +205,8 @@ let users = {}; // { userId: { id, phone?, email?, name?, createdAt, email_verif
 let tokens = {}; // { token: userId }
 let emailPasswords = {}; // { email: bcryptHash }
 let emailVerifications = {}; // { email: [ { code, expiresAt, usedAt, createdAt } ] }
+let resendMeta = {}; // { email: { lastSentAt, sentCountDay, dayKey } }
+let verifyAttempts = {}; // { email: { count, lockedUntil } }
 let passwordResets = {}; // { email: [ { code, expiresAt, usedAt, createdAt } ] }
 
 // ---- Articles (mock) ----
@@ -287,6 +425,11 @@ function findValidCode(map, key, code) {
   return null;
 }
 
+function getDayKey(ts = Date.now()) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+}
+
 // === Email verification endpoints ===
 app.post('/auth/pre-verify-email', async (req, res) => {
   const { email } = req.body || {};
@@ -318,36 +461,80 @@ app.post('/auth/pre-verify-email/verify', (req, res) => {
 
 // === Register/Login with email ===
 app.post('/auth/register', async (req, res) => {
-  const { email, password, name, pre_token, phone } = req.body || {};
+  const { email, password, name, pre_token, phone, username } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'email/password required' });
+
+  // basic validations
+  const emailOk = /.+@.+\..+/.test(String(email));
+  if (!emailOk) return res.status(400).json({ error: 'Invalid email' });
+  if (String(password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
   // enforce pre email verification
   if ((process.env.ENFORCE_PRE_EMAIL || '1') === '1') {
     if (!validatePreEmailToken(pre_token, email)) {
       return res.status(400).json({ error: 'Email not pre-verified' });
     }
   }
+
   // unique email
-  if (Object.values(users).some(u => u.email === email)) return res.status(400).json({ error: 'Email already registered' });
+  if (Object.values(users).some(u => String(u.email).toLowerCase() === String(email).toLowerCase())) {
+    return res.status(400).json({ error: 'Email already registered' });
+  }
+
+  // optional username support
+  let uname = null;
+  if (typeof username === 'string' && username.trim()) {
+    const raw = username.trim();
+    // normalize (lowercase) for uniqueness; keep original case if preferred later
+    const norm = raw.toLowerCase();
+    // username constraints (3-24, alnum underscore dot hyphen)
+    if (!/^[a-z0-9._-]{3,24}$/.test(norm)) {
+      return res.status(400).json({ error: 'Invalid username. Use 3-24 chars: a-z, 0-9, . _ -' });
+    }
+    const exists = Object.values(users).some(u => String(u.username || '').toLowerCase() === norm);
+    if (exists) return res.status(400).json({ error: 'Username already taken' });
+    uname = norm;
+  }
+
   const id = generateId();
   const hash = await bcrypt.hash(password, 10);
-  users[id] = { id, email, name: name || null, phone: phone || null, createdAt: Date.now(), email_verified: '1', phone_verified: '1' };
+  users[id] = {
+    id,
+    email,
+    username: uname,
+    name: name || null,
+    phone: phone || null,
+    createdAt: Date.now(),
+    email_verified: '1',
+    phone_verified: '1'
+  };
   emailPasswords[email] = hash;
   scheduleSave();
-  // optional: send verify email again (not necessary since pre-verified)
-  return res.json({ id, email, name: users[id].name });
+  return res.json({ id, email, name: users[id].name, username: users[id].username });
 });
 
 app.post('/auth/login', async (req, res) => {
-  // accept form or json
-  const email = (req.body.username || req.body.email || '').toString();
+  // accept form or json; input may be email or username
+  const loginId = (req.body.username || req.body.email || '').toString();
   const password = (req.body.password || '').toString();
-  if (!email || !password) return res.status(400).json({ error: 'Incorrect email or password' });
-  const user = Object.values(users).find(u => u.email === email);
-  if (!user) return res.status(400).json({ error: 'Incorrect email or password' });
-  const ok = await bcrypt.compare(password, emailPasswords[email] || '');
-  if (!ok) return res.status(400).json({ error: 'Incorrect email or password' });
+  if (!loginId || !password) return res.status(400).json({ error: 'Incorrect email/username or password' });
+
+  let user = null;
+  if (/.+@.+\..+/.test(loginId)) {
+    user = Object.values(users).find(u => String(u.email).toLowerCase() === loginId.toLowerCase());
+  } else {
+    const norm = loginId.toLowerCase();
+    user = Object.values(users).find(u => String(u.username || '').toLowerCase() === norm);
+  }
+  if (!user) return res.status(400).json({ error: 'Incorrect email/username or password' });
+
+  const hashKeyEmail = user.email;
+  const ok = await bcrypt.compare(password, emailPasswords[hashKeyEmail] || '');
+  if (!ok) return res.status(400).json({ error: 'Incorrect email/username or password' });
+
   const emailVerified = String(user.email_verified || '0') === '1';
   if (!emailVerified) return res.status(403).json({ error: 'Account not verified. Please verify email.' });
+
   const access_token = createAccessToken({ sub: user.email });
   return res.json({ access_token, token_type: 'bearer' });
 });
@@ -419,7 +606,7 @@ app.get('/auth/me', (req, res) => {
     const email = payload && payload.sub;
     const user = Object.values(users).find(u => u.email === email);
     if (!user) return res.status(404).json({ error: 'not found' });
-    return res.json({ user: { id: user.id, email: user.email, name: user.name || null } });
+    return res.json({ user: { id: user.id, email: user.email, username: user.username || null, name: user.name || null } });
   } catch (e) {
     return res.status(401).json({ error: 'unauthorized' });
   }
