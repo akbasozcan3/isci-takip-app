@@ -1,4 +1,5 @@
 // server.js
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -7,6 +8,9 @@ const http = require('http');
 const app = express();
 const fs = require('fs');
 const path = require('path');
+const nodemailer = require('nodemailer');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -15,7 +19,12 @@ const io = new Server(server, {
   }
 });
 const PORT = process.env.PORT || 4000;
+const SECRET_KEY = process.env.SECRET_KEY || 'change_this_secret';
 const NODE_ENV = process.env.NODE_ENV || 'development';
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '*')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 // Production optimizations
 if (NODE_ENV === 'production') {
@@ -30,7 +39,15 @@ if (NODE_ENV === 'production') {
 
 // Enhanced CORS for Android/iOS compatibility
 app.use(cors({
-  origin: '*',
+  origin: function (origin, callback) {
+    // Allow mobile apps / curl (no Origin header)
+    if (!origin) return callback(null, true);
+    // Wildcard or explicit allow-list
+    if (ALLOWED_ORIGINS.includes('*') || ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: false
@@ -48,9 +65,11 @@ let groupRequests = {}; // { groupId: [ { id, userId, displayName, status, reque
 let groupMembers = {}; // { groupId: [ { userId, role, joinedAt } ] }
 let groupLocations = {}; // { groupId: { userId: { lat, lng, heading, accuracy, timestamp, lastSeen } } }
 let userStatus = {}; // { userId: { isOnline: boolean, lastSeen: timestamp, lastLocation: { lat, lng } } }
-let users = {}; // { userId: { id, phone?, email?, name?, createdAt } }
+let users = {}; // { userId: { id, phone?, email?, name?, createdAt, email_verified?: '0'|'1' } }
 let tokens = {}; // { token: userId }
-let emailPasswords = {}; // { email: passwordHashPlainForDemo }
+let emailPasswords = {}; // { email: bcryptHash }
+let emailVerifications = {}; // { email: [ { code, expiresAt, usedAt, createdAt } ] }
+let passwordResets = {}; // { email: [ { code, expiresAt, usedAt, createdAt } ] }
 
 // ---- Articles (mock) ----
 const long = (text) => {
@@ -98,6 +117,8 @@ function loadFromDisk() {
     users = data.users || {};
     tokens = data.tokens || {};
     emailPasswords = data.emailPasswords || {};
+    emailVerifications = data.emailVerifications || {};
+    passwordResets = data.passwordResets || {};
     console.log('[data] Loaded from disk');
   } catch (e) {
     console.warn('[data] Failed to load data.json:', e.message);
@@ -109,7 +130,7 @@ function scheduleSave() {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
-      const contents = JSON.stringify({ store, meta, groups, groupRequests, groupMembers, groupLocations, users, tokens, emailPasswords }, null, 2);
+      const contents = JSON.stringify({ store, meta, groups, groupRequests, groupMembers, groupLocations, users, tokens, emailPasswords, emailVerifications, passwordResets }, null, 2);
       fs.writeFileSync(DATA_PATH, contents, 'utf8');
       // console.log('[data] Saved to disk');
     } catch (e) {
@@ -149,72 +170,259 @@ function authOptional(req, _res, next) {
 
 app.use(authOptional);
 
-// Auth: OTP (SMS simülasyonu - prod’da SMS sağlayıcı gerekir)
-const pendingOtps = {}; // { phone: { code, expiresAt } }
+// === Email helpers ===
+const EMAIL_SUBJECT_VERIFY = process.env.EMAIL_SUBJECT_VERIFY || 'Hesabınızı Doğrulayın';
+const EMAIL_SUBJECT_RESET = process.env.EMAIL_SUBJECT_RESET || 'Şifre Sıfırlama Kodu';
 
-app.post('/auth/otp/request', (req, res) => {
-  const { phone } = req.body || {};
-  if (!phone) return res.status(400).json({ error: 'phone required' });
-  const code = String(Math.floor(100000 + Math.random() * 900000));
-  const expiresAt = Date.now() + 5 * 60 * 1000;
-  pendingOtps[phone] = { code, expiresAt };
-  console.log('[OTP] sent to', phone, 'code=', code);
-  res.json({ ok: true });
+function createTransport() {
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const port = Number(process.env.SMTP_PORT || '587');
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  if (!user || !pass) return null;
+  return nodemailer.createTransport({
+    host, port, secure: false,
+    auth: { user, pass }
+  });
+}
+
+async function sendEmailCode(email, code, type = 'verify') {
+  const transporter = createTransport();
+  if (!transporter) {
+    console.error('[smtp] transporter not configured: check SMTP_USER/SMTP_PASS');
+    return false;
+  }
+  const subject = type === 'reset' ? EMAIL_SUBJECT_RESET : EMAIL_SUBJECT_VERIFY;
+  const minutes = type === 'reset' ? (process.env.RESET_CODE_EXPIRE_MIN || '15') : (process.env.VERIFY_CODE_EXPIRE_MIN || '30');
+  const html = `
+    <div style='font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif'>
+      <h2>${type === 'reset' ? 'Şifre Sıfırlama' : 'Hesap Doğrulama'}</h2>
+      <p>Kodunuz: <strong style='font-size:20px'>${code}</strong></p>
+      <p>Bu kod ${minutes} dakika boyunca geçerlidir.</p>
+    </div>
+  `;
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@example.com';
+  try {
+    if (process.env.DEBUG_SMTP === '1') {
+      try { await transporter.verify(); console.log('[smtp] verify ok'); } catch (e) { console.error('[smtp] verify fail:', e?.message || e); }
+    }
+    const info = await transporter.sendMail({ from, to: email, subject, html });
+    if (process.env.DEBUG_SMTP === '1') console.log('[smtp] sent:', info?.messageId, info?.response);
+    return true;
+  } catch (err) {
+    console.error('[smtp] sendMail error:', err?.message || err);
+    return false;
+  }
+}
+
+// SMTP debug endpoints with token guard
+const DEBUG_TOKEN = process.env.DEBUG_SMTP_TOKEN || process.env.SECRET_KEY || '';
+function smtpGuard(req, res, next) {
+  // Allow if DEBUG_SMTP=1 (explicit debug mode)
+  if (process.env.DEBUG_SMTP === '1') return next();
+  // Otherwise require matching token via header or query
+  const provided = req.headers['x-debug-token'] || req.query.token;
+  if (DEBUG_TOKEN && provided === DEBUG_TOKEN) return next();
+  return res.status(404).json({ error: 'not found' });
+}
+
+app.get('/debug/smtp-verify', smtpGuard, async (_req, res) => {
+  try {
+    const tr = createTransport();
+    if (!tr) return res.status(400).json({ ok: false, error: 'transporter not configured' });
+    await tr.verify();
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
 });
 
-app.post('/auth/otp/verify', (req, res) => {
-  const { phone, code, name } = req.body || {};
-  const rec = pendingOtps[phone];
-  if (!rec || rec.code !== code || rec.expiresAt < Date.now()) {
-    return res.status(400).json({ error: 'invalid code' });
+app.post('/debug/smtp-send', smtpGuard, async (req, res) => {
+  try {
+    const { to } = req.body || {};
+    if (!to) return res.status(400).json({ ok: false, error: 'to required' });
+    const tr = createTransport();
+    if (!tr) return res.status(400).json({ ok: false, error: 'transporter not configured' });
+    const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+    const info = await tr.sendMail({ from, to, subject: 'SMTP Test', text: 'Test mesajı - İŞÇİ TAKİP', html: '<b>SMTP Test</b>' });
+    return res.json({ ok: true, messageId: info?.messageId, response: info?.response });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
-  delete pendingOtps[phone];
-  // upsert user
-  let user = Object.values(users).find(u => u.phone === phone);
-  if (!user) {
-    const id = generateId();
-    user = { id, phone, name: name || phone, createdAt: Date.now() };
-    users[id] = user;
-  } else if (name && !user.name) {
-    user.name = name;
+});
+
+// === Auth helpers ===
+const ACCESS_TOKEN_MIN = Number(process.env.ACCESS_TOKEN_EXPIRE_MIN || '10080'); // 7 gün
+function createAccessToken(payload, minutes = ACCESS_TOKEN_MIN) {
+  return jwt.sign({ ...payload }, SECRET_KEY, { expiresIn: `${minutes}m` });
+}
+function createPreEmailToken(email, minutes = Number(process.env.PRE_EMAIL_TOKEN_MIN || '30')) {
+  return createAccessToken({ pv: email }, minutes);
+}
+function validatePreEmailToken(token, email) {
+  if (!token) return false;
+  try {
+    const p = jwt.verify(token, SECRET_KEY);
+    return p && p.pv === email;
+  } catch (_) {
+    return false;
   }
-  const token = generateId() + generateId();
-  tokens[token] = user.id;
+}
+function generateCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function pushRecord(map, key, rec) {
+  if (!map[key]) map[key] = [];
+  map[key].push(rec);
+}
+
+function findValidCode(map, key, code) {
+  const list = map[key] || [];
+  const now = Date.now();
+  for (let i = list.length - 1; i >= 0; i--) {
+    const r = list[i];
+    if (!r.usedAt && r.code === code && r.expiresAt > now) return { r, i };
+  }
+  return null;
+}
+
+// === Email verification endpoints ===
+app.post('/auth/pre-verify-email', async (req, res) => {
+  const { email } = req.body || {};
+  if (!email) return res.status(400).json({ error: 'email required' });
+  const code = generateCode();
+  const expiresAt = Date.now() + (Number(process.env.VERIFY_CODE_EXPIRE_MIN || '30') * 60 * 1000);
+  // invalidate previous unused by marking usedAt
+  (emailVerifications[email] || []).forEach(v => { if (!v.usedAt) v.usedAt = Date.now(); });
+  pushRecord(emailVerifications, email, { code, expiresAt, usedAt: null, createdAt: Date.now() });
   scheduleSave();
-  res.json({ token, user });
+  let sent = false;
+  try { sent = await sendEmailCode(email, code, 'verify'); } catch (_) { sent = false; }
+  const dev = process.env.RESET_DEV_RETURN_CODE === '1';
+  const body = { ok: true };
+  if (dev && !sent) body.dev_code = code;
+  return res.json(body);
 });
+
+app.post('/auth/pre-verify-email/verify', (req, res) => {
+  const { email, code } = req.body || {};
+  if (!email || !code) return res.status(400).json({ error: 'email/code required' });
+  const hit = findValidCode(emailVerifications, email, code);
+  if (!hit) return res.status(400).json({ error: 'Invalid or expired code' });
+  hit.r.usedAt = Date.now();
+  scheduleSave();
+  const token = createPreEmailToken(email);
+  return res.json({ pre_token: token });
+});
+
+// === Register/Login with email ===
+app.post('/auth/register', async (req, res) => {
+  const { email, password, name, pre_token, phone } = req.body || {};
+  if (!email || !password) return res.status(400).json({ error: 'email/password required' });
+  // enforce pre email verification
+  if ((process.env.ENFORCE_PRE_EMAIL || '1') === '1') {
+    if (!validatePreEmailToken(pre_token, email)) {
+      return res.status(400).json({ error: 'Email not pre-verified' });
+    }
+  }
+  // unique email
+  if (Object.values(users).some(u => u.email === email)) return res.status(400).json({ error: 'Email already registered' });
+  const id = generateId();
+  const hash = await bcrypt.hash(password, 10);
+  users[id] = { id, email, name: name || null, phone: phone || null, createdAt: Date.now(), email_verified: '1', phone_verified: '1' };
+  emailPasswords[email] = hash;
+  scheduleSave();
+  // optional: send verify email again (not necessary since pre-verified)
+  return res.json({ id, email, name: users[id].name });
+});
+
+app.post('/auth/login', async (req, res) => {
+  // accept form or json
+  const email = (req.body.username || req.body.email || '').toString();
+  const password = (req.body.password || '').toString();
+  if (!email || !password) return res.status(400).json({ error: 'Incorrect email or password' });
+  const user = Object.values(users).find(u => u.email === email);
+  if (!user) return res.status(400).json({ error: 'Incorrect email or password' });
+  const ok = await bcrypt.compare(password, emailPasswords[email] || '');
+  if (!ok) return res.status(400).json({ error: 'Incorrect email or password' });
+  const emailVerified = String(user.email_verified || '0') === '1';
+  if (!emailVerified) return res.status(403).json({ error: 'Account not verified. Please verify email.' });
+  const access_token = createAccessToken({ sub: user.email });
+  return res.json({ access_token, token_type: 'bearer' });
+});
+
+app.post('/auth/send-email-code', async (req, res) => {
+  const { email } = req.body || {};
+  if (!email) return res.json({ ok: true });
+  if (!Object.values(users).some(u => u.email === email)) return res.json({ ok: true });
+  const code = generateCode();
+  const expiresAt = Date.now() + (Number(process.env.VERIFY_CODE_EXPIRE_MIN || '30') * 60 * 1000);
+  (emailVerifications[email] || []).forEach(v => { if (!v.usedAt) v.usedAt = Date.now(); });
+  pushRecord(emailVerifications, email, { code, expiresAt, usedAt: null, createdAt: Date.now() });
+  scheduleSave();
+  let sent = false; try { sent = await sendEmailCode(email, code, 'verify'); } catch(_) { sent = false; }
+  const body = { ok: true };
+  if ((process.env.RESET_DEV_RETURN_CODE || '1') === '1' && !sent) body.dev_code = code;
+  return res.json(body);
+});
+
+app.post('/auth/verify-email', (req, res) => {
+  const { email, code } = req.body || {};
+  if (!email || !code) return res.status(400).json({ error: 'Invalid email or code' });
+  const hit = findValidCode(emailVerifications, email, code);
+  if (!hit) return res.status(400).json({ error: 'Invalid or expired code' });
+  hit.r.usedAt = Date.now();
+  const user = Object.values(users).find(u => u.email === email);
+  if (user) user.email_verified = '1';
+  scheduleSave();
+  return res.json({ ok: true });
+});
+
+app.post('/auth/forgot', async (req, res) => {
+  const { email } = req.body || {};
+  if (!email) return res.json({ ok: true });
+  const user = Object.values(users).find(u => u.email === email);
+  if (!user) return res.json({ ok: true });
+  const code = generateCode();
+  const expiresAt = Date.now() + (Number(process.env.RESET_CODE_EXPIRE_MIN || '15') * 60 * 1000);
+  pushRecord(passwordResets, email, { code, expiresAt, usedAt: null, createdAt: Date.now() });
+  scheduleSave();
+  try { await sendEmailCode(email, code, 'reset'); } catch(_) {}
+  const body = { ok: true };
+  if ((process.env.RESET_DEV_RETURN_CODE || '1') === '1') body.dev_code = code;
+  return res.json(body);
+});
+
+app.post('/auth/reset', async (req, res) => {
+  const { email, code, new_password } = req.body || {};
+  if (!email || !code || !new_password) return res.status(400).json({ error: 'Invalid email or code' });
+  const hit = findValidCode(passwordResets, email, code);
+  if (!hit) return res.status(400).json({ error: 'Invalid or expired code' });
+  hit.r.usedAt = Date.now();
+  const hash = await bcrypt.hash(new_password, 10);
+  emailPasswords[email] = hash;
+  scheduleSave();
+  return res.json({ ok: true });
+});
+
+// Phone OTP endpoints removed (email-only auth)
 
 // Auth: Email/Password (demo amaçlı düz saklama; gerçekte hash kullanın)
-app.post('/auth/register', (req, res) => {
-  const { email, password, name } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'email/password required' });
-  if (emailPasswords[email]) return res.status(400).json({ error: 'email exists' });
-  const id = generateId();
-  users[id] = { id, email, name: name || email.split('@')[0], createdAt: Date.now() };
-  emailPasswords[email] = password;
-  const token = generateId() + generateId();
-  tokens[token] = id;
-  scheduleSave();
-  res.json({ token, user: users[id] });
-});
-
-app.post('/auth/login', (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'email/password required' });
-  if (emailPasswords[email] !== password) return res.status(400).json({ error: 'invalid credentials' });
-  const user = Object.values(users).find(u => u.email === email);
-  if (!user) return res.status(400).json({ error: 'user missing' });
-  const token = generateId() + generateId();
-  tokens[token] = user.id;
-  scheduleSave();
-  res.json({ token, user });
-});
-
+// Ensure JWT-based /auth/me only (Bearer access_token)
 app.get('/auth/me', (req, res) => {
-  if (!req.userId) return res.status(401).json({ error: 'unauthorized' });
-  const user = users[req.userId];
-  if (!user) return res.status(404).json({ error: 'not found' });
-  res.json({ user });
+  const auth = req.headers.authorization || '';
+  if (!auth.startsWith('Bearer ')) return res.status(401).json({ error: 'unauthorized' });
+  const token = auth.slice(7);
+  try {
+    const payload = jwt.verify(token, SECRET_KEY);
+    const email = payload && payload.sub;
+    const user = Object.values(users).find(u => u.email === email);
+    if (!user) return res.status(404).json({ error: 'not found' });
+    return res.json({ user: { id: user.id, email: user.email, name: user.name || null } });
+  } catch (e) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
 });
 
 app.post('/api/locations', (req, res) => {
@@ -433,7 +641,8 @@ app.delete('/api/groups/:groupId', (req, res) => {
 });
 
 app.post('/api/groups/:code/join-request', (req, res) => {
-  const { code } = req.params;
+  const codeParam = req.params.code;
+  const code = String(codeParam || '').toUpperCase();
   const { userId, displayName } = req.body;
   
   if (!userId || !displayName) {
@@ -441,7 +650,7 @@ app.post('/api/groups/:code/join-request', (req, res) => {
   }
   
   // Grup koduna göre grup bul
-  const group = Object.values(groups).find(g => g.code === code);
+  const group = Object.values(groups).find(g => String(g.code || '').toUpperCase() === code);
   if (!group) {
     return res.status(404).json({ error: 'Group not found' });
   }
@@ -467,6 +676,10 @@ app.post('/api/groups/:code/join-request', (req, res) => {
     requestedAt: Date.now()
   };
   
+  // Ensure requests array exists for this group (older data.json might miss it)
+  if (!groupRequests[group.id]) {
+    groupRequests[group.id] = [];
+  }
   groupRequests[group.id].push(request);
   
   // Admin'e gerçek zamanlı bildirim gönder
@@ -628,8 +841,9 @@ app.post('/api/groups/:groupId/requests/:requestId/reject', (req, res) => {
 });
 
 app.get('/api/groups/:code/info', (req, res) => {
-  const { code } = req.params;
-  const group = Object.values(groups).find(g => g.code === code);
+  const codeParam = req.params.code;
+  const code = String(codeParam || '').toUpperCase();
+  const group = Object.values(groups).find(g => String(g.code || '').toUpperCase() === code);
   if (!group) {
     return res.status(404).json({ error: 'Group not found' });
   }
@@ -762,6 +976,23 @@ app.post('/api/groups/:groupId/locations', (req, res) => {
     userId,
     location: groupLocations[groupId][userId]
   });
+  
+  // Geofence kontrolü: grup merkezi ve workRadius varsa ve kullanıcının konumu dışarıdaysa uyarı yayınla
+  const g = groups[groupId];
+  if (g && typeof g.lat === 'number' && typeof g.lng === 'number') {
+    const radius = Number(g.workRadius || 150);
+    const dist = haversineDistance(g.lat, g.lng, lat, lng); // metre
+    if (!Number.isNaN(dist) && dist > radius) {
+      io.to(`group_${groupId}`).emit('geofence_violation', {
+        groupId,
+        userId,
+        distance: Math.round(dist),
+        radius,
+        center: { lat: g.lat, lng: g.lng },
+        at: Date.now()
+      });
+    }
+  }
   
   scheduleSave();
   res.json({ success: true });

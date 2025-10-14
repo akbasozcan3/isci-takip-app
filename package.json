@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "isci-takip-backend",
   "version": "1.0.0",
   "main": "server.js",
@@ -14,7 +14,11 @@
     "express": "^5.1.0",
     "helmet": "^7.1.0",
     "serverless-http": "^3.2.0",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "nodemailer": "^6.9.15",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "dotenv": "^16.4.5"
   },
   "devDependencies": {
     "nodemon": "^2.0.22"
