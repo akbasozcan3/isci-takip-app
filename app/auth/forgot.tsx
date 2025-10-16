@@ -32,11 +32,17 @@ export default function ForgotPassword(): React.JSX.Element {
     }
     try {
       setLoading(true);
+      // Warm-up to reduce cold-start latency
+      try { fetch(`${getApiBase()}/health`).catch(() => {}); } catch {}
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 25000);
       const res = await fetch(`${getApiBase()}/auth/forgot`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
+        signal: controller.signal,
       });
+      clearTimeout(timer);
       if (!res.ok) {
         const errText = await res.text();
         throw new Error(errText || 'İşlem başarısız');

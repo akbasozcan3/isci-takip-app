@@ -28,6 +28,7 @@ expo-env.d.ts
 # Environment files
 .env
 .env*.local
+data.json
 
 # TypeScript
 *.tsbuildinfo
