@@ -430,6 +430,7 @@ const styles = StyleSheet.create({
     padding: theme.spacing(6),
     ...theme.shadow.xl,
     borderWidth: 1,
+    marginTop: theme.spacing(-5),
     borderColor: theme.colors.border,
   },
   formHeader: {

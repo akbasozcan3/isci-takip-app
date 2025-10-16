@@ -1,6 +1,6 @@
-import React from 'react';
-import { Pressable, Text, StyleSheet, ViewStyle, ColorValue } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import React from 'react';
+import { ColorValue, Pressable, StyleSheet, Text, ViewStyle } from 'react-native';
 import theme from './theme';
 
 interface Props {

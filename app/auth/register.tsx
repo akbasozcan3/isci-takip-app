@@ -60,18 +60,14 @@ export default function Register(): React.JSX.Element {
   const logoRotate = React.useRef(new Animated.Value(0)).current;
   const backgroundOpacity = React.useRef(new Animated.Value(0)).current;
   const formSlide = React.useRef(new Animated.Value(30)).current;
-
   React.useEffect(() => {
-    // Staggered entrance animation
     Animated.sequence([
-      // Background fade in
       Animated.timing(backgroundOpacity, {
         toValue: 1,
         duration: 800,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }),
-      // Logo animation
       Animated.parallel([
         Animated.spring(logoScale, {
           toValue: 1,
@@ -86,7 +82,6 @@ export default function Register(): React.JSX.Element {
           useNativeDriver: true,
         }),
       ]),
-      // Form elements
       Animated.parallel([
         Animated.timing(fade, {
           toValue: 1,
@@ -176,8 +171,11 @@ export default function Register(): React.JSX.Element {
     setLoading(true);
     try {
       // Hız: isteği arka planda gönder, kullanıcıyı anında doğrulama ekranına taşı
+      // Render soğuk başlatma gecikmelerini azaltmak için health ping yap
+      try { fetch(`${getApiBase()}/health`).catch(() => {}); } catch {}
       const controller = new AbortController();
-      setTimeout(() => controller.abort(), 8000); // 8 sn bekle, sonra iptal
+      // Soğuk başlatmada 8 sn yetersiz kalabilir; 25 sn beklet
+      setTimeout(() => controller.abort(), 25000);
       // fire-and-forget: hata olursa logla, kullanıcıyı bekletme
       fetch(`${getApiBase()}/auth/pre-verify-email`, {
         method: 'POST',
@@ -461,7 +459,8 @@ const styles = StyleSheet.create({
   formCard: {
     backgroundColor: theme.colors.card,
     borderRadius: theme.radius.xl,
-    padding: theme.spacing(6),
+    padding: theme.spacing(5),
+    marginTop: theme.spacing(-5),
     ...theme.shadow.xl,
     borderWidth: 1,
     borderColor: theme.colors.border,
