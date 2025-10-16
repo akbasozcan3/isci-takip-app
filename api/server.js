@@ -26,8 +26,11 @@ const io = new Server(server, {
 });
 
 // === OTP registration flow (alternative) ===
-// Create user with email_verified=0 and send a 6-digit code. No pre_token required here.
+// Gate with env: set ALLOW_REGISTER_OTP=1 to enable; default disabled to force pre-email verification flow
 app.post('/api/auth/register-otp', async (req, res) => {
+  if ((process.env.ALLOW_REGISTER_OTP || '0') !== '1') {
+    return res.status(404).json({ error: 'not found' });
+  }
   try {
     const { email, password, name, phone, username } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'email/password required' });
@@ -392,6 +395,61 @@ app.post('/debug/smtp-send', smtpGuard, async (req, res) => {
     return res.json({ ok: true, messageId: info?.messageId, response: info?.response });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// === Admin debug: users maintenance (guarded by same DEBUG token) ===
+function adminGuard(req, res, next) {
+  const provided = req.headers['x-debug-token'] || req.query.token;
+  if (DEBUG_TOKEN && provided === DEBUG_TOKEN) return next();
+  return res.status(404).json({ error: 'not found' });
+}
+
+// List user emails
+app.get('/debug/users', adminGuard, (_req, res) => {
+  try {
+    const list = Object.values(users || {}).map(u => ({ id: u.id, email: u.email, verified: String(u.email_verified || '0') }));
+    return res.json({ count: list.length, users: list });
+  } catch (e) {
+    return res.status(500).json({ error: 'list failed' });
+  }
+});
+
+// Delete a single user by email
+app.post('/debug/users/delete', adminGuard, (req, res) => {
+  try {
+    const email = String((req.body || {}).email || '').toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email required' });
+    const entry = Object.values(users || {}).find(u => String(u.email).toLowerCase() === email);
+    if (!entry) return res.json({ ok: true, deleted: 0 });
+    // remove from users map
+    delete users[entry.id];
+    // remove hashes and codes
+    delete emailPasswords[entry.email];
+    delete emailVerifications[entry.email];
+    // remove tokens bound to this user
+    for (const t of Object.keys(tokens)) {
+      if (tokens[t] === entry.id || tokens[t] === entry.email) delete tokens[t];
+    }
+    scheduleSave();
+    return res.json({ ok: true, deleted: 1 });
+  } catch (e) {
+    return res.status(500).json({ error: 'delete failed' });
+  }
+});
+
+// Purge all users (DANGEROUS) – keeps groups/location but clears user registry
+app.post('/debug/users/purge', adminGuard, (_req, res) => {
+  try {
+    users = {};
+    emailPasswords = {};
+    emailVerifications = {};
+    passwordResets = {};
+    tokens = {};
+    scheduleSave();
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ error: 'purge failed' });
   }
 });
 

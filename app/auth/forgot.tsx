@@ -24,7 +24,7 @@ export default function ForgotPassword(): React.JSX.Element {
       Animated.timing(translate, { toValue: 0, duration: 400, easing: Easing.out(Easing.quad), useNativeDriver: true }),
     ]).start();
   }, [fade, translate]);
-
+  console.log('E-Posta Adresi:', email);
   const onSubmit = async () => {
     if (!email) {
       message.show({ type: 'error', title: 'Eksik Bilgi', description: 'Email zorunludur.' });
