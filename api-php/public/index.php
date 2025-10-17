@@ -28,6 +28,8 @@ $router->get('/health', function () {
 // Auth endpoints
 $router->post('/api/auth/resend-code', [App\Controllers\AuthController::class, 'resendCode']);
 $router->post('/api/auth/verify-code', [App\Controllers\AuthController::class, 'verifyCode']);
+$router->post('/api/auth/register', [App\Controllers\AuthController::class, 'register']);
+$router->post('/api/auth/login', [App\Controllers\AuthController::class, 'login']);
 // Password reset endpoints
 $router->post('/api/auth/forgot-password', [App\Controllers\AuthController::class, 'forgotPassword']);
 $router->post('/api/auth/reset-password', [App\Controllers\AuthController::class, 'resetPassword']);

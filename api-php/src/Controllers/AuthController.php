@@ -7,6 +7,7 @@ use App\Services\MailerService;
 use App\Services\VerificationService;
 use App\Services\PasswordResetService;
 use App\Support\Response;
+use App\Support\Env;
 
 final class AuthController
 {
@@ -99,6 +100,75 @@ final class AuthController
             return;
         }
         Response::json(['ok' => true]);
+    }
+
+    // Register on Node API after PHP verification
+    public function register(): void
+    {
+        $input = json_decode(file_get_contents('php://input') ?: '[]', true) ?: [];
+        $email = trim((string)($input['email'] ?? ''));
+        $password = (string)($input['password'] ?? '');
+        $name = (string)($input['name'] ?? '');
+        $phone = (string)($input['phone'] ?? '');
+        $username = (string)($input['username'] ?? '');
+        if ($email === '' || $password === '') {
+            Response::json(['error' => 'email/password required'], 400);
+            return;
+        }
+        // Optional: trust PHP verification; forward to Node without pre_token
+        $nodeBase = rtrim((string)Env::get('NODE_API_BASE', 'https://isci-takip-app.onrender.com'), '/');
+        $payload = json_encode([
+            'email' => $email,
+            'password' => $password,
+            'name' => $name ?: null,
+            'phone' => $phone ?: null,
+            'username' => $username ?: null,
+            'pre_token' => null,
+        ]);
+        $ctx = stream_context_create([
+            'http' => [
+                'method' => 'POST',
+                'header' => "Content-Type: application/json\r\n",
+                'content' => $payload,
+                'timeout' => 20,
+            ]
+        ]);
+        $res = @file_get_contents($nodeBase . '/auth/register', false, $ctx);
+        $ok = $res !== false;
+        if (!$ok) {
+            Response::json(['error' => 'register failed'], 500);
+            return;
+        }
+        $data = json_decode($res, true) ?: [];
+        Response::json($data ?: ['ok' => true]);
+    }
+
+    public function login(): void
+    {
+        $input = json_decode(file_get_contents('php://input') ?: '[]', true) ?: [];
+        $username = (string)($input['username'] ?? $input['email'] ?? '');
+        $password = (string)($input['password'] ?? '');
+        if ($username === '' || $password === '') {
+            Response::json(['error' => 'username/password required'], 400);
+            return;
+        }
+        $nodeBase = rtrim((string)Env::get('NODE_API_BASE', 'https://isci-takip-app.onrender.com'), '/');
+        $payload = http_build_query(['username' => $username, 'password' => $password]);
+        $ctx = stream_context_create([
+            'http' => [
+                'method' => 'POST',
+                'header' => "Content-Type: application/x-www-form-urlencoded\r\n",
+                'content' => $payload,
+                'timeout' => 20,
+            ]
+        ]);
+        $res = @file_get_contents($nodeBase . '/auth/login', false, $ctx);
+        if ($res === false) {
+            Response::json(['error' => 'login failed'], 500);
+            return;
+        }
+        $data = json_decode($res, true) ?: [];
+        Response::json($data ?: ['error' => 'login failed'], empty($data) ? 500 : 200);
     }
 }
 

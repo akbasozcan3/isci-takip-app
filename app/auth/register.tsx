@@ -19,7 +19,7 @@ import { useMessage } from '../../components/MessageProvider';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import theme from '../../components/ui/theme';
-import { getApiBase } from '../../utils/api';
+import { getApiBase, getPhpApiBase } from '../../utils/api';
 
 const { width, height } = Dimensions.get('window');
 
@@ -173,15 +173,12 @@ export default function Register(): React.JSX.Element {
       // Hız: isteği arka planda gönder, kullanıcıyı anında doğrulama ekranına taşı
       // Render soğuk başlatma gecikmelerini azaltmak için health ping yap
       try { fetch(`${getApiBase()}/health`).catch(() => {}); } catch {}
-      const controller = new AbortController();
-      // Soğuk başlatmada 8 sn yetersiz kalabilir; 25 sn beklet
-      setTimeout(() => controller.abort(), 25000);
-      // fire-and-forget: hata olursa logla, kullanıcıyı bekletme
-      fetch(`${getApiBase()}/auth/pre-verify-email`, {
+      // PHP API üzerinden e‑posta doğrulama kodu gönder
+      // fire-and-forget: kullanıcıyı bekletme
+      fetch(`${getPhpApiBase()}/api/auth/resend-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
-        signal: controller.signal,
       })
         .then(async (res) => {
           const text = await res.text();
@@ -192,7 +189,8 @@ export default function Register(): React.JSX.Element {
         .catch((err) => console.log('[register] send-email-code background error:', err?.message || err));
 
       message.show({ type: 'success', title: '📧 E-posta Kodu Gönderiliyor', description: 'Doğrulama kodunuz e-posta adresinize gönderildi. Doğrulama ekranına yönlendiriliyorsunuz...' });
-      router.push({ pathname: '/auth/verify-email' as any, params: { email, name, password, phone, username, mode: 'pre-register' } } as any);
+      // PHP doğrulama + PHP register akışı: mode=php
+      router.push({ pathname: '/auth/verify-email' as any, params: { email, name, password, phone, username, mode: 'php' } } as any);
     } catch (e: any) {
       const raw = e?.message || 'Kayıt sırasında beklenmeyen bir hata';
       // Debug log for investigation

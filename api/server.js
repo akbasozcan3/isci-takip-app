@@ -603,7 +603,7 @@ app.post('/auth/login', async (req, res) => {
   return res.json({ access_token, token_type: 'bearer' });
 });
 
-app.post('/auth/send-email-code', async (req, res) => {
+app.post('/health', async (req, res) => {
   const { email } = req.body || {};
   if (!email) return res.json({ ok: true });
   if (!Object.values(users).some(u => u.email === email)) return res.json({ ok: true });

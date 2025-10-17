@@ -6,7 +6,7 @@ import { BrandLogo } from '../../components/BrandLogo';
 import { useMessage } from '../../components/MessageProvider';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { getApiBase } from '../../utils/api';
+import { getApiBase, getPhpApiBase } from '../../utils/api';
 
 export default function VerifyEmail(): React.JSX.Element {
   const params = useLocalSearchParams<{ email?: string; phone?: string; name?: string; password?: string; username?: string; mode?: string }>();
@@ -17,6 +17,7 @@ export default function VerifyEmail(): React.JSX.Element {
   const [username] = React.useState(params.username || '');
   const [mode] = React.useState(params.mode || '');
   const preRegister = String(mode) === 'pre-register';
+  const phpMode = String(mode) === 'php';
   const [code, setCode] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [resending, setResending] = React.useState(false);
@@ -50,6 +51,29 @@ export default function VerifyEmail(): React.JSX.Element {
     }
     try {
       setLoading(true);
+      if (phpMode) {
+        const v = await fetch(`${getPhpApiBase()}/api/auth/verify-code`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, code }),
+        });
+        if (!v.ok) {
+          const t = await v.text();
+          throw new Error(t || 'Doğrulama başarısız');
+        }
+        const r = await fetch(`${getPhpApiBase()}/api/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, name: name || undefined, phone, username: username || undefined }),
+        });
+        if (!r.ok) {
+          const raw = await r.text();
+          throw new Error(raw || 'Kayıt başarısız');
+        }
+        message.show({ type: 'success', title: 'Email Doğrulandı', description: 'Hesabınız oluşturuldu. Giriş ekranına yönlendiriliyorsunuz.' });
+        router.replace('/auth/login' as any);
+        return;
+      }
       if (preRegister) {
         // Step 1: verify pre-email code to get pre_token
         const v = await fetch(`${getApiBase()}/auth/pre-verify-email/verify`, {
@@ -103,8 +127,9 @@ export default function VerifyEmail(): React.JSX.Element {
     if (!email) return;
     try {
       setResending(true);
-      const url = preRegister ? '/auth/pre-verify-email' : '/auth/send-email-code';
-      const res = await fetch(`${getApiBase()}${url}`, {
+      const base = phpMode ? getPhpApiBase() : getApiBase();
+      const url = phpMode ? '/api/auth/resend-code' : (preRegister ? '/auth/pre-verify-email' : '/health');
+      const res = await fetch(`${base}${url}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),

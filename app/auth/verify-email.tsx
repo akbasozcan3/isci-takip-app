@@ -6,7 +6,7 @@ import { BrandLogo } from '../../components/BrandLogo';
 import { useMessage } from '../../components/MessageProvider';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { getApiBase } from '../../utils/api';
+import { getApiBase, getPhpApiBase } from '../../utils/api';
 import { mapApiError } from '../../utils/errorMap';
 
 export default function VerifyEmail(): React.JSX.Element {
@@ -18,6 +18,7 @@ export default function VerifyEmail(): React.JSX.Element {
   const [username] = React.useState(params.username || '');
   const [mode] = React.useState(params.mode || '');
   const preRegister = String(mode) === 'pre-register';
+  const phpMode = String(mode) === 'php';
   const [code, setCode] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [resending, setResending] = React.useState(false);
@@ -51,6 +52,31 @@ export default function VerifyEmail(): React.JSX.Element {
     }
     try {
       setLoading(true);
+      if (phpMode) {
+        // PHP API: kodu doğrula
+        const v = await fetch(`${getPhpApiBase()}/api/auth/verify-code`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, code }),
+        });
+        if (!v.ok) {
+          const t = await v.text();
+          throw new Error(t || 'Doğrulama başarısız');
+        }
+        // PHP tarafı başarılıysa, PHP üstünden Node register'ına proxy et
+        const r = await fetch(`${getPhpApiBase()}/api/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, name: name || undefined, phone, username: username || undefined }),
+        });
+        if (!r.ok) {
+          const raw = await r.text();
+          throw new Error(raw || 'Kayıt başarısız');
+        }
+        message.show({ type: 'success', title: '🎉 E-posta Doğrulandı!', description: 'Hesabınız başarıyla oluşturuldu. Giriş ekranına yönlendiriliyorsunuz...' });
+        setTimeout(() => { router.replace('/auth/login' as any); }, 2000);
+        return;
+      }
       if (preRegister) {
         // Step 1: verify pre-email code to get pre_token
         const v = await fetch(`${getApiBase()}/auth/pre-verify-email/verify`, {
@@ -113,8 +139,8 @@ export default function VerifyEmail(): React.JSX.Element {
     try { fetch(`${getApiBase()}/health`).catch(() => {}); } catch {}
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25000); // 25s üstü bekletme
-    const base = getApiBase();
-    const url = preRegister ? '/auth/pre-verify-email' : '/api/auth/resend-code';
+    const base = phpMode ? getPhpApiBase() : getApiBase();
+    const url = phpMode ? '/api/auth/resend-code' : (preRegister ? '/auth/pre-verify-email' : '/api/auth/resend-code');
     try {
       const res = await fetch(`${base}${url}`, {
         method: 'POST',

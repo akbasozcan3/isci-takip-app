@@ -110,7 +110,7 @@ export default function Register(): React.JSX.Element {
     try {
       router.push({
         pathname: '/auth/verify-email' as any,
-        params: { email, phone, name, password, username, mode: 'pre-register' },
+        params: { email, phone, name, password, username, mode: 'php' },
       } as any);
     } finally {
       setLoading(false);

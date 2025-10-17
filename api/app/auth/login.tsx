@@ -1,5 +1,5 @@
-import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Link, useRouter } from 'expo-router';
 import React from 'react';
 import {
   Animated,
@@ -99,16 +99,10 @@ export default function Login(): React.JSX.Element {
     try {
       setLoading(true);
 
-      // Backend'in beklediği format: önceki kodunla uyumlu olsun diye form-urlencoded kullanıyorum.
-      const form = new URLSearchParams();
-      // Backend login endpoint'in username parametresi bekliyorsa bırak; e-posta yazıldıysa de aynısı çalışır.
-      form.append('username', identifier.trim());
-      form.append('password', password);
-
-      const res = await fetch(`${getApiBase()}/auth/login`, {
+      const res = await fetch(`${getApiBase()}/api/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: form.toString(),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: identifier.trim(), password }),
       });
 
       const text = await res.text();
