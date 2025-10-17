@@ -3,7 +3,7 @@
         'name' => 'my-app/email-verification-api',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '4a129840224d1fcf7644627c21b01dd854798fb7',
+        'reference' => '154f3a7f524d6a06555cf383ba7d4008a9df2f4c',
         'type' => 'project',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -22,7 +22,7 @@
         'my-app/email-verification-api' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '4a129840224d1fcf7644627c21b01dd854798fb7',
+            'reference' => '154f3a7f524d6a06555cf383ba7d4008a9df2f4c',
             'type' => 'project',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

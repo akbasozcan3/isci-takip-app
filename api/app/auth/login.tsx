@@ -20,7 +20,7 @@ import { useMessage } from '../../components/MessageProvider';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import theme from '../../components/ui/theme';
-import { getApiBase } from '../../utils/api';
+import { getPhpApiBase } from '../../utils/api';
 import { saveToken } from '../../utils/auth'; // senin util'in zaten varsa bırak
 import { mapApiError } from '../../utils/errorMap';
 
@@ -99,7 +99,7 @@ export default function Login(): React.JSX.Element {
     try {
       setLoading(true);
 
-      const res = await fetch(`${getApiBase()}/api/auth/login`, {
+      const res = await fetch(`${getPhpApiBase()}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: identifier.trim(), password }),

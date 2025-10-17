@@ -102,8 +102,8 @@ export default function VerifyEmail(): React.JSX.Element {
         router.replace('/auth/login' as any);
         return;
       }
-      // Fallback: post-registration email verification
-      const res = await fetch(`${getApiBase()}/auth/verify-email`, {
+      // Fallback: post-registration email verification (Node)
+      const res = await fetch(`${getApiBase()}/api/auth/verify-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code }),
