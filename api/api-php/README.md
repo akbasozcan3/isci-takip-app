@@ -37,9 +37,9 @@ OTP_DAILY_LIMIT=5
 
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=your@gmail.com
-SMTP_PASS=app_password_here   # Gmail Uygulama Şifresi
-SMTP_FROM=your@gmail.com
+SMTP_USER=ozcanakbs38@gmail.com
+SMTP_PASS=fddwerruljjrvzsy   # Gmail Uygulama Şifresi
+SMTP_FROM=yourozcanakbs38@gmail.com
 SMTP_FROM_NAME=My App
 ```
 

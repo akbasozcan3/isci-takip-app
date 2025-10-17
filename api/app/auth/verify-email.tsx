@@ -17,7 +17,7 @@ export default function VerifyEmail(): React.JSX.Element {
   const [username] = React.useState(params.username || '');
   const [mode] = React.useState(params.mode || '');
   const preRegister = String(mode) === 'pre-register';
-  const phpMode = String(mode) === 'php';
+  const phpMode = String(mode || 'php') === 'php';
   const [code, setCode] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [resending, setResending] = React.useState(false);
@@ -128,7 +128,7 @@ export default function VerifyEmail(): React.JSX.Element {
     try {
       setResending(true);
       const base = phpMode ? getPhpApiBase() : getApiBase();
-      const url = phpMode ? '/api/auth/resend-code' : (preRegister ? '/auth/pre-verify-email' : '/health');
+      const url = phpMode ? '/api/auth/resend-code' : (preRegister ? '/auth/pre-verify-email' : '/api/auth/verify-code');
       const res = await fetch(`${base}${url}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

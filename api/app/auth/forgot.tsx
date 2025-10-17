@@ -6,7 +6,7 @@ import { BrandLogo } from '../../components/BrandLogo';
 import { useMessage } from '../../components/MessageProvider';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { getApiBase } from '../../utils/api';
+import { getPhpApiBase } from '../../utils/api';
 
 export default function ForgotPassword(): React.JSX.Element {
   const [email, setEmail] = React.useState('');
@@ -32,7 +32,7 @@ export default function ForgotPassword(): React.JSX.Element {
     }
     try {
       setLoading(true);
-      const res = await fetch(`${getApiBase()}/auth/forgot`, {
+      const res = await fetch(`${getPhpApiBase()}/api/auth/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),

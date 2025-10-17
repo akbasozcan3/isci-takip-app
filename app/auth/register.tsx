@@ -189,7 +189,7 @@ export default function Register(): React.JSX.Element {
         .catch((err) => console.log('[register] send-email-code background error:', err?.message || err));
 
       message.show({ type: 'success', title: '📧 E-posta Kodu Gönderiliyor', description: 'Doğrulama kodunuz e-posta adresinize gönderildi. Doğrulama ekranına yönlendiriliyorsunuz...' });
-      // PHP doğrulama + PHP register akışı: mode=php
+      // PHP doğrulama akışı kullan: mode=php
       router.push({ pathname: '/auth/verify-email' as any, params: { email, name, password, phone, username, mode: 'php' } } as any);
     } catch (e: any) {
       const raw = e?.message || 'Kayıt sırasında beklenmeyen bir hata';

@@ -1,12 +1,12 @@
-import React from 'react';
-import { View, Text, Pressable, ActivityIndicator, Animated, Easing } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React from 'react';
+import { Animated, Easing, Pressable, Text, View } from 'react-native';
 import { BrandLogo } from '../../components/BrandLogo';
-import { getApiBase } from '../../utils/api';
 import { useMessage } from '../../components/MessageProvider';
-import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
+import { getPhpApiBase } from '../../utils/api';
 
 export default function ResetPassword(): React.JSX.Element {
   const params = useLocalSearchParams<{ email?: string }>();
@@ -34,10 +34,10 @@ export default function ResetPassword(): React.JSX.Element {
     }
     try {
       setLoading(true);
-      const res = await fetch(`${getApiBase()}/auth/reset`, {
+      const res = await fetch(`${getPhpApiBase()}/api/auth/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code, new_password: password }),
+        body: JSON.stringify({ email, code, password }),
       });
       if (!res.ok) {
         const errText = await res.text();
