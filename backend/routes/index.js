@@ -12,7 +12,8 @@ const groupController = require('../controllers/groupController');
 const dashboardController = require('../controllers/dashboardController');
 const notificationsController = require('../controllers/notificationsController');
 const billingController = require('../controllers/billingController');
-// const authService = require('../services/authService');
+const { attachSubscription, checkLimit } = require('../middleware/subscriptionCheck');
+const SubscriptionModel = require('../models/subscription');
 
 const router = express.Router();
 
@@ -31,6 +32,9 @@ router.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
+
+// Subscription bilgisini tüm isteklere ekle
+router.use(attachSubscription);
 
 // Health check endpoint
 router.get('/health', (req, res) => {
@@ -77,23 +81,33 @@ router.post('/articles', blogController.createArticle.bind(blogController));
 router.put('/articles/:id', blogController.updateArticle.bind(blogController));
 router.delete('/articles/:id', blogController.deleteArticle.bind(blogController));
 
-// Dashboard routes (safe defaults to prevent 404s)
+// Dashboard routes
 router.get('/dashboard/:userId', dashboardController.getDashboard.bind(dashboardController));
+router.get('/dashboard', dashboardController.getDashboard.bind(dashboardController));
 router.get('/activities', dashboardController.getActivities.bind(dashboardController));
+router.get('/stats', dashboardController.getStats.bind(dashboardController));
 
 // Notifications
 router.get('/notifications', notificationsController.list.bind(notificationsController));
 router.post('/notifications/read-all', notificationsController.markAllRead.bind(notificationsController));
 router.post('/notifications/:id/read', notificationsController.markRead.bind(notificationsController));
 
-// Billing / Plans
+// Billing / Plans / Subscriptions
+router.get('/plans', billingController.getPlans.bind(billingController));
 router.get('/billing/plans', billingController.getPlans.bind(billingController));
+router.get('/me/subscription', billingController.getMySubscription.bind(billingController));
+router.post('/checkout', billingController.checkout.bind(billingController));
 router.post('/billing/checkout', billingController.checkout.bind(billingController));
 router.post('/billing/subscribe', billingController.subscribe.bind(billingController));
 router.get('/billing/history', billingController.getHistory.bind(billingController));
+// iyzico ödeme callback ve webhook
+router.get('/checkout/mock/:sessionId', billingController.mockCheckoutPage.bind(billingController));
+router.post('/payment/callback', billingController.paymentCallback.bind(billingController));
+router.get('/payment/callback', billingController.paymentCallback.bind(billingController));
+router.post('/webhook/payment', billingController.handleWebhook.bind(billingController));
 
-// Groups routes
-router.post('/groups', groupController.createGroup.bind(groupController));
+// Groups routes (grup oluşturma limit kontrolü ile)
+router.post('/groups', checkLimit('maxGroups'), groupController.createGroup.bind(groupController));
 router.get('/groups/user/:userId/admin', groupController.getGroupsByAdmin.bind(groupController));
 router.get('/groups/user/:userId/active', groupController.getActiveGroupsForUser.bind(groupController));
 router.get('/groups/:groupId/requests', groupController.getRequests.bind(groupController));

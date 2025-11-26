@@ -103,12 +103,6 @@ export default function RegisterScreen() {
       setCodeSent(true);
       setStep('verify');
       showSuccess('Kod gönderildi. Lütfen e-posta gelen kutunu ve Spam klasörünü kontrol et.');
-      
-      if (checkData.code && __DEV__) {
-        const codeStr = String(checkData.code).slice(0, 6);
-        setVerificationCode(codeStr);
-        showSuccess('Geliştirme modunda doğrulama kodu otomatik dolduruldu. "Kodu Doğrula"ya basabilirsin.');
-      }
     } catch (error: any) {
       console.error('Send code error:', error);
       if (error.name === 'AbortError') {

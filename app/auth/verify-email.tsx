@@ -182,15 +182,6 @@ export default function VerifyEmailScreen() {
       // Just show success message
       if (response.ok) {
         showSuccess('Yeni doğrulama kodu e-posta adresinize gönderildi');
-        
-        // In development, show the code
-        if (data.code) {
-          console.log('🔑 New verification code:', data.code);
-          // Auto-fill in dev mode
-          const codeStr = String(data.code).slice(0, 6);
-          const digits = codeStr.split('').slice(0, 6);
-          setCodeDigits([...digits, ...Array(6 - digits.length).fill('')]);
-        }
       }
     } catch (error) {
       console.error('Resend error:', error);

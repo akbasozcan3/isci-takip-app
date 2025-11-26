@@ -118,11 +118,10 @@ export function Toast({ message, type, visible, onHide, duration = 3000 }: Toast
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: '44%',
-    left: 0,
-    right: 0,
-    marginHorizontal: 14,
-    transform: [{ translateY: -40 }],
+    top: undefined,
+    bottom: '8%',
+    left: '8%',
+    right: '8%',
     zIndex: 9999,
     borderRadius: 16,
     paddingVertical: 16,
@@ -140,7 +139,8 @@ const styles = StyleSheet.create({
   content: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    justifyContent: 'center',
+    gap: 12,
   },
   iconContainer: {
     width: 32,
@@ -156,7 +156,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     lineHeight: 22,
-    textAlign: 'left',
+    textAlign: 'center',
     fontFamily: 'Poppins-SemiBold',
     letterSpacing: 0.2,
   },

@@ -36,11 +36,13 @@ const Marker: any = Platform.OS === 'web' ? View : Maps.Marker;
 const Circle: any = Platform.OS === 'web' ? View : Maps.Circle;
 const Callout: any = Platform.OS === 'web' ? View : Maps.Callout;
 const Polyline: any = Platform.OS === 'web' ? View : Maps.Polyline;
+const PROVIDER_GOOGLE: any = Platform.OS === 'web' ? undefined : Maps?.PROVIDER_GOOGLE;
 
-// NOTE: This file is a polished, compact redesign of your TrackScreen.
-// - Uses a safe, non-hacky header (no negative margins)
-// - Adds a modern gradient header with avatar + actions
-// - Keeps your original logic intact, only cleans up styles & layout
+// PROFESYONEL GPS CANLI TAKİP UYGULAMASI
+// - Türkiye merkezli harita sistemi
+// - Yüksek performanslı konum takibi
+// - Gerçek zamanlı grup takibi
+// - Profesyonel GPS navigasyon özellikleri
 
 const { width } = Dimensions.get('window');
 const BACKGROUND_LOCATION_TASK = 'BACKGROUND_LOCATION_TASK_v1';
@@ -140,6 +142,12 @@ export default function TrackScreen(): React.JSX.Element {
   const [searchResults, setSearchResults] = React.useState<Array<{ workerId: string; name?: string | null; phone?: string | null; coords: Coord }>>([]);
   const [activeCount, setActiveCount] = React.useState<number>(0);
   const [zoomSlider, setZoomSlider] = React.useState<number>(0.6);
+  const [currentRegion, setCurrentRegion] = React.useState({
+    latitude: 39.0,
+    longitude: 35.2433,
+    latitudeDelta: 13.0,
+    longitudeDelta: 20.0,
+  });
   const [phoneToCall, setPhoneToCall] = React.useState<string>('');
   const [groupAddress, setGroupAddress] = React.useState<string>('');
   const [groupCoord, setGroupCoord] = React.useState<Coord | null>(null);
@@ -156,8 +164,28 @@ export default function TrackScreen(): React.JSX.Element {
   const groupPollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const membersPollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const watchRef = React.useRef<Location.LocationSubscription | null>(null);
-  const mapRef = React.useRef<MapView | null>(null);
+  const mapRef = React.useRef<any>(null);
   const accuracyRef = React.useRef<Location.LocationAccuracy>(Location.Accuracy.High);
+
+  // Türkiye merkezli harita ayarları ve zoom hesaplamaları
+  const TURKEY_CENTER = React.useMemo(() => ({ latitude: 39.0, longitude: 35.2433 }), []);
+  const TURKEY_REGION = React.useMemo(
+    () => ({ latitude: TURKEY_CENTER.latitude, longitude: TURKEY_CENTER.longitude, latitudeDelta: 13.0, longitudeDelta: 20.0 }),
+    [TURKEY_CENTER]
+  );
+  const clamp = React.useCallback((value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value)), []);
+  const MIN_DELTA = 0.004;
+  const MAX_DELTA = 0.12;
+  const computedDelta = MIN_DELTA + (1 - zoomSlider) * (MAX_DELTA - MIN_DELTA);
+  const animatedRegion = React.useMemo(() => {
+    const base = coords || currentRegion || TURKEY_REGION;
+    return {
+      latitude: base.latitude,
+      longitude: base.longitude,
+      latitudeDelta: computedDelta,
+      longitudeDelta: computedDelta,
+    };
+  }, [coords, currentRegion, TURKEY_REGION, computedDelta]);
 
   const headerY = React.useRef(new Animated.Value(0)).current;
   const pulse = React.useRef(new Animated.Value(0)).current;
@@ -169,13 +197,26 @@ export default function TrackScreen(): React.JSX.Element {
     }
   }, []);
 
+  // Çok katmanlı pulse animasyonu - Profesyonel GPS efekti
   React.useEffect(() => {
-    Animated.loop(
+    const pulseAnimation = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 1200, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 1200, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulse, { 
+          toValue: 1, 
+          duration: 2000, 
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true 
+        }),
+        Animated.timing(pulse, { 
+          toValue: 0, 
+          duration: 2000, 
+          easing: Easing.in(Easing.ease),
+          useNativeDriver: true 
+        }),
       ])
-    ).start();
+    );
+    pulseAnimation.start();
+    return () => pulseAnimation.stop();
   }, [pulse]);
 
   React.useEffect(() => {
@@ -536,22 +577,20 @@ export default function TrackScreen(): React.JSX.Element {
   React.useEffect(() => {
     if (coords && follow && mapRef.current) {
       try {
-        const MIN_DELTA = 0.005;
-        const MAX_DELTA = 0.08;
-        const delta = MIN_DELTA + (1 - zoomSlider) * (MAX_DELTA - MIN_DELTA);
-        
-        console.log('[Track] Following user location');
-        mapRef.current.animateToRegion({
+        const nextRegion = {
           latitude: coords.latitude,
           longitude: coords.longitude,
-          latitudeDelta: delta,
-          longitudeDelta: delta
-        }, 500);
+          latitudeDelta: computedDelta,
+          longitudeDelta: computedDelta,
+        };
+        console.log('[Track] Following user location');
+        mapRef.current.animateToRegion(nextRegion, 500);
+        setCurrentRegion(nextRegion);
       } catch (error) {
         console.error('[Track] AnimateToRegion error:', error);
       }
     }
-  }, [coords, follow, zoomSlider]);
+  }, [coords, follow, computedDelta]);
 
   // Ask again or open settings when permission is denied
   const ensureForegroundPermission = React.useCallback(async () => {
@@ -824,13 +863,9 @@ export default function TrackScreen(): React.JSX.Element {
     pollRef.current = setInterval(fetchAll, 5000);
   }
 
-  const turkeyRegion = { latitude: 39.0, longitude: 35.0, latitudeDelta: 13.0, longitudeDelta: 20.0 };
-  const MIN_DELTA = 0.005;
-  const MAX_DELTA = 0.08;
-  const computedDelta = MIN_DELTA + (1 - zoomSlider) * (MAX_DELTA - MIN_DELTA);
   const followRegion = coords
     ? { latitude: coords.latitude, longitude: coords.longitude, latitudeDelta: computedDelta, longitudeDelta: computedDelta }
-    : turkeyRegion;
+    : TURKEY_REGION;
 
   // small format helpers
   function formatDistance(m: number) {
@@ -843,10 +878,14 @@ export default function TrackScreen(): React.JSX.Element {
 
   const fitToTurkey = React.useCallback(() => {
     if (!mapRef.current) return;
-    mapRef.current.animateToRegion(turkeyRegion, 700);
+    const resetRegion = { ...TURKEY_REGION, latitudeDelta: 5.5, longitudeDelta: 7 };
+    mapRef.current.animateToRegion(resetRegion, 700);
+    setCurrentRegion(resetRegion);
+    setZoomSlider(0.35);
     setFollow(false);
     Animated.sequence([Animated.timing(fabScale, { toValue: 1.06, duration: 120, useNativeDriver: true }), Animated.spring(fabScale, { toValue: 1, friction: 6, useNativeDriver: true })]).start();
-  }, []);
+    showInfo('Türkiye haritasına odaklanıldı');
+  }, [showInfo, TURKEY_REGION]);
 
   const centerOnUser = React.useCallback((u: RemoteUser) => {
     if (!mapRef.current) return;
@@ -854,6 +893,28 @@ export default function TrackScreen(): React.JSX.Element {
     setUserListVisible(false);
     setFollow(false);
   }, []);
+
+  const zoomMap = React.useCallback((direction: 'in' | 'out') => {
+    setZoomSlider((prev) => {
+      const shift = direction === 'in' ? 0.12 : -0.12;
+      const next = clamp(prev + shift);
+      const delta = MIN_DELTA + (1 - next) * (MAX_DELTA - MIN_DELTA);
+      const center = coords || currentRegion || TURKEY_CENTER;
+      if (mapRef.current) {
+        mapRef.current.animateToRegion(
+          {
+            latitude: center.latitude,
+            longitude: center.longitude,
+            latitudeDelta: delta,
+            longitudeDelta: delta,
+          },
+          350
+        );
+      }
+      showInfo(direction === 'in' ? 'Yakınlaştırıldı' : 'Uzaklaştırıldı');
+      return next;
+    });
+  }, [clamp, coords, currentRegion, showInfo, TURKEY_CENTER]);
 
   // --- UI ---
   return (
@@ -863,18 +924,18 @@ export default function TrackScreen(): React.JSX.Element {
       {/* Gradient header (no negative margins) */}
       <LinearGradient colors={["#06b6d4", "#0ea5a4"]} style={styles.headerWrap} start={[0, 0]} end={[1, 1]}>
         <View style={styles.headerRow}>
-          <View style={styles.brandRow}>
+            <View style={styles.brandRow}>
             <View style={styles.headerAvatar}>
               <Ionicons name="navigate-circle" size={27} color="#06b6d4" />
             </View>
             <View style={{ marginLeft: 12 }}>
-              <Text style={styles.title}>Canlı Takip</Text>
+              <Text style={styles.title}>GPS Canlı Takip</Text>
               <Text style={styles.subtitle}>
                 {hasPermission === null
                   ? 'İzin soruluyor…'
                   : hasPermission
-                  ? isTracking ? 'Konum paylaşılıyor' : 'Hazır'
-                  : 'İzin reddedildi'}
+                  ? isTracking ? '📍 Konum paylaşılıyor' : '✅ GPS Hazır'
+                  : '⚠️ İzin reddedildi'}
               </Text>
             </View>
           </View>
@@ -947,75 +1008,221 @@ export default function TrackScreen(): React.JSX.Element {
           </View>
         )}
         <View style={styles.mapCard}>
-          <MapView ref={(r) => { 
+          <MapView ref={(r: any) => { 
             console.log('[Track] MapView ref set:', !!r);
             mapRef.current = r; 
           }} 
           style={styles.map} 
-          initialRegion={followRegion}
-          onMapReady={() => console.log('[Track] Map is ready')}
-          onRegionChangeComplete={(region) => {
+          initialRegion={coords ? followRegion : TURKEY_REGION}
+          onMapReady={() => {
+            console.log('[Track] Map is ready');
+            if (mapRef.current) {
+              setTimeout(() => {
+                mapRef.current?.animateToRegion(animatedRegion, 900);
+                setCurrentRegion(animatedRegion);
+              }, 450);
+            }
+          }}
+          onRegionChangeComplete={(region: any) => {
+            setCurrentRegion(region);
             if (!follow) {
               console.log('[Track] Map region changed by user');
             }
           }}
+          provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
           zoomControlEnabled={true}
           zoomEnabled={true}
           scrollEnabled={true}
           rotateEnabled={true}
           pitchEnabled={true}
           mapType={mapType} 
-          showsCompass 
-          loadingEnabled>
-            {path.length > 1 && <Polyline coordinates={path} strokeColor="#06b6d4" strokeWidth={4} lineCap="round" />}
+          showsCompass={true}
+          showsScale={true}
+          showsMyLocationButton={false}
+          loadingEnabled={true}
+          loadingIndicatorColor="#06b6d4"
+          loadingBackgroundColor="rgba(15,23,42,0.9)">
+            {/* Yol Çizgisi - Profesyonel GPS Stili */}
+            {path.length > 1 && (
+              <Polyline 
+                coordinates={path} 
+                strokeColor="#06b6d4" 
+                strokeWidth={speedKmh && speedKmh > 5 ? 6 : 5} 
+                lineCap="round"
+                lineJoin="round"
+                zIndex={1}
+              />
+            )}
 
-            {coords && accuracyMeters != null && accuracyMeters > 0 && <Circle center={coords} radius={Math.min(accuracyMeters, 200)} strokeWidth={1} strokeColor="rgba(6,182,212,0.35)" fillColor="rgba(6,182,212,0.08)" />}
+            {/* Doğruluk Çemberi - Çok Katmanlı Profesyonel Stil */}
+            {coords && accuracyMeters != null && accuracyMeters > 0 && (
+              <>
+                <Circle 
+                  center={coords} 
+                  radius={Math.min(accuracyMeters, 200)} 
+                  strokeWidth={2} 
+                  strokeColor="rgba(6,182,212,0.5)" 
+                  fillColor="rgba(6,182,212,0.12)" 
+                  zIndex={0}
+                />
+                <Circle 
+                  center={coords} 
+                  radius={Math.min(accuracyMeters * 0.6, 120)} 
+                  strokeWidth={1} 
+                  strokeColor="rgba(6,182,212,0.3)" 
+                  fillColor="rgba(6,182,212,0.06)" 
+                  zIndex={0}
+                />
+              </>
+            )}
 
+            {/* PROFESYONEL GPS KULLANICI MARKER'I - Stabil ve Optimize */}
             {coords && (
-              <Marker coordinate={coords} anchor={{ x: 0.5, y: 0.5 }} flat>
-                <Animated.View style={[styles.pulseWrapper, { transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] }) }] }]}>
-                  <View style={styles.pulseCircle} />
-                  <View style={styles.workerDot}>
-                    <Ionicons name="navigate" size={20} color="#06b6d4" style={{ transform: [{ rotate: `${heading ?? 0}deg` }] }} />
+              <Marker coordinate={coords} anchor={{ x: 0.5, y: 0.5 }} flat={true}>
+                <View style={styles.professionalMarkerWrapper}>
+                  {/* Pulse Halkaları */}
+                  <Animated.View 
+                    style={[
+                      styles.markerPulseOuter, 
+                      { 
+                        transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.8] }) }],
+                        opacity: pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.5, 0.2, 0] })
+                      }
+                    ]} 
+                  />
+                  <Animated.View 
+                    style={[
+                      styles.markerPulseInner, 
+                      { 
+                        transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.4] }) }],
+                        opacity: pulse.interpolate({ inputRange: [0, 0.7, 1], outputRange: [0.4, 0.1, 0] })
+                      }
+                    ]} 
+                  />
+                  
+                  {/* Ana Marker */}
+                  <View style={[
+                    styles.professionalMarkerMain,
+                    { backgroundColor: speedKmh && speedKmh > 10 ? '#10b981' : '#06b6d4' }
+                  ]}>
+                    {/* Yön İkonu */}
+                    <Ionicons 
+                      name={heading != null ? "navigate" : "location"} 
+                      size={heading != null ? 28 : 24} 
+                      color="#fff" 
+                      style={heading != null ? { transform: [{ rotate: `${heading}deg` }] } : undefined}
+                    />
                   </View>
-                </Animated.View>
-                <Callout tooltip>
-                  <View style={styles.calloutCard}>
-                    <Text style={styles.calloutTitle}>Siz</Text>
-                    <Text style={styles.calloutSub}>{coords.latitude.toFixed(5)}, {coords.longitude.toFixed(5)}</Text>
+                  
+                  {/* Hız Badge - Marker dışında */}
+                  {speedKmh && speedKmh > 0 && (
+                    <View style={styles.markerSpeedBadge}>
+                      <Text style={styles.markerSpeedText}>{Math.round(speedKmh)}</Text>
+                    </View>
+                  )}
+                  
+                  {/* Takip Badge - Marker dışında */}
+                  {isTracking && (
+                    <View style={styles.markerTrackingBadge} />
+                  )}
+                </View>
+                
+                {/* Bilgilendirici Callout */}
+                <Callout tooltip={false}>
+                  <View style={styles.professionalCallout}>
+                    <View style={styles.calloutHeader}>
+                      <View style={styles.calloutIcon}>
+                        <Ionicons name="navigate" size={20} color="#06b6d4" />
+                      </View>
+                      <Text style={styles.calloutTitle}>Konumunuz</Text>
+                    </View>
+                    
+                    <View style={styles.calloutInfoGrid}>
+                      <View style={styles.calloutInfoItem}>
+                        <Ionicons name="speedometer-outline" size={14} color="#64748b" />
+                        <Text style={styles.calloutInfoLabel}>Hız</Text>
+                        <Text style={styles.calloutInfoValue}>{formatSpeed(speedKmh)}</Text>
+                      </View>
+                      
+                      <View style={styles.calloutInfoItem}>
+                        <Ionicons name="radio" size={14} color="#64748b" />
+                        <Text style={styles.calloutInfoLabel}>Doğruluk</Text>
+                        <Text style={styles.calloutInfoValue}>{accuracyMeters != null ? `${Math.round(accuracyMeters)}m` : '-'}</Text>
+                      </View>
+                      
+                      <View style={styles.calloutInfoItem}>
+                        <Ionicons name="map-outline" size={14} color="#64748b" />
+                        <Text style={styles.calloutInfoLabel}>Mesafe</Text>
+                        <Text style={styles.calloutInfoValue}>{formatDistance(totalDistance)}</Text>
+                      </View>
+                      
+                      {heading != null && (
+                        <View style={styles.calloutInfoItem}>
+                          <Ionicons name="compass-outline" size={14} color="#64748b" />
+                          <Text style={styles.calloutInfoLabel}>Yön</Text>
+                          <Text style={styles.calloutInfoValue}>{Math.round(heading)}°</Text>
+                        </View>
+                      )}
+                    </View>
+                    
+                    <View style={styles.calloutCoordinates}>
+                      <Text style={styles.calloutCoordText}>
+                        {coords.latitude.toFixed(6)}, {coords.longitude.toFixed(6)}
+                      </Text>
+                    </View>
                   </View>
                 </Callout>
               </Marker>
             )}
 
-            {/* Grup üyeleri */}
+            {/* Grup üyeleri - Profesyonel İkonlu Markerlar */}
             {groupMembers.map((member) => {
               try {
-                // Null safety checks
-                if (!member?.location?.lat || !member?.location?.lng) {
-                  return null;
-                }
-                if (member.userId === workerId) {
-                  return null; // Kendi konumunu gösterme
-                }
+                if (!member?.location?.lat || !member?.location?.lng) return null;
+                if (member.userId === workerId) return null;
                 
                 return (
                   <Marker 
                     key={member.userId} 
-                    coordinate={{ 
-                      latitude: member.location.lat, 
-                      longitude: member.location.lng 
-                    }}
+                    coordinate={{ latitude: member.location.lat, longitude: member.location.lng }}
+                    anchor={{ x: 0.5, y: 0.5 }}
                   >
-                    <View style={[styles.otherUserMarker, member.isOnline && { backgroundColor: '#10b981' }]}>
-                      <Ionicons name="person" size={14} color="#fff" />
+                    <View style={styles.memberMarkerWrapper}>
+                      <View style={[
+                        styles.memberMarkerMain,
+                        { backgroundColor: member.isOnline ? '#10b981' : '#64748b' }
+                      ]}>
+                        <Ionicons 
+                          name={member.isOnline ? "person-circle" : "person-circle-outline"} 
+                          size={28} 
+                          color="#fff" 
+                        />
+                      </View>
+                      {member.isOnline && (
+                        <View style={styles.memberOnlineDot} />
+                      )}
                     </View>
-                    <Callout>
-                      <View style={styles.calloutCard}>
-                        <Text style={styles.calloutTitle}>{member.displayName || 'Unknown'}</Text>
-                        <Text style={styles.calloutSub}>
-                          {member.isOnline ? '🟢 Online' : '⚫ Offline'}
-                        </Text>
+                    <Callout tooltip={false}>
+                      <View style={styles.memberCallout}>
+                        <View style={styles.memberCalloutHeader}>
+                          <View style={[styles.memberCalloutIcon, { backgroundColor: member.isOnline ? '#10b981' : '#64748b' }]}>
+                            <Ionicons name="person" size={20} color="#fff" />
+                          </View>
+                          <Text style={styles.memberCalloutTitle}>{member.displayName || 'Bilinmiyor'}</Text>
+                        </View>
+                        <View style={styles.memberCalloutInfo}>
+                          <View style={styles.memberCalloutStatus}>
+                            <Ionicons name={member.isOnline ? "radio-button-on" : "radio-button-off"} size={14} color={member.isOnline ? '#10b981' : '#64748b'} />
+                            <Text style={[styles.memberCalloutStatusText, { color: member.isOnline ? '#10b981' : '#64748b' }]}>
+                              {member.isOnline ? 'Online' : 'Offline'}
+                            </Text>
+                          </View>
+                          {member.location && (
+                            <Text style={styles.memberCalloutLocation}>
+                              {member.location.lat.toFixed(5)}, {member.location.lng.toFixed(5)}
+                            </Text>
+                          )}
+                        </View>
                       </View>
                     </Callout>
                   </Marker>
@@ -1026,32 +1233,60 @@ export default function TrackScreen(): React.JSX.Element {
               }
             })}
             
-            {/* Diğer kullanıcılar (eski sistem - sadece showAllUsers true ise) */}
+            {/* Diğer kullanıcılar - Profesyonel İkonlu Markerlar */}
             {showAllUsers && allUsers.map((u) => (
-              <Marker key={u.workerId} coordinate={{ latitude: u.latitude, longitude: u.longitude }}>
-                <View style={[styles.otherUserMarker, { backgroundColor: '#64748b' }]}>
-                  <Ionicons name="person" size={14} color="#fff" />
+              <Marker 
+                key={u.workerId} 
+                coordinate={{ latitude: u.latitude, longitude: u.longitude }}
+                anchor={{ x: 0.5, y: 0.5 }}
+              >
+                <View style={styles.otherUserMarkerWrapper}>
+                  <View style={styles.otherUserMarkerMain}>
+                    <Ionicons name="people-circle-outline" size={32} color="#64748b" />
+                  </View>
                 </View>
-                <Callout onPress={() => centerOnUser(u)}>
-                  <View style={styles.calloutCard}>
-                    <Text style={styles.calloutTitle}>{u.workerId}</Text>
-                    <Text style={styles.calloutSub}>Tüm kullanıcılar</Text>
+                <Callout tooltip={false} onPress={() => centerOnUser(u)}>
+                  <View style={styles.otherUserCallout}>
+                    <View style={styles.otherUserCalloutHeader}>
+                      <View style={styles.otherUserCalloutIcon}>
+                        <Ionicons name="globe" size={20} color="#06b6d4" />
+                      </View>
+                      <Text style={styles.otherUserCalloutTitle}>Aktif Kullanıcı</Text>
+                    </View>
+                    <Text style={styles.otherUserCalloutId}>{u.workerId}</Text>
+                    <Text style={styles.otherUserCalloutLocation}>
+                      {u.latitude.toFixed(5)}, {u.longitude.toFixed(5)}
+                    </Text>
                   </View>
                 </Callout>
               </Marker>
             ))}
 
+            {/* Grup Merkezi - Profesyonel İkonlu Marker */}
             {groupCoord && (
-              <Marker coordinate={groupCoord}>
-                <View style={styles.targetMarker}>
-                  <Ionicons name="flag" size={14} color="#7f1d1d" />
+              <Marker coordinate={groupCoord} anchor={{ x: 0.5, y: 1 }}>
+                <View style={styles.groupCenterMarkerWrapper}>
+                  <View style={styles.groupCenterMarkerMain}>
+                    <Ionicons name="flag" size={28} color="#fff" />
+                  </View>
+                  <View style={styles.groupCenterMarkerShadow} />
                 </View>
-                <Callout tooltip>
-                  <View style={styles.calloutCard}>
-                    <Text style={styles.calloutTitle}>Grup Merkezi</Text>
-                    <Text style={styles.calloutSub}>{groupAddress}</Text>
+                <Callout tooltip={false}>
+                  <View style={styles.groupCenterCallout}>
+                    <View style={styles.groupCenterCalloutHeader}>
+                      <View style={styles.groupCenterCalloutIcon}>
+                        <Ionicons name="location" size={20} color="#ef4444" />
+                      </View>
+                      <Text style={styles.groupCenterCalloutTitle}>Grup Merkezi</Text>
+                    </View>
+                    <Text style={styles.groupCenterCalloutAddress}>{groupAddress}</Text>
                     {distanceToGroup != null && (
-                      <Text style={styles.calloutSub}>Mesafe: {formatDistance(distanceToGroup)}</Text>
+                      <View style={styles.groupCenterCalloutDistance}>
+                        <Ionicons name="navigate" size={14} color="#06b6d4" />
+                        <Text style={styles.groupCenterCalloutDistanceText}>
+                          Mesafe: {formatDistance(distanceToGroup)}
+                        </Text>
+                      </View>
                     )}
                   </View>
                 </Callout>
@@ -1059,19 +1294,52 @@ export default function TrackScreen(): React.JSX.Element {
             )}
           </MapView>
 
-          {/* Floating Actions */}
+          {/* Floating Actions - Profesyonel GPS Kontrolleri */}
           <View style={styles.fabGroup} pointerEvents="box-none">
             <Animated.View style={{ transform: [{ scale: fabScale }] }}>
-              <Pressable onPress={() => { if (coords && mapRef.current) { mapRef.current.animateCamera({ center: coords, heading: heading ?? 0, pitch: 0 }, { duration: 500 }); setFollow(true); } }} style={styles.fab} accessibilityLabel="Konuma odakla">
-                <Ionicons name={follow ? 'locate' : 'locate-outline'} size={18} color="#083344" />
+              <Pressable 
+                onPress={() => { 
+                  if (mapRef.current) { 
+                    mapRef.current.animateToRegion(animatedRegion, 500);
+                    setCurrentRegion(animatedRegion);
+                    setFollow(true); 
+                    showInfo('Konumunuza odaklanıldı');
+                  } else {
+                    showWarning('Konum bilgisi alınamadı');
+                  }
+                }} 
+                style={[styles.fab, follow && { backgroundColor: '#10b981' }]} 
+                accessibilityLabel="Konuma odakla"
+              >
+                <Ionicons name={follow ? 'locate' : 'locate-outline'} size={18} color={follow ? "#fff" : "#083344"} />
               </Pressable>
             </Animated.View>
 
             <Animated.View style={{ transform: [{ scale: fabScale }] }}>
-              <Pressable onPress={fitToTurkey} style={[styles.fab, { backgroundColor: '#fff' }]} accessibilityLabel="Türkiye'yi göster">
-                <Ionicons name="map" size={18} color="#083344" />
+              <Pressable 
+                onPress={fitToTurkey} 
+                style={[styles.fab, { backgroundColor: '#fff', marginTop: 8 }]} 
+                accessibilityLabel="Türkiye haritasını göster"
+              >
+                <Ionicons name="globe-outline" size={18} color="#ef4444" />
               </Pressable>
             </Animated.View>
+            
+            {/* Zoom kontrolleri */}
+            <View style={styles.zoomControls}>
+              <Pressable 
+                onPress={() => zoomMap('in')}
+                style={styles.zoomBtn}
+              >
+                <Ionicons name="add" size={16} color="#083344" />
+              </Pressable>
+              <Pressable 
+                onPress={() => zoomMap('out')}
+                style={[styles.zoomBtn, { borderTopWidth: 1, borderTopColor: '#e6eef0' }]}
+              >
+                <Ionicons name="remove" size={16} color="#083344" />
+              </Pressable>
+            </View>
           </View>
         </View>
 
@@ -1307,17 +1575,416 @@ const styles = StyleSheet.create({
 
   mapCard: { height: 420, marginHorizontal: 14, borderRadius: 18, overflow: 'hidden', backgroundColor: '#1e293b', marginTop: 12, marginBottom: 12, borderWidth: 1, borderColor: '#334155' },
   map: { width: '100%', height: '100%' },
+  // Profesyonel GPS Marker Stilleri - Optimize Edilmiş ve Stabil
+  professionalMarkerWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 80,
+    height: 80,
+  },
+  markerPulseOuter: {
+    position: 'absolute',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(6,182,212,0.3)',
+    borderWidth: 2,
+    borderColor: 'rgba(6,182,212,0.5)',
+  },
+  markerPulseInner: {
+    position: 'absolute',
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    backgroundColor: 'rgba(6,182,212,0.2)',
+    borderWidth: 2,
+    borderColor: 'rgba(6,182,212,0.3)',
+  },
+  professionalMarkerMain: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 4,
+    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#06b6d4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  markerSpeedBadge: {
+    position: 'absolute',
+    bottom: -6,
+    right: -6,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderWidth: 2,
+    borderColor: '#06b6d4',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 4,
+    minWidth: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markerSpeedText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#06b6d4',
+    fontFamily: 'Poppins-ExtraBold',
+  },
+  markerTrackingBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#10b981',
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.5,
+    shadowRadius: 2,
+    elevation: 4,
+  },
+  // Profesyonel Callout - Zengin Bilgi Gösterimi
+  professionalCallout: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 14,
+    minWidth: 240,
+    maxWidth: 280,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(6,182,212,0.1)',
+  },
+  calloutHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  calloutIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(6,182,212,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  calloutTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#083344',
+    fontFamily: 'Poppins-ExtraBold',
+    flex: 1,
+  },
+  calloutInfoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+  calloutInfoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f9fafb',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+    flex: 1,
+    minWidth: '45%',
+  },
+  calloutInfoLabel: {
+    fontSize: 10,
+    color: '#64748b',
+    fontFamily: 'Poppins-Regular',
+    marginRight: 4,
+  },
+  calloutInfoValue: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#083344',
+    fontFamily: 'Poppins-Bold',
+  },
+  calloutCoordinates: {
+    marginTop: 8,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  calloutCoordText: {
+    fontSize: 10,
+    color: '#64748b',
+    fontFamily: 'Poppins-Regular',
+    textAlign: 'center',
+  },
+  
+  // Üye Marker Stilleri - Profesyonel İkonlu
+  memberMarkerWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 50,
+    height: 50,
+  },
+  memberMarkerMain: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  memberOnlineDot: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#10b981',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  
+  // Diğer Kullanıcı Marker Stilleri
+  otherUserMarkerWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  otherUserMarkerMain: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#64748b',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  
+  // Grup Merkezi Marker Stilleri
+  groupCenterMarkerWrapper: {
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    width: 60,
+    height: 60,
+  },
+  groupCenterMarkerMain: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 4,
+    borderColor: '#fff',
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 2,
+  },
+  groupCenterMarkerShadow: {
+    position: 'absolute',
+    bottom: 0,
+    width: 40,
+    height: 15,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    zIndex: 1,
+  },
+  
+  // Member Callout Stilleri
+  memberCallout: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    minWidth: 200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  memberCalloutHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  memberCalloutIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  memberCalloutTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#083344',
+    fontFamily: 'Poppins-ExtraBold',
+    flex: 1,
+  },
+  memberCalloutInfo: {
+    gap: 6,
+  },
+  memberCalloutStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  memberCalloutStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: 'Poppins-Bold',
+  },
+  memberCalloutLocation: {
+    fontSize: 10,
+    color: '#64748b',
+    fontFamily: 'Poppins-Regular',
+  },
+  
+  // Other User Callout Stilleri
+  otherUserCallout: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    minWidth: 180,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  otherUserCalloutHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  otherUserCalloutIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(6,182,212,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  otherUserCalloutTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#083344',
+    fontFamily: 'Poppins-Bold',
+  },
+  otherUserCalloutId: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+    marginBottom: 4,
+    fontFamily: 'Poppins-SemiBold',
+  },
+  otherUserCalloutLocation: {
+    fontSize: 10,
+    color: '#94a3b8',
+    fontFamily: 'Poppins-Regular',
+  },
+  
+  // Group Center Callout Stilleri
+  groupCenterCallout: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    minWidth: 220,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  groupCenterCalloutHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  groupCenterCalloutIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  groupCenterCalloutTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#083344',
+    fontFamily: 'Poppins-ExtraBold',
+  },
+  groupCenterCalloutAddress: {
+    fontSize: 12,
+    color: '#64748b',
+    marginBottom: 6,
+    fontFamily: 'Poppins-Regular',
+  },
+  groupCenterCalloutDistance: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  groupCenterCalloutDistanceText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#06b6d4',
+    fontFamily: 'Poppins-Bold',
+  },
+  
+  // Eski stiller (geriye uyumluluk için)
   workerDot: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', borderWidth: 2, borderColor: '#06b6d4' },
   pulseWrapper: { alignItems: 'center', justifyContent: 'center' },
   pulseCircle: { position: 'absolute', width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(6,182,212,0.12)' },
   otherUserMarker: { padding: 8, borderRadius: 12, backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(4,47,53,0.06)' },
   targetMarker: { padding: 8, borderRadius: 12, backgroundColor: '#fff5f5', borderWidth: 1, borderColor: 'rgba(127,29,29,0.25)' },
   calloutCard: { backgroundColor: '#fff', padding: 8, borderRadius: 8 },
-  calloutTitle: { fontWeight: '700', color: '#083344', fontFamily: 'Poppins-Bold' },
   calloutSub: { fontSize: 12, color: '#64748b', fontFamily: 'Poppins-Regular' },
 
-  fabGroup: { position: 'absolute', top: 14, right: 14, gap: 10, alignItems: 'flex-end' },
-  fab: { height: 46, width: 46, borderRadius: 12, backgroundColor: '#e6f5f4', alignItems: 'center', justifyContent: 'center', borderWidth: 0 },
+  fabGroup: { position: 'absolute', top: 14, right: 14, gap: 8, alignItems: 'flex-end' },
+  fab: { height: 46, width: 46, borderRadius: 12, backgroundColor: '#e6f5f4', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(6,182,212,0.2)', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
+  zoomControls: { marginTop: 8, backgroundColor: '#fff', borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#e6eef0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
+  zoomBtn: { width: 46, height: 38, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
 
   controlPanel: { marginHorizontal: 14, gap: 12, marginBottom: 40, marginTop: 6 },
   inputRow: { flexDirection: 'row' },

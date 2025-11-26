@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ExpoLinking from 'expo-linking';
 import { useRouter } from 'expo-router';
+import * as ExpoWebBrowser from 'expo-web-browser';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -123,26 +125,83 @@ const UpgradeScreen: React.FC = () => {
     fetchPlans();
   }, [fetchPlans]);
 
+  // Subscription durumunu yenile
+  const refreshSubscription = React.useCallback(async () => {
+    try {
+      const response = await authFetch('/api/me/subscription');
+      if (response.ok) {
+        const data = await response.json();
+        setSubscription(data.subscription || null);
+      }
+      // History'yi de yenile
+      const historyRes = await authFetch('/api/billing/history');
+      if (historyRes.ok) {
+        const historyData = await historyRes.json();
+        setHistory(historyData.history || []);
+      }
+    } catch (error) {
+      console.error('[UpgradeScreen] Subscription refresh error:', error);
+    }
+  }, []);
+
+  // Ödeme sayfasını aç
   const handleSelectPlan = React.useCallback(
     async (planId: string) => {
       if (processingPlan) return;
+      
+      // Free plan ise direkt geç
+      if (planId === 'free') {
+        Alert.alert('Bilgi', 'Zaten ücretsiz plandayız veya ücretsiz plana geçiş için destek ile iletişime geçin.');
+        return;
+      }
+
       setProcessingPlan(planId);
       try {
-        const response = await authFetch('/api/billing/checkout', {
+        // Checkout session oluştur
+        const response = await authFetch('/api/checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planId })
+          body: JSON.stringify({ 
+            planId,
+            successUrl: ExpoLinking.createURL('/UpgradeScreen'),
+            cancelUrl: ExpoLinking.createURL('/UpgradeScreen')
+          })
         });
 
         if (!response.ok) {
           const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || 'Ödeme işlemi tamamlanamadı');
+          throw new Error(data.error || 'Checkout oluşturulamadı');
         }
 
         const data = await response.json();
-        setSubscription(data.subscription || null);
-        setHistory(data.history || []);
-        Alert.alert('Ödeme başarılı', data.message || 'Planınız güncellendi.');
+        
+        if (data.checkoutUrl) {
+          // Ödeme sayfasını tarayıcıda aç
+          const result = await ExpoWebBrowser.openBrowserAsync(data.checkoutUrl, {
+            dismissButtonStyle: 'close',
+            presentationStyle: ExpoWebBrowser.WebBrowserPresentationStyle.FULL_SCREEN
+          });
+
+          console.log('[UpgradeScreen] Browser result:', result);
+
+          // Tarayıcı kapandığında subscription durumunu kontrol et
+          await refreshSubscription();
+          
+          // Yeni subscription kontrolü - başarılı ödeme sonrası bildirim
+          const subRes = await authFetch('/api/me/subscription');
+          if (subRes.ok) {
+            const subData = await subRes.json();
+            if (subData.subscription?.planId === planId) {
+              Alert.alert(
+                '🎉 Ödeme Başarılı!', 
+                `${subData.subscription.planName} planınız aktifleştirildi.`,
+                [{ text: 'Tamam', style: 'default' }]
+              );
+            }
+          }
+        } else {
+          throw new Error('Checkout URL alınamadı');
+        }
       } catch (error: any) {
         console.error('[UpgradeScreen] Checkout error:', error);
         Alert.alert('Hata', error.message || 'Ödeme sırasında bir sorun oluştu.');
@@ -150,8 +209,16 @@ const UpgradeScreen: React.FC = () => {
         setProcessingPlan(null);
       }
     },
-    [processingPlan]
+    [processingPlan, refreshSubscription]
   );
+
+  // Uygulama ön plana geldiğinde subscription durumunu yenile
+  React.useEffect(() => {
+    const linkingSubscription = ExpoLinking.addEventListener('url', () => {
+      refreshSubscription();
+    });
+    return () => linkingSubscription.remove();
+  }, [refreshSubscription]);
 
   const formatDate = (timestamp?: number | string) => {
     if (!timestamp) return '';

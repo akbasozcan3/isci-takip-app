@@ -174,13 +174,16 @@ export default function GroupMapScreen() {
     const lastPayloadRef = React.useRef<any | null>(null);
     const mapRef = React.useRef<any>(null);
 
-    const [mapRegion, setMapRegion] = React.useState({
-        // Start centered on Turkey for immediate context; adjust as needed later
-        latitude: 38.9637,
-        longitude: 35.2433,
-        latitudeDelta: 3,
-        longitudeDelta: 3,
-    });
+    // Türkiye merkez koordinatları - Profesyonel GPS takip için
+    const TURKEY_CENTER = { latitude: 39.0, longitude: 35.2433 };
+    const TURKEY_REGION = { 
+        latitude: TURKEY_CENTER.latitude, 
+        longitude: TURKEY_CENTER.longitude, 
+        latitudeDelta: 13.0, 
+        longitudeDelta: 20.0 
+    };
+    
+    const [mapRegion, setMapRegion] = React.useState(TURKEY_REGION);
 
     // --- initial load: workerId + persisted preference ---
     React.useEffect(() => {
@@ -784,7 +787,9 @@ export default function GroupMapScreen() {
                 <MapView
                     ref={mapRef}
                     style={styles.map}
-                    initialRegion={mapRegion}
+                    initialRegion={groupInfo?.lat && groupInfo?.lng 
+                        ? { latitude: groupInfo.lat, longitude: groupInfo.lng, latitudeDelta: 0.01, longitudeDelta: 0.01 }
+                        : TURKEY_REGION}
                     onRegionChangeComplete={setMapRegion}
                     provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
                     mapType={mapType}
@@ -792,6 +797,26 @@ export default function GroupMapScreen() {
                     showsMyLocationButton={true}
                     showsCompass={true}
                     showsScale={true}
+                    loadingEnabled={true}
+                    loadingIndicatorColor="#06b6d4"
+                    loadingBackgroundColor="rgba(15,23,42,0.9)"
+                    onMapReady={() => {
+                        // Harita hazır olduğunda grup varsa ona odaklan, yoksa Türkiye'ye
+                        if (groupInfo?.lat && groupInfo?.lng) {
+                            setTimeout(() => {
+                                mapRef.current?.animateToRegion({
+                                    latitude: groupInfo.lat!,
+                                    longitude: groupInfo.lng!,
+                                    latitudeDelta: 0.01,
+                                    longitudeDelta: 0.01
+                                }, 1000);
+                            }, 500);
+                        } else if (mapRef.current) {
+                            setTimeout(() => {
+                                mapRef.current?.animateToRegion(TURKEY_REGION, 1000);
+                            }, 500);
+                        }
+                    }}
                 >
                     {/* Group center + geofence */}
                     {groupInfo?.lat && groupInfo?.lng && (

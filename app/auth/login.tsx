@@ -330,9 +330,7 @@ const styles = StyleSheet.create({
   },
   footerLink: {
     color: '#60a5fa',
-    fontSize: 13,
     fontWeight: '600',
-    marginLeft: 4,
     textDecorationLine: 'underline',
     fontFamily: 'Poppins-SemiBold',
   },

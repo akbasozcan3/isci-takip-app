@@ -4,7 +4,7 @@ import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { MessageProvider } from '../components/MessageProvider';
-// Auth check - redirect to login if not authenticated
+import SubscriptionModal, { useSubscriptionModal } from '../components/SubscriptionModal';
 
 // Splash screen'i manuel kontrol için
 SplashScreen.preventAutoHideAsync();
@@ -13,6 +13,10 @@ export default function RootLayout(): React.JSX.Element {
   const pathname = usePathname();
   const router = useRouter();
   const [ready, setReady] = React.useState(false);
+  const [isAuthenticated, setIsAuthenticated] = React.useState(false);
+  
+  // Abonelik modal hook'u
+  const subscriptionModal = useSubscriptionModal();
 
   React.useEffect(() => {
     console.log('[RootLayout] Component mounted, pathname:', pathname);
@@ -20,12 +24,9 @@ export default function RootLayout(): React.JSX.Element {
     
     (async () => {
       try {
-        // Onboarding yönlendirmesi devre dışı (guide açılmasın)
-
         // Auth kontrolü
         const token = await SecureStore.getItemAsync('auth_token');
         const isAuthPage = pathname.startsWith('/auth');
-        // Reset-password sayfasına giriş yapmış kullanıcılar da erişebilmeli
         const isResetPasswordPage = pathname.startsWith('/auth/reset-password');
         const isAllowedAuthPage = isResetPasswordPage;
         
@@ -33,11 +34,13 @@ export default function RootLayout(): React.JSX.Element {
           if (!token && !isAuthPage) {
             console.log('[RootLayout] No token found, redirecting to login');
             router.replace('/auth/login');
+            setIsAuthenticated(false);
           } else if (token && isAuthPage && !isAllowedAuthPage) {
-            // Giriş yapmış kullanıcılar sadece reset-password sayfasına erişebilir
-            // Diğer auth sayfalarına (login, register) erişemezler
             console.log('[RootLayout] Token found, redirecting to home');
             router.replace('/(tabs)');
+            setIsAuthenticated(true);
+          } else if (token) {
+            setIsAuthenticated(true);
           }
         }
       } catch (error) {
@@ -46,7 +49,6 @@ export default function RootLayout(): React.JSX.Element {
         if (isMounted) {
           console.log('[RootLayout] Setting ready to true');
           setReady(true);
-          // Splash screen'i gizle
           setTimeout(() => {
             console.log('[RootLayout] Hiding splash screen');
             SplashScreen.hideAsync();
@@ -60,6 +62,17 @@ export default function RootLayout(): React.JSX.Element {
       isMounted = false;
     };
   }, [pathname, router]);
+
+  // Kullanıcı giriş yaptıktan sonra abonelik modal'ını kontrol et
+  React.useEffect(() => {
+    if (ready && isAuthenticated && !pathname.startsWith('/auth')) {
+      // Kısa bir gecikme ile modal'ı göster (UX için)
+      const timer = setTimeout(() => {
+        subscriptionModal.checkAndShow();
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [ready, isAuthenticated, pathname]);
 
   if (!ready) {
     console.log('[RootLayout] Rendering loading screen');
@@ -75,6 +88,12 @@ export default function RootLayout(): React.JSX.Element {
     <ErrorBoundary>
       <MessageProvider>
         <Slot />
+        {/* Abonelik Modal - Uygulama açılışında 1 kez gösterilir */}
+        <SubscriptionModal
+          visible={subscriptionModal.visible}
+          onClose={subscriptionModal.hide}
+          onSubscriptionChange={subscriptionModal.setSubscription}
+        />
       </MessageProvider>
     </ErrorBoundary>
   );

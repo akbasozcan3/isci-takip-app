@@ -17,6 +17,11 @@ interface LeafletLiveMapProps {
 }
 
 export default function LeafletLiveMap({ center, markers, radiusMeters = 150, height = 300 }: LeafletLiveMapProps) {
+  // Türkiye merkez koordinatları - varsayılan olarak kullan
+  const TURKEY_CENTER = { lat: 39.0, lng: 35.2433 };
+  const defaultCenter = center || TURKEY_CENTER;
+  const isTurkeyCenter = defaultCenter.lat === TURKEY_CENTER.lat && defaultCenter.lng === TURKEY_CENTER.lng;
+  
   const html = React.useMemo(() => `
   <!DOCTYPE html>
   <html>
@@ -33,12 +38,22 @@ export default function LeafletLiveMap({ center, markers, radiusMeters = 150, he
       <div id="map"></div>
       <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
       <script>
-        const map = L.map('map', { zoomControl: true }).setView([${center.lat}, ${center.lng}], 15);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+        // Türkiye merkezli canlı harita - Profesyonel GPS takip
+        const map = L.map('map', { zoomControl: true }).setView([${defaultCenter.lat}, ${defaultCenter.lng}], ${isTurkeyCenter ? '6' : '15'});
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
+          maxZoom: 19, 
+          minZoom: 5,
+          attribution: '© OpenStreetMap | Türkiye GPS Takip' 
+        }).addTo(map);
+        
+        // Türkiye sınırlarına odaklan (eğer merkez Türkiye ise)
+        if (${isTurkeyCenter ? 'true' : 'false'}) {
+          map.fitBounds([[36.0, 26.0], [42.0, 45.0]], { padding: [20, 20] });
+        }
 
-        // Geofence circle
+        // Geofence circle - Türkiye merkezli
         const radius = ${Math.max(50, Number(radiusMeters) || 150)};
-        const center = L.latLng(${center.lat}, ${center.lng});
+        const center = L.latLng(${defaultCenter.lat}, ${defaultCenter.lng});
         L.circle(center, { radius: radius, color: 'rgba(124,58,237,0.6)', weight: 2, fillColor: 'rgba(124,58,237,0.15)', fillOpacity: 0.6 }).addTo(map);
         L.marker(center, { title: 'Grup Merkezi' }).addTo(map);
 
@@ -60,7 +75,7 @@ export default function LeafletLiveMap({ center, markers, radiusMeters = 150, he
       </script>
     </body>
   </html>
-  `, [center.lat, center.lng, JSON.stringify(markers), radiusMeters]);
+  `, [defaultCenter.lat, defaultCenter.lng, JSON.stringify(markers), radiusMeters]);
 
   return (
     <View style={[styles.container, { height }]}> 
