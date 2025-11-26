@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle, Pressable } from 'react-native';
+import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { authFetch } from '../utils/auth';
 
 interface Props {
@@ -28,7 +28,7 @@ export const ProfileBadge: React.FC<Props> = ({ name, size = 40, style, onPress 
           if (mounted) setInitials(initialsFromName(name));
           return;
         }
-        const r = await authFetch('/auth/me');
+        const r = await authFetch('/users/me');
         if (!mounted) return;
         if (r.ok) {
           const data = await r.json();

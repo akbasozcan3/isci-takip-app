@@ -22,11 +22,30 @@ npm install
 
 ### 2. Backend Sunucusunu Başlat
 
+**Windows için:**
 ```bash
-npm run server
+# Yöntem 1: Batch dosyası ile (önerilen)
+start-backend.bat
+
+# Yöntem 2: PowerShell script ile
+.\start-backend.ps1
+
+# Yöntem 3: NPM script ile
+npm run start:backend
+# veya
+npm run dev
+```
+
+**macOS/Linux için:**
+```bash
+cd api
+npm install
+npm start
 ```
 
 Backend varsayılan olarak `http://localhost:4000` adresinde çalışır.
+
+**Not:** İlk çalıştırmada `.env` dosyası otomatik olarak `env.example`'dan oluşturulur. Production için `.env` dosyasındaki `JWT_SECRET` değerini değiştirmeyi unutmayın!
 
 ### 3. Mobil Uygulamayı Başlat
 

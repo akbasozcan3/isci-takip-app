@@ -30,7 +30,7 @@ export const theme = {
     // Text colors
     text: '#ffffff',
     textSecondary: '#e5e5e5',
-    textMuted: '#a3a3a3',
+    textMuted: '#94a3b8', // Daha görünür placeholder rengi
     textLight: '#737373',
     
     // Utility colors

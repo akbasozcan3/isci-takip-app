@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { ColorValue, Pressable, StyleSheet, Text, ViewStyle } from 'react-native';
+import { ColorValue, Pressable, StyleProp, StyleSheet, Text, ViewStyle } from 'react-native';
 import theme from './theme';
 
 interface Props {
@@ -8,7 +8,7 @@ interface Props {
   onPress?: () => void;
   loading?: boolean;
   disabled?: boolean;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   variant?: 'primary' | 'secondary' | 'danger';
   accessibilityLabel?: string;
   accessibilityHint?: string;
@@ -40,6 +40,11 @@ const styles = StyleSheet.create({
   pressable: {
     borderRadius: 12,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
   },
   gradient: {
     paddingVertical: 14,

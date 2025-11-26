@@ -24,12 +24,18 @@ import {
   UIManager,
   View,
 } from 'react-native';
-import MapView, { Callout, Circle, Marker, Polyline } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { io, Socket } from 'socket.io-client';
 import { Toast, useToast } from '../../components/Toast';
 import { getApiBase } from '../../utils/api';
 import { authFetch } from '../../utils/auth';
+// Guard react-native-maps for web bundling
+const Maps: any = Platform.OS === 'web' ? null : require('react-native-maps');
+const MapView: any = Platform.OS === 'web' ? View : Maps.default;
+const Marker: any = Platform.OS === 'web' ? View : Maps.Marker;
+const Circle: any = Platform.OS === 'web' ? View : Maps.Circle;
+const Callout: any = Platform.OS === 'web' ? View : Maps.Callout;
+const Polyline: any = Platform.OS === 'web' ? View : Maps.Polyline;
 
 // NOTE: This file is a polished, compact redesign of your TrackScreen.
 // - Uses a safe, non-hacky header (no negative margins)
@@ -214,7 +220,7 @@ export default function TrackScreen(): React.JSX.Element {
         if (!mounted) return;
         setWorkerId(stored);
         try {
-          const r = await authFetch('/auth/me');
+          const r = await authFetch('/users/me');
           if (r.ok) {
             const { user } = await r.json();
             if (user && user.name) setProfileName(user.name);
@@ -1289,15 +1295,15 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   brandRow: { flexDirection: 'row', alignItems: 'center' },
   headerAvatar: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.9)' },
-  headerAvatarText: { color: '#042f35', fontWeight: '800' },
-  title: { color: '#042f35', fontSize: 16, fontWeight: '800' },
-  subtitle: { color: 'rgba(4,47,53,0.9)', fontSize: 12 },
+  headerAvatarText: { color: '#042f35', fontWeight: '800', fontFamily: 'Poppins-ExtraBold' },
+  title: { color: '#042f35', fontSize: 16, fontWeight: '800', fontFamily: 'Poppins-ExtraBold' },
+  subtitle: { color: 'rgba(4,47,53,0.9)', fontSize: 12, fontFamily: 'Poppins-Regular' },
   headerActions: { flexDirection: 'row', alignItems: 'center' },
   iconBtn: { width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.9)', alignItems: 'center', justifyContent: 'center' },
   badge: { position: 'absolute', top: -6, right: -6, backgroundColor: '#ef4444', minWidth: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 2, borderColor: '#06b6d4' },
-  badgeText: { color: '#fff', fontSize: 10, fontWeight: '900' },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: '900', fontFamily: 'Poppins-Bold' },
   headerStats: { marginTop: 10, flexDirection: 'row', gap: 12, justifyContent: 'flex-start' },
-  statText: { color: 'rgba(4,47,53,0.9)', fontWeight: '700', marginRight: 18 },
+  statText: { color: 'rgba(4,47,53,0.9)', fontWeight: '700', marginRight: 18, fontFamily: 'Poppins-Bold' },
 
   mapCard: { height: 420, marginHorizontal: 14, borderRadius: 18, overflow: 'hidden', backgroundColor: '#1e293b', marginTop: 12, marginBottom: 12, borderWidth: 1, borderColor: '#334155' },
   map: { width: '100%', height: '100%' },
@@ -1307,8 +1313,8 @@ const styles = StyleSheet.create({
   otherUserMarker: { padding: 8, borderRadius: 12, backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(4,47,53,0.06)' },
   targetMarker: { padding: 8, borderRadius: 12, backgroundColor: '#fff5f5', borderWidth: 1, borderColor: 'rgba(127,29,29,0.25)' },
   calloutCard: { backgroundColor: '#fff', padding: 8, borderRadius: 8 },
-  calloutTitle: { fontWeight: '700', color: '#083344' },
-  calloutSub: { fontSize: 12, color: '#64748b' },
+  calloutTitle: { fontWeight: '700', color: '#083344', fontFamily: 'Poppins-Bold' },
+  calloutSub: { fontSize: 12, color: '#64748b', fontFamily: 'Poppins-Regular' },
 
   fabGroup: { position: 'absolute', top: 14, right: 14, gap: 10, alignItems: 'flex-end' },
   fab: { height: 46, width: 46, borderRadius: 12, backgroundColor: '#e6f5f4', alignItems: 'center', justifyContent: 'center', borderWidth: 0 },
@@ -1322,18 +1328,18 @@ const styles = StyleSheet.create({
   button: { flex: 1, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   buttonStart: { backgroundColor: '#06b6d4' },
   buttonStop: { backgroundColor: '#ef4444' },
-  buttonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  buttonText: { color: '#fff', fontSize: 15, fontWeight: '700', fontFamily: 'Poppins-Bold' },
   secondaryButton: { flex: 1, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1e293b', borderWidth: 1, borderColor: '#334155' },
-  secondaryText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  secondaryMeta: { color: '#64748b', fontSize: 12 },
+  secondaryText: { color: '#fff', fontSize: 14, fontWeight: '700', fontFamily: 'Poppins-Bold' },
+  secondaryMeta: { color: '#64748b', fontSize: 12, fontFamily: 'Poppins-Regular' },
 
   metricsRow: { marginTop: 12, backgroundColor: '#1e293b', borderRadius: 14, padding: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', borderWidth: 1, borderColor: '#334155' },
   metricItem: { width: (width - 56) / 3, marginBottom: 6 },
-  metricLabel: { fontSize: 11, color: '#94a3b8' },
-  metricVal: { fontSize: 13, color: '#fff', fontWeight: '800' },
+  metricLabel: { fontSize: 11, color: '#94a3b8', fontFamily: 'Poppins-Regular' },
+  metricVal: { fontSize: 13, color: '#fff', fontWeight: '800', fontFamily: 'Poppins-ExtraBold' },
   modalContainer: { flex: 1, backgroundColor: '#0f172a' },
   modalHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', padding: 25, borderBottomWidth: 1, borderColor: '#eceff1', paddingTop: 79 },
-  modalTitle: { fontSize: 20, fontWeight: '900', color: '#fff' },
+  modalTitle: { fontSize: 20, fontWeight: '900', color: '#fff', fontFamily: 'Poppins-Bold' },
   modalClose: { padding: 8 },
   modalList: { paddingHorizontal: 12 },
   userRow: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#1e293b', borderRadius: 14, marginVertical: 8, borderWidth: 1, borderColor: '#334155' },

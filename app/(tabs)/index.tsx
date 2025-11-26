@@ -27,7 +27,6 @@ import { io, Socket } from 'socket.io-client';
 import { Toast, useToast } from '../../components/Toast';
 import { getApiBase } from '../../utils/api';
 import { getToken } from '../../utils/auth';
-import ProfileBadge from '../../components/ProfileBadge';
 
 const { width } = Dimensions.get('window');
 
@@ -61,8 +60,12 @@ interface Article {
   id: string;
   title: string;
   excerpt: string;
-  icon: string;
+  icon?: string;
   readTime: string;
+  category?: string;
+  tags?: string[];
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 // --- Static content (you can fetch these from API if desired) ---
@@ -76,7 +79,7 @@ const SLIDES: Slide[] = [
   },
   {
     id: '2',
-    title: 'Akıllı Raporlama',
+    title: 'Bavaxe Raporlama',
     description: 'Günlük mesafe, rota ve etkinlik raporlarını kolayca görüntüleyin ve dışa aktarın.',
     icon: 'stats-chart',
     color: '#10b981',
@@ -90,101 +93,14 @@ const SLIDES: Slide[] = [
   },
 ];
 
-const ARTICLES: Article[] = [
-  { 
-    id: 'getting-started', 
-    title: 'İşçi Takip Sistemi Nedir?', 
-    excerpt: 'Konum tabanlı takip çözümleri ile ekibinizi gerçek zamanlı izleyin. İşletmelere sağladığı faydalar, kullanım senaryoları ve verimlilik artışı hakkında detaylı bilgi.', 
-    icon: 'information-circle', 
-    readTime: '5 dk' 
-  },
-  { 
-    id: 'privacy-security', 
-    title: 'Veri Gizliliği ve Güvenlik', 
-    excerpt: 'Çalışan verilerini KVKK uyumlu şekilde nasıl koruruz? Şifreleme, erişim kontrolleri ve güvenlik protokolleri hakkında en iyi uygulamalar.', 
-    icon: 'lock-closed', 
-    readTime: '6 dk' 
-  },
-  { 
-    id: 'battery-optimization', 
-    title: 'Pil Tüketimi Optimizasyonu', 
-    excerpt: 'Akıllı konum güncelleme algoritmaları ile pil ömrünü %70\'e kadar koruyun. Arka plan çalışma ve enerji tasarrufu teknikleri.', 
-    icon: 'battery-charging', 
-    readTime: '4 dk' 
-  },
-  { 
-    id: 'group-management', 
-    title: 'Grup Yönetimi ve İzinler', 
-    excerpt: 'Çalışanları gruplara ayırın, yetkilendirme yapın ve ekip bazlı raporlar alın. Hiyerarşik yapı ve rol tabanlı erişim kontrolü.', 
-    icon: 'people-circle', 
-    readTime: '7 dk' 
-  },
-  { 
-    id: 'realtime-tracking', 
-    title: 'Gerçek Zamanlı Bildirimler', 
-    excerpt: 'Anlık push notification ile kritik olaylardan haberdar olun. Geofencing, hız limiti ve acil durum uyarıları nasıl çalışır?', 
-    icon: 'notifications-circle', 
-    readTime: '5 dk' 
-  },
-  { 
-    id: 'reports-analytics', 
-    title: 'Raporlama ve Analitik', 
-    excerpt: 'Detaylı raporlar ile ekip performansını analiz edin. Mesafe, süre, verimlilik metrikleri ve görselleştirme araçları.', 
-    icon: 'analytics', 
-    readTime: '8 dk' 
-  },
-  { 
-    id: 'offline-sync', 
-    title: 'Offline Mod ve Senkronizasyon', 
-    excerpt: 'İnternet bağlantısı olmadan da çalışın. Veriler otomatik senkronize edilir. Offline çalışma mantığı ve veri tutarlılığı.', 
-    icon: 'cloud-offline', 
-    readTime: '6 dk' 
-  },
-  { 
-    id: 'android-ios-tips', 
-    title: 'Harita Entegrasyonu', 
-    excerpt: 'Google Maps ve OpenStreetMap desteği. Özel harita katmanları, ısı haritaları ve rota optimizasyonu özellikleri.', 
-    icon: 'map', 
-    readTime: '5 dk' 
-  },
-  { 
-    id: 'security-checklist', 
-    title: 'API ve Entegrasyonlar', 
-    excerpt: 'RESTful API ile kendi sistemlerinize entegre edin. Webhook desteği, otomatik raporlama ve üçüncü parti yazılım bağlantıları.', 
-    icon: 'code-slash', 
-    readTime: '9 dk' 
-  },
-  { 
-    id: 'deployment', 
-    title: 'Mobil Uygulama Özellikleri', 
-    excerpt: 'iOS ve Android için native performans. Arka plan çalışma, widget desteği ve kullanıcı dostu arayüz tasarımı.', 
-    icon: 'phone-portrait', 
-    readTime: '4 dk' 
-  },
-  { 
-    id: 'monitoring-alerting', 
-    title: 'Geofencing ve Bölge Yönetimi', 
-    excerpt: 'Sanal sınırlar oluşturun ve giriş-çıkış bildirimleri alın. Müşteri ziyaretleri, saha çalışmaları ve güvenlik uygulamaları.', 
-    icon: 'location', 
-    readTime: '7 dk' 
-  },
-  { 
-    id: 'getting-started', 
-    title: 'Çoklu Dil ve Bölge Desteği', 
-    excerpt: 'Türkçe, İngilizce ve diğer dillerde kullanım. Zaman dilimi, para birimi ve yerel format ayarları.', 
-    icon: 'globe', 
-    readTime: '3 dk' 
-  },
-];
+// Articles will be fetched from backend
 
 const QUICK_ACTIONS = [
-  { id: 'track', title: 'Canlı Takip', icon: 'navigate', route: '/(tabs)/track', color: '#06b6d4' },
-  { id: 'groups', title: 'Gruplarım', icon: 'people', route: '/(tabs)/groups', color: '#7c3aed' },
-  { id: 'admin', title: 'Yönetim', icon: 'shield-checkmark', route: '/(tabs)/admin', color: '#f59e0b' },
-  { id: 'settings', title: 'Ayarlar', icon: 'settings', route: '/(tabs)/settings', color: '#64748b' },
+  { id: 'track', title: 'Canlı Takip', icon: 'navigate-circle', route: '/(tabs)/track', color: '#06b6d4' },
+  { id: 'groups', title: 'Gruplarım', icon: 'people-circle', route: '/(tabs)/groups', color: '#7c3aed' },
+  { id: 'admin', title: 'Yönetim', icon: 'shield-checkmark-outline', route: '/(tabs)/admin', color: '#f59e0b' },
+  { id: 'settings', title: 'Ayarlar', icon: 'settings-outline', route: '/(tabs)/settings', color: '#64748b' },
 ];
-
-// --- Main Screen ---
 export default function HomeScreen(): React.JSX.Element {
   const router = useRouter();
   const { toast, showError, showSuccess, showWarning, showInfo, hideToast } = useToast();
@@ -201,6 +117,7 @@ export default function HomeScreen(): React.JSX.Element {
   const [currentSlide, setCurrentSlide] = React.useState(0);
   const [showLightbox, setShowLightbox] = React.useState(false);
   const [lightboxImage, setLightboxImage] = React.useState<string | null>(null);
+  const [articles, setArticles] = React.useState<Article[]>([]);
   const socketRef = React.useRef<Socket | null>(null);
 
   // Animations
@@ -213,6 +130,22 @@ export default function HomeScreen(): React.JSX.Element {
   const sliderRef = React.useRef<FlatList>(null);
   const autoPlayRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   
+  // Fetch articles from backend
+  React.useEffect(() => {
+    const fetchArticles = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/articles`);
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          setArticles(data.slice(0, 3)); // Only show top 3 on home
+        }
+      } catch (error) {
+        console.error('Error fetching articles:', error);
+      }
+    };
+    fetchArticles();
+  }, []);
+
   React.useEffect(() => {
     let mounted = true;
     
@@ -400,18 +333,18 @@ export default function HomeScreen(): React.JSX.Element {
 
       // Backend'den gerçek veri çek (timeout ile)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 saniye timeout
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 saniye timeout
 
       try {
         const [statsRes, activitiesRes] = await Promise.all([
           fetch(`${API_BASE}/api/dashboard/${worker}`, { 
             headers: authHeaders,
             signal: controller.signal 
-          }),
+          }).catch(() => ({ ok: false, status: 404, json: async () => ({}) } as Response)),
           fetch(`${API_BASE}/api/activities?limit=10`, { 
             headers: authHeaders,
             signal: controller.signal 
-          }),
+          }).catch(() => ({ ok: false, status: 404, json: async () => ([]) } as Response)),
         ]);
 
         clearTimeout(timeoutId);
@@ -440,9 +373,12 @@ export default function HomeScreen(): React.JSX.Element {
           console.warn('Activities fetch failed:', activitiesRes.status);
           setActivities([]);
         }
-      } catch (e) {
+      } catch (e: any) {
         clearTimeout(timeoutId);
-        console.error('Dashboard load error:', e);
+        // AbortError'u sessizce handle et
+        if (e.name !== 'AbortError') {
+          console.error('Dashboard load error:', e);
+        }
         // Fallback - backend yoksa bile çalışsın
         setStats({ activeWorkers: 0, totalGroups: 0, todayDistance: 0, activeAlerts: 0 });
         setActivities([]);
@@ -460,8 +396,8 @@ export default function HomeScreen(): React.JSX.Element {
     setRefreshing(false);
   };
 
-  const handleLogin = () => router.push('/guide');
-  const  handleRegister = () => router.push('/guide');
+  const handleLogin = () => router.push('/auth/login');
+  const  handleRegister = () => router.push('/auth/register');
 
   const handleQuickAction = (route: string) => {
     Animated.sequence([
@@ -521,9 +457,9 @@ export default function HomeScreen(): React.JSX.Element {
         </View>
         <Text style={styles.slideTitle}>{item.title}</Text>
         <Text style={styles.slideDesc}>{item.description}</Text>
-        <Pressable style={[styles.slideCTA]} onPress={() => router.push('/guide')} android_ripple={{ color: 'rgba(255,255,255,0.25)' }}>
-          <Text style={styles.slideCTAText}>Daha Fazla</Text>
-          <Ionicons name="chevron-forward" size={16} color="#06b6d4" />
+        <Pressable style={[styles.slideCTA]} onPress={() => router.push('/help' as any)} android_ripple={{ color: 'rgba(255,255,255,0.25)' }}>
+          <Text style={styles.slideCTAText}>Kısa Tur</Text>
+          <Ionicons name="play" size={16} color="#06b6d4" />
         </Pressable>
       </Animated.View>
     );
@@ -596,22 +532,52 @@ export default function HomeScreen(): React.JSX.Element {
       <LinearGradient colors={[ '#06b6d4', '#0ea5a4' ]} style={styles.header}>
         <View style={styles.headerTop}>
           <View style={styles.headerLeft}>
-            <View style={styles.headerLogoContainer}>
-              <Ionicons name="home" size={24} color="#06b6d4" />
-            </View>
-            <View>
+            <View style={styles.headerTextBlock}>
+              <Text style={styles.brandLabel}>BAVAXE PLATFORMU</Text>
               <Text style={styles.headerTitle}>Ana Sayfa</Text>
-              <Text style={styles.headerSubtitle}>Hoş geldin, {userName}</Text>
+              <Text style={styles.headerSubtitle}>Hoş Geldin, {userName}</Text>
             </View>
           </View>
 
           <View style={styles.headerActions}>
-            <ProfileBadge size={44} />
-            <Pressable onPress={() => router.push('/(tabs)/settings')} style={styles.headerIconButton}>
-              <Ionicons name="settings-outline" size={22} color="#fff" />
+            <Pressable 
+              onPress={() => router.push('/blog')} 
+              style={({ pressed }) => [
+                styles.headerIconButton,
+                pressed && styles.headerIconButtonPressed
+              ]}
+            >
+              <Ionicons name="book-outline" size={20} color="#fff" />
             </Pressable>
-            <Pressable onPress={onRefresh} style={[styles.headerIconButton, { marginLeft: 8 }]}>
-              <Ionicons name="refresh-outline" size={22} color="#fff" />
+            <Pressable 
+              onPress={() => router.push('/notifications' as any)} 
+              style={({ pressed }) => [
+                styles.headerIconButton,
+                pressed && styles.headerIconButtonPressed
+              ]}
+            >
+              <Ionicons name="notifications-outline" size={20} color="#fff" />
+            </Pressable>
+            <Pressable 
+              onPress={onRefresh} 
+              style={({ pressed }) => [
+                styles.headerIconButton,
+                pressed && styles.headerIconButtonPressed,
+                refreshing && styles.headerIconButtonDisabled
+              ]}
+              disabled={refreshing}
+            >
+              <Ionicons name="refresh-outline" size={20} color="#fff" />
+            </Pressable>
+            <Pressable 
+              onPress={() => router.push('/(tabs)/settings')} 
+              style={({ pressed }) => [
+                styles.headerIconButton,
+                styles.headerIconButtonSettings,
+                pressed && styles.headerIconButtonPressed
+              ]}
+            >
+              <Ionicons name="settings-outline" size={20} color="#fff" />
             </Pressable>
           </View>
         </View>
@@ -752,34 +718,84 @@ export default function HomeScreen(): React.JSX.Element {
               <Text style={styles.seeAllText}>Tümünü Gör →</Text>
             </Pressable>
           </View>
-          {ARTICLES.map((art, idx) => (
-            <Pressable key={`${art.id}-${idx}`} style={[styles.blogCard, styles.shadow]} onPress={() => router.push(`/blog/${art.id}` as any)} android_ripple={{ color: 'rgba(255,255,255,0.12)' }}>
-              <View style={styles.blogImageContainer}>
-                <LinearGradient colors={['#06b6d4', '#7c3aed']} style={styles.blogImagePlaceholder}>
-                  <Ionicons name={art.icon as any} size={32} color="#fff" />
-                </LinearGradient>
-                <View style={styles.blogBadge}>
-                  <Text style={styles.blogBadgeText}>YENİ</Text>
-                </View>
-              </View>
-              <View style={styles.blogContent}>
-                <Text style={styles.blogTitle}>{art.title}</Text>
-                <Text style={styles.blogExcerpt} numberOfLines={2}>{art.excerpt}</Text>
-                <View style={styles.blogMeta}>
-                  <View style={styles.blogAuthor}>
-                    <View style={styles.authorAvatar}>
-                      <Ionicons name="person" size={12} color="#06b6d4" />
+          {/* Show articles from backend */}
+          {articles.length > 0 ? (
+            articles.map((art, idx) => {
+              const getCategoryIcon = (category?: string) => {
+                const icons: Record<string, string> = {
+                  'Genel': 'document-text',
+                  'Teknoloji': 'hardware-chip',
+                  'İş Dünyası': 'business',
+                  'Güvenlik': 'shield-checkmark',
+                  'Verimlilik': 'speedometer',
+                  'Gizlilik': 'lock-closed',
+                  'Yönetim': 'people',
+                  'Analiz': 'analytics',
+                  'Kullanım': 'phone-portrait',
+                  'Hizmet': 'headset',
+                  'Sektör': 'grid',
+                };
+                return icons[category || ''] || 'document';
+              };
+              const getCategoryColor = (category?: string) => {
+                const colors: Record<string, string> = {
+                  'Genel': '#06b6d4',
+                  'Teknoloji': '#7c3aed',
+                  'İş Dünyası': '#10b981',
+                  'Güvenlik': '#ef4444',
+                  'Verimlilik': '#f59e0b',
+                  'Gizlilik': '#3b82f6',
+                  'Yönetim': '#8b5cf6',
+                  'Analiz': '#ec4899',
+                  'Kullanım': '#14b8a6',
+                  'Hizmet': '#f97316',
+                  'Sektör': '#6366f1',
+                };
+                return colors[category || ''] || '#64748b';
+              };
+              const categoryColor = getCategoryColor((art as any).category);
+              return (
+                <Pressable
+                  key={`${art.id}-${idx}`}
+                  style={[styles.blogCard, styles.shadow]}
+                  onPress={() => router.push(`/blog?id=${String(art.id)}` as any)}
+                  android_ripple={{ color: 'rgba(255,255,255,0.12)' }}
+                >
+                  <View style={styles.blogImageContainer}>
+                    <LinearGradient colors={[categoryColor, `${categoryColor}CC`]} style={styles.blogImagePlaceholder}>
+                      <Ionicons name={getCategoryIcon((art as any).category) as any} size={32} color="#fff" />
+                    </LinearGradient>
+                    {(art as any).category && (
+                      <View style={[styles.blogBadge, { backgroundColor: `${categoryColor}20` }]}>
+                        <Text style={[styles.blogBadgeText, { color: categoryColor }]}>{(art as any).category.toUpperCase()}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.blogContent}>
+                    <Text style={styles.blogTitle}>{art.title}</Text>
+                    <Text style={styles.blogExcerpt} numberOfLines={2}>{art.excerpt}</Text>
+                    <View style={styles.blogMeta}>
+                      <View style={styles.blogAuthor}>
+                        <View style={styles.authorAvatar}>
+                          <Ionicons name="person" size={12} color="#06b6d4" />
+                        </View>
+                        <Text style={styles.authorName}>Bavaxe</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Ionicons name="time-outline" size={14} color="#64748b" />
+                        <Text style={styles.blogReadTime}>{art.readTime || '5 dk'}</Text>
+                      </View>
                     </View>
-                    <Text style={styles.authorName}>Admin</Text>
                   </View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Ionicons name="time-outline" size={14} color="#64748b" />
-                    <Text style={styles.blogReadTime}>{art.readTime}</Text>
-                  </View>
-                </View>
-              </View>
-            </Pressable>
-          ))}
+                </Pressable>
+              );
+            })
+          ) : (
+            <View style={styles.emptyArticles}>
+              <Ionicons name="document-text-outline" size={48} color="#64748b" />
+              <Text style={styles.emptyArticlesText}>Makaleler yükleniyor...</Text>
+            </View>
+          )}
         </View>
 
         {/* Hakkımızda */}
@@ -910,14 +926,17 @@ const styles = StyleSheet.create({
     paddingBottom: 24, 
     borderBottomLeftRadius: 24, 
     borderBottomRightRadius: 24,
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 10,
   },
   headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 12 },
+  headerTextBlock: { flex: 1 },
+  brandLabel: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.85)',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    fontFamily: 'Poppins-SemiBold',
+  },
   headerLogoContainer: {
     width: 52,
     height: 52,
@@ -931,28 +950,36 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 5,
+    overflow: 'hidden',
   },
-  headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
-  headerSubtitle: { fontSize: 14, color: 'rgba(255,255,255,0.9)', marginTop: 3, fontWeight: '600' },
+  headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
+  headerSubtitle: { fontSize: 12, color: 'rgba(255,255,255,0.9)', marginTop: 3, fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
   headerActions: { flexDirection: 'row', alignItems: 'center' },
   headerIconButton: { 
-    width: 46, 
-    height: 46, 
-    borderRadius: 14, 
-    backgroundColor: 'rgba(255,255,255,0.15)', 
+    width: 42, 
+    height: 42, 
+    borderRadius: 12, 
+    backgroundColor: 'rgba(255,255,255,0.2)', 
     alignItems: 'center', 
     justifyContent: 'center', 
     borderWidth: 1, 
-    borderColor: 'rgba(255,255,255,0.2)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+    borderColor: 'rgba(255,255,255,0.3)',
+    marginLeft: 8,
+  },
+  headerIconButtonPressed: {
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    transform: [{ scale: 0.95 }],
+  },
+  headerIconButtonDisabled: {
+    opacity: 0.5,
+  },
+  headerIconButtonSettings: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderColor: 'rgba(255,255,255,0.4)',
   },
 
   // Scroll
-  scrollContent: { paddingBottom: 140 },
+  scrollContent: { paddingBottom: 10 },
   
   // Top Slider
   topSlider: { marginBottom: 20 },
@@ -981,10 +1008,10 @@ const styles = StyleSheet.create({
   sliderWrapper: { marginTop: 18, marginBottom: 16 },
   slideCard: { backgroundColor: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', marginHorizontal: 0, borderRadius: 20, padding: 24, alignItems: 'flex-start', justifyContent: 'center' },
   slideBadge: { width: 80, height: 80, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  slideTitle: { fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: 8, letterSpacing: 0.5 },
-  slideDesc: { color: 'rgba(255,255,255,0.9)', fontSize: 15, lineHeight: 22 },
+  slideTitle: { fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: 8, letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
+  slideDesc: { color: 'rgba(255,255,255,0.9)', fontSize: 15, lineHeight: 22, fontFamily: 'Poppins-Regular' },
   slideCTA: { marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
-  slideCTAText: { color: '#fff', fontWeight: '900', marginRight: 8 },
+  slideCTAText: { color: '#fff', fontWeight: '900', marginRight: 8, fontFamily: 'Poppins-Bold' },
   dotsRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 16 },
   smallDot: { width: 8, height: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.3)', marginHorizontal: 6 },
   smallDotActive: { width: 32, backgroundColor: '#06b6d4' },
@@ -1026,12 +1053,12 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 5,
   },
-  statValue: { fontSize: 24, fontWeight: '900', color: '#fff', marginTop: 10, letterSpacing: 0.3 },
-  statLabel: { color: '#94a3b8', marginTop: 6, fontSize: 13, fontWeight: '700' },
+  statValue: { fontSize: 24, fontWeight: '900', color: '#fff', marginTop: 10, letterSpacing: 0.3, fontFamily: 'Poppins-Bold' },
+  statLabel: { color: '#94a3b8', marginTop: 6, fontSize: 13, fontWeight: '700', fontFamily: 'Poppins-SemiBold' },
 
   // Quick Actions - Professional
   section: { marginBottom: 20, paddingHorizontal: 20 },
-  sectionTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
+  sectionTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
   sectionBadge: { 
     flexDirection: 'row', 
     alignItems: 'center', 
@@ -1043,7 +1070,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(6,182,212,0.2)',
   },
-  sectionBadgeText: { fontSize: 12, fontWeight: '800', color: '#06b6d4' },
+  sectionBadgeText: { fontSize: 12, fontWeight: '800', color: '#06b6d4', fontFamily: 'Poppins-ExtraBold' },
   quickGrid: { gap: 12 },
   quickActionCard: { 
     backgroundColor: '#1e293b', 
@@ -1086,6 +1113,7 @@ const styles = StyleSheet.create({
     fontWeight: '900', 
     color: '#fff', 
     letterSpacing: 0.3,
+    fontFamily: 'Poppins-Bold',
   },
   quickActionArrow: { 
     width: 28, 
@@ -1113,25 +1141,25 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   activityCircle: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
-  activityMsg: { fontWeight: '900', color: '#fff', fontSize: 15 },
-  activityTime: { color: '#64748b', marginTop: 6, fontSize: 13, fontWeight: '600' },
+  activityMsg: { fontWeight: '900', color: '#fff', fontSize: 15, fontFamily: 'Poppins-Bold' },
+  activityTime: { color: '#64748b', marginTop: 6, fontSize: 13, fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
 
   emptyState: { alignItems: 'center', padding: 40, backgroundColor: '#1e293b', borderRadius: 16, borderWidth: 1, borderColor: '#334155' },
-  emptyText: { color: '#64748b', marginTop: 12, fontSize: 14 },
+  emptyText: { color: '#64748b', marginTop: 12, fontSize: 14, fontFamily: 'Poppins-Regular' },
 
   // Permission
   permissionBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e293b', borderRadius: 16, padding: 16, marginBottom: 18, marginHorizontal: 20, borderWidth: 1, borderColor: '#f59e0b' },
-  permissionTitle: { fontSize: 15, fontWeight: '900', color: '#fff', marginBottom: 6 },
-  permissionText: { fontSize: 13, color: '#94a3b8' },
+  permissionTitle: { fontSize: 15, fontWeight: '900', color: '#fff', marginBottom: 6, fontFamily: 'Poppins-Bold' },
+  permissionText: { fontSize: 13, color: '#94a3b8', fontFamily: 'Poppins-Regular' },
   permissionButton: { backgroundColor: '#f59e0b', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
-  permissionButtonText: { fontSize: 13, fontWeight: '900', color: '#fff' },
+  permissionButtonText: { fontSize: 13, fontWeight: '900', color: '#fff', fontFamily: 'Poppins-Bold' },
 
   // Article Card (authenticated)
   articleCard: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 12, alignItems: 'center' },
 
   // Blog Layout
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  seeAllText: { color: '#06b6d4', fontWeight: '900', fontSize: 14 },
+  seeAllText: { color: '#06b6d4', fontWeight: '900', fontSize: 14, fontFamily: 'Poppins-Bold' },
   blogCard: { 
     backgroundColor: '#1e293b', 
     borderRadius: 20, 
@@ -1150,13 +1178,24 @@ const styles = StyleSheet.create({
   blogBadge: { position: 'absolute', top: 16, right: 16, backgroundColor: '#10b981', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
   blogBadgeText: { color: '#fff', fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
   blogContent: { padding: 20 },
-  blogTitle: { fontSize: 20, fontWeight: '900', color: '#fff', marginBottom: 10, letterSpacing: 0.3 },
-  blogExcerpt: { fontSize: 14, color: '#94a3b8', lineHeight: 22, marginBottom: 14 },
+  blogTitle: { fontSize: 20, fontWeight: '900', color: '#fff', marginBottom: 10, letterSpacing: 0.3, fontFamily: 'Poppins-Bold' },
+  blogExcerpt: { fontSize: 14, color: '#94a3b8', lineHeight: 22, marginBottom: 14, fontFamily: 'Poppins-Regular' },
   blogMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   blogAuthor: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   authorAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#334155', alignItems: 'center', justifyContent: 'center' },
-  authorName: { fontSize: 13, fontWeight: '800', color: '#94a3b8' },
-  blogReadTime: { fontSize: 13, color: '#64748b' },
+  authorName: { fontSize: 13, fontWeight: '800', color: '#94a3b8', fontFamily: 'Poppins-ExtraBold' },
+  blogReadTime: { fontSize: 13, color: '#64748b', fontFamily: 'Poppins-Regular' },
+  emptyArticles: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyArticlesText: {
+    color: '#94a3b8',
+    fontSize: 14,
+    marginTop: 12,
+    fontFamily: 'Poppins-Regular',
+  },
 
   // Lightbox
   lightboxOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', alignItems: 'center', justifyContent: 'center' },
@@ -1181,7 +1220,7 @@ const styles = StyleSheet.create({
   },
   infoTitle: { fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: 14, letterSpacing: 0.5 },
   infoCard: { backgroundColor: '#1e293b', borderRadius: 16, padding: 20, marginBottom: 14, borderWidth: 1, borderColor: '#334155' },
-  infoText: { fontSize: 15, color: '#94a3b8', lineHeight: 24 },
+  infoText: { fontSize: 15, color: '#94a3b8', lineHeight: 24, fontFamily: 'Poppins-Regular' },
 
   // Services
   servicesSection: { marginHorizontal: 20, marginBottom: 20 },
@@ -1201,8 +1240,8 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 5,
   },
-  serviceTitle: { fontSize: 16, fontWeight: '900', color: '#fff', marginTop: 10, textAlign: 'center', letterSpacing: 0.3 },
-  serviceDesc: { fontSize: 13, color: '#94a3b8', marginTop: 6, textAlign: 'center' },
+  serviceTitle: { fontSize: 16, fontWeight: '900', color: '#fff', marginTop: 10, textAlign: 'center', letterSpacing: 0.3, fontFamily: 'Poppins-Bold' },
+  serviceDesc: { fontSize: 13, color: '#94a3b8', marginTop: 6, textAlign: 'center', fontFamily: 'Poppins-Regular' },
 
   // Contact - Modern Design
   contactSection: { marginHorizontal: 20, marginBottom: 30 },
@@ -1272,11 +1311,13 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
+    fontFamily: 'Poppins-SemiBold',
   },
   modernContactValue: {
     fontSize: 15,
     color: '#fff',
     fontWeight: '800',
+    fontFamily: 'Poppins-ExtraBold',
   },
   modernContactArrow: {
     width: 36,

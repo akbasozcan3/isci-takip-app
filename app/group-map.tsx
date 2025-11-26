@@ -22,11 +22,16 @@ import {
     Text,
     View
 } from 'react-native';
-import MapView, { Circle, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { io, Socket } from 'socket.io-client';
 import { Toast, useToast } from '../components/Toast';
 import { getApiBase } from '../utils/api';
+// Avoid importing native-only maps module on web to prevent bundling errors
+const Maps: any = Platform.OS === 'web' ? null : require('react-native-maps');
+const MapView: any = Platform.OS === 'web' ? View : Maps.default;
+const Marker: any = Platform.OS === 'web' ? View : Maps.Marker;
+const Circle: any = Platform.OS === 'web' ? View : Maps.Circle;
+const PROVIDER_GOOGLE: any = Platform.OS === 'web' ? undefined : Maps.PROVIDER_GOOGLE;
 
 const { width, height } = Dimensions.get('window');
 const API_BASE = getApiBase();
@@ -167,13 +172,14 @@ export default function GroupMapScreen() {
     const subscriptionRef = React.useRef<Location.LocationSubscription | null>(null);
     const resendIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
     const lastPayloadRef = React.useRef<any | null>(null);
-    const mapRef = React.useRef<MapView | null>(null);
+    const mapRef = React.useRef<any>(null);
 
     const [mapRegion, setMapRegion] = React.useState({
-        latitude: 41.0082,
-        longitude: 28.9784,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
+        // Start centered on Turkey for immediate context; adjust as needed later
+        latitude: 38.9637,
+        longitude: 35.2433,
+        latitudeDelta: 3,
+        longitudeDelta: 3,
     });
 
     // --- initial load: workerId + persisted preference ---

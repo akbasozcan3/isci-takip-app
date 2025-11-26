@@ -1,10 +1,9 @@
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import React from 'react';
-import { io, Socket } from 'socket.io-client';
 import {
   Pressable,
   RefreshControl,
@@ -15,12 +14,12 @@ import {
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { io, Socket } from 'socket.io-client';
 import { EmptyState } from '../../components/EmptyState';
 import { SkeletonList } from '../../components/SkeletonLoader';
 import { Toast, useToast } from '../../components/Toast';
 import { getApiBase } from '../../utils/api';
 import { authFetch } from '../../utils/auth';
-import ProfileBadge from '../../components/ProfileBadge';
 
 const API_BASE = getApiBase();
 
@@ -60,10 +59,10 @@ export default function AdminScreen() {
         if (stored) {
           setUserId(stored);
           try {
-            const r = await authFetch('/auth/me');
+            const r = await authFetch('/users/me');
             if (r.ok) {
               const { user } = await r.json();
-              if (user && user.name) setProfileName(user.name);
+              if (user && (user.name || user.email)) setProfileName(user.name || user.email);
             }
           } catch {}
         }
@@ -144,6 +143,30 @@ export default function AdminScreen() {
       }
     } catch (error) {
       console.error('[Admin] Approve request error:', error);
+      showError('Ağ hatası');
+    }
+  };
+
+  const deleteGroup = async (groupId: string) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    try {
+      const response = await fetch(`${API_BASE}/api/groups/${groupId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminUserId: userId })
+      });
+      if (response.ok) {
+        setGroups(prev => prev.filter(g => g.id !== groupId));
+        if (selectedGroup?.id === groupId) {
+          setSelectedGroup(null);
+          setRequests([]);
+        }
+        showSuccess('Grup silindi');
+      } else {
+        const err = await response.json().catch(() => ({} as any));
+        showError(err.error || 'Grup silinemedi');
+      }
+    } catch (e) {
       showError('Ağ hatası');
     }
   };
@@ -276,10 +299,8 @@ export default function AdminScreen() {
             <Text style={styles.title}>Admin Paneli</Text>
             <Text style={styles.subtitle}>Grup başvurularını yönetin</Text>
           </View>
-          {profileName ? <ProfileBadge name={profileName} size={48} /> : <ProfileBadge size={48} />}
         </View>
       </LinearGradient>
-
       <ScrollView 
         style={styles.content}
         contentContainerStyle={{ paddingBottom: 120 }}
@@ -322,6 +343,20 @@ export default function AdminScreen() {
                   </View>
                   <Text style={styles.groupAddress}>{group.address}</Text>
                   <Text style={styles.groupMembers}>{group.memberCount} üye</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
+                    <Pressable
+                      onPress={() => router.push({ pathname: '/group-map', params: { groupId: group.id, groupCode: group.code } } as any)}
+                      style={{ paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#06b6d4', borderRadius: 8 }}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '900' }}>Haritayı Aç</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => deleteGroup(group.id)}
+                      style={{ paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#dc2626', borderRadius: 8 }}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '900' }}>Grubu Sil</Text>
+                    </Pressable>
+                  </View>
                 </Pressable>
               ))}
             </View>
@@ -402,11 +437,6 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
   },
   headerContent: {
     flexDirection: 'row',
@@ -418,11 +448,13 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#fff',
     letterSpacing: 0.5,
+    fontFamily: 'Poppins-Bold',
   },
   subtitle: {
     fontSize: 14,
     color: 'rgba(255,255,255,0.9)',
     marginTop: 2,
+    fontFamily: 'Poppins-SemiBold',
   },
   profileBadge: {
     width: 48,
@@ -431,15 +463,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
   },
   profileBadgeText: {
     color: '#fff',
     fontWeight: 'bold',
+    fontFamily: 'Poppins-Bold',
   },
   content: {
     flex: 1,
@@ -459,12 +487,14 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginTop: 16,
     marginBottom: 8,
+    fontFamily: 'Poppins-Bold',
   },
   emptySubtitle: {
     fontSize: 14,
     color: '#94a3b8',
     textAlign: 'center',
     lineHeight: 20,
+    fontFamily: 'Poppins-Regular',
   },
   section: {
     marginBottom: 24,
@@ -474,6 +504,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#fff',
     marginBottom: 12,
+    fontFamily: 'Poppins-Bold',
   },
   groupCard: {
     backgroundColor: '#1e293b',
@@ -503,6 +534,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#fff',
     flex: 1,
+    fontFamily: 'Poppins-Bold',
   },
   groupCode: {
     backgroundColor: '#e6f5f4',
@@ -514,15 +546,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     color: '#06b6d4',
+    fontFamily: 'Poppins-Bold',
   },
   groupAddress: {
     fontSize: 14,
     color: '#94a3b8',
     marginBottom: 4,
+    fontFamily: 'Poppins-Regular',
   },
   groupMembers: {
     fontSize: 12,
     color: '#64748b',
+    fontFamily: 'Poppins-Regular',
   },
   noRequests: {
     alignItems: 'center',
@@ -537,6 +572,7 @@ const styles = StyleSheet.create({
     color: '#10b981',
     fontWeight: 'bold',
     marginTop: 8,
+    fontFamily: 'Poppins-Bold',
   },
   requestCard: {
     backgroundColor: '#1e293b',
@@ -576,21 +612,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
     color: '#06b6d4',
+    fontFamily: 'Poppins-Bold',
   },
   requestName: {
     fontSize: 16,
     fontWeight: '900',
     color: '#fff',
+    fontFamily: 'Poppins-Bold',
   },
   requestUserId: {
     fontSize: 12,
     color: '#94a3b8',
     marginTop: 2,
+    fontFamily: 'Poppins-Regular',
   },
   requestDate: {
     fontSize: 12,
     color: '#64748b',
     marginTop: 2,
+    fontFamily: 'Poppins-Regular',
   },
   requestActions: {
     flexDirection: 'row',

@@ -23,14 +23,14 @@ import {
   TextInput,
   View
 } from 'react-native';
-import { Region } from 'react-native-maps';
+import type { Region } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState } from '../../components/EmptyState';
 import LeafletMap from '../../components/leaflet-map';
+import ProfileBadge from '../../components/ProfileBadge';
 import { SkeletonList } from '../../components/SkeletonLoader';
 import { getApiBase } from '../../utils/api';
 import { authFetch } from '../../utils/auth';
-import ProfileBadge from '../../components/ProfileBadge';
 
 const API_BASE = getApiBase();
 
@@ -130,7 +130,13 @@ function CreateGroupModal({ visible, onClose, onGroupCreated, onMessage }: Creat
   const [groupName, setGroupName] = React.useState('');
   const [address, setAddress] = React.useState('');
   const [selectedLocation, setSelectedLocation] = React.useState<{ lat: number; lng: number } | null>(null);
-  const [mapRegion, setMapRegion] = React.useState<Region | null>(null);
+  // Start centered on Turkey for instant map render; refine after geolocation
+  const [mapRegion, setMapRegion] = React.useState<Region | null>({
+    latitude: 38.9637,
+    longitude: 35.2433,
+    latitudeDelta: 3,
+    longitudeDelta: 3,
+  });
   const [loading, setLoading] = React.useState(false);
   const [userId, setUserId] = React.useState('');
   const [hasLocationPermission, setHasLocationPermission] = React.useState<boolean>(false);
@@ -155,21 +161,11 @@ function CreateGroupModal({ visible, onClose, onGroupCreated, onMessage }: Creat
             longitudeDelta: 0.01,
           });
         } else {
-          setMapRegion({
-            latitude: 39.9208,
-            longitude: 32.8541,
-            latitudeDelta: 0.1,
-            longitudeDelta: 0.1,
-          });
+          // Keep Turkey defaults
         }
       } catch (error) {
         console.warn('[CreateGroupModal] location init error', error);
-        setMapRegion({
-          latitude: 39.9208,
-          longitude: 32.8541,
-          latitudeDelta: 0.1,
-          longitudeDelta: 0.1,
-        });
+        // Keep Turkey defaults on error
       }
     })();
 
@@ -307,13 +303,13 @@ function CreateGroupModal({ visible, onClose, onGroupCreated, onMessage }: Creat
         <ScrollView style={styles.modalContent}>
           <View style={styles.formGroup}>
             <Text style={styles.label}>Grup Adı <Text style={{color:'#dc2626'}}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="Grup adını girin" value={groupName} onChangeText={setGroupName} maxLength={40} autoFocus />
+            <TextInput style={styles.input} placeholder="Grup Adını Girin" placeholderTextColor={'#64748b'} value={groupName} onChangeText={setGroupName} maxLength={40} autoFocus />
           </View>
 
           <View style={styles.formGroup}>
             <Text style={styles.label}>Adres <Text style={{color:'#dc2626'}}>*</Text></Text>
             <View style={styles.addressRow}>
-              <TextInput style={[styles.input, { flex: 1 }]} placeholder="Adres girin veya haritadan seçin" value={address} onChangeText={setAddress} maxLength={120} />
+              <TextInput style={[styles.input, { flex: 1 }]} placeholder="Adres Girin veya Haritadan Seçin" value={address} placeholderTextColor={'#64748b'} onChangeText={setAddress} maxLength={120} />
               <Pressable onPress={geocodeAddress} style={styles.geocodeButton}><Ionicons name="search" size={20} color="#fff" /></Pressable>
             </View>
           </View>
@@ -444,7 +440,7 @@ function JoinGroupModal({ visible, onClose, onJoined, onMessage }: JoinGroupModa
           <View style={styles.formGroup}>
             <Text style={styles.label}>Grup Kodu *</Text>
             <View style={styles.codeRow}>
-              <TextInput style={[styles.input, { flex: 1 }]} placeholder="ABC123" value={groupCode} onChangeText={setGroupCode} autoCapitalize="characters" maxLength={6} />
+              <TextInput style={[styles.input, { flex: 1 }]} placeholder="ABC123" placeholderTextColor={'#64748b'} value={groupCode} onChangeText={setGroupCode} autoCapitalize="characters" maxLength={6} />
               <Pressable onPress={checkGroupInfo} style={styles.checkButton}><Ionicons name="search" size={20} color="#fff" /></Pressable>
             </View>
           </View>
@@ -515,7 +511,7 @@ export default function GroupsScreen() {
         if (stored) {
           setUserId(stored);
           try {
-            const r = await authFetch('/auth/me');
+            const r = await authFetch('/users/me');
             if (r.ok) {
               const { user } = await r.json();
               if (user && user.name) setProfileName(user.name);
@@ -577,13 +573,16 @@ export default function GroupsScreen() {
         const userGroups = await response.json();
         setGroups(userGroups);
       } else {
+        // Boş grup listesi normal bir durum, hata gösterme
         setGroups([]);
-        showMessage('error', 'Gruplar alınamadı');
       }
     } catch (error) {
       console.error('[GroupsScreen] loadGroups error', error);
       setGroups([]);
-      showMessage('error', 'Ağ hatası: Gruplar yüklenemedi');
+      // Sadece gerçek ağ hatalarında mesaj göster
+      if (error instanceof Error && error.message.includes('fetch')) {
+        showMessage('error', 'Ağ hatası: Gruplar yüklenemedi');
+      }
     } finally {
       setLoading(false);
     }
@@ -638,7 +637,7 @@ export default function GroupsScreen() {
           try {
             const memRes = await fetchWithFallback(`/api/groups/${group.id}/members`);
             if (memRes.ok) {
-              const members: Array<{ userId: string; role: string }> = await memRes.json();
+              const members: { userId: string; role: string }[] = await memRes.json();
               const candidate = members.find(m => m.userId !== userId);
               if (!candidate) {
                 showMessage('error', 'Bu grupta başka üye yok. Ayrılmadan önce başka bir üye ekleyin.');
@@ -772,7 +771,7 @@ export default function GroupsScreen() {
 
       <ScrollView
         style={styles.content}
-        contentContainerStyle={{ paddingBottom: 120 }}
+        contentContainerStyle={{ paddingBottom: 60 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {loading ? <SkeletonList count={3} /> : groups.length === 0 ? (
@@ -802,7 +801,6 @@ export default function GroupsScreen() {
 
               <View style={styles.groupActionsRow}>
                 <Pressable onPress={() => leaveGroup(group)} style={({ pressed }) => [styles.leaveButton, pressed && { opacity: 0.9 }]}><Ionicons name="log-out-outline" size={16} color="#ef4444" /><Text style={styles.leaveButtonText}>Ayrıl</Text></Pressable>
-                {group.isAdmin ? (<Pressable onPress={() => deleteGroup(group)} style={({ pressed }) => [styles.deleteButton, pressed && { opacity: 0.9 }]}><Ionicons name="trash" size={16} color="#fff" /><Text style={styles.deleteButtonText}>Grubu Sil</Text></Pressable>) : null}
               </View>
             </View>
           ))
@@ -827,64 +825,64 @@ export default function GroupsScreen() {
 /* ---------- Styles (kept polished) ---------- */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
-  header: { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 18 : 18, paddingHorizontal: 20, paddingBottom: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, shadowColor: '#06b6d4', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 10 },
+  header: { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 14 : 14, paddingHorizontal: 16, paddingBottom: 14, borderBottomLeftRadius: 20, borderBottomRightRadius: 20 },
   headerContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  title: { fontSize: 26, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
-  subtitle: { fontSize: 14, color: 'rgba(255,255,255,0.9)', marginTop: 3, fontWeight: '600' },
+  title: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
+  subtitle: { fontSize: 12, color: 'rgba(255,255,255,0.9)', marginTop: 2, fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
 
-  messageBar: { position: 'absolute', top: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 80 : 100, left: 16, right: 16, zIndex: 999, elevation: 10, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  messageText: { color: '#fff', fontWeight: '600', textAlign: 'center' },
+  messageBar: { position: 'absolute', top: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 80 : 100, left: 16, right: 16, zIndex: 999, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  messageText: { color: '#fff', fontWeight: '600', textAlign: 'center', fontFamily: 'Poppins-SemiBold' },
   messageSuccess: { backgroundColor: '#16a34a' },
   messageError: { backgroundColor: '#dc2626' },
   messageInfo: { backgroundColor: '#2563eb' },
 
-  headerButtons: { flexDirection: 'row', gap: 8 },
-  profileBadge: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4, elevation: 3 },
-  profileBadgeText: { color: '#fff', fontWeight: '900', fontSize: 14 },
-  headerButton: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4, elevation: 3 },
+  headerButtons: { flexDirection: 'row', gap: 6 },
+  profileBadge: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  profileBadgeText: { color: '#fff', fontWeight: '900', fontSize: 14, fontFamily: 'Poppins-Bold' },
+  headerButton: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
   headerCreateButton: { backgroundColor: 'rgba(255,255,255,0.2)' }, headerJoinButton: { backgroundColor: 'rgba(255,255,255,0.15)' },
 
-  content: { flex: 1, padding: 16, backgroundColor: '#0f172a' },
+  content: { flex: 1, padding: 12, backgroundColor: '#0f172a' },
 
   emptyState: { alignItems: 'center', marginTop: 100, paddingHorizontal: 32 },
 
-  groupCard: { backgroundColor: '#1e293b', borderRadius: 20, padding: 22, marginBottom: 18, shadowColor: '#06b6d4', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 16, elevation: 12, borderWidth: 1, borderColor: '#334155' },
-  groupHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  groupName: { fontSize: 20, fontWeight: '900', color: '#fff', flex: 1, letterSpacing: 0.5 },
-  groupCode: { backgroundColor: '#e6f5f4', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, shadowColor: '#06b6d4', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 2 },
-  groupCodeText: { fontSize: 13, fontWeight: '900', color: '#06b6d4', letterSpacing: 0.5 },
-  groupAddress: { fontSize: 15, color: '#94a3b8', marginBottom: 6, fontWeight: '500' },
-  groupDate: { fontSize: 13, color: '#64748b', fontWeight: '600' },
+  groupCard: { backgroundColor: '#1e293b', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#334155' },
+  groupHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  groupName: { fontSize: 18, fontWeight: '900', color: '#fff', flex: 1, letterSpacing: 0.4, fontFamily: 'Poppins-Bold' },
+  groupCode: { backgroundColor: '#e6f5f4', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  groupCodeText: { fontSize: 12, fontWeight: '900', color: '#06b6d4', letterSpacing: 0.4, fontFamily: 'Poppins-Bold' },
+  groupAddress: { fontSize: 14, color: '#94a3b8', marginBottom: 4, fontWeight: '500', fontFamily: 'Poppins-Medium' },
+  groupDate: { fontSize: 12, color: '#64748b', fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
 
-  mapButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#06b6d4', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 12, marginTop: 14, gap: 8, shadowColor: '#06b6d4', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5 },
-  mapButtonText: { color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 0.3 },
+  mapButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#06b6d4', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, marginTop: 10, gap: 6 },
+  mapButtonText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 0.3, fontFamily: 'Poppins-Bold' },
 
-  groupActionsRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 12 },
-  leaveButton: { backgroundColor: 'transparent', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6, borderWidth: 1, borderColor: '#ef4444', flexDirection: 'row', alignItems: 'center', gap: 6 },
-  leaveButtonText: { color: '#ef4444', fontSize: 13, fontWeight: '600' },
-  deleteButton: { backgroundColor: '#dc2626', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  deleteButtonText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  groupActionsRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 6, marginTop: 8 },
+  leaveButton: { backgroundColor: 'transparent', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, borderWidth: 1, borderColor: '#ef4444', flexDirection: 'row', alignItems: 'center', gap: 6 },
+  leaveButtonText: { color: '#ef4444', fontSize: 12, fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
+  deleteButton: { backgroundColor: '#dc2626', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  deleteButtonText: { color: '#fff', fontSize: 12, fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
 
   modalContainer: { flex: 1, backgroundColor: '#0f172a' },
   modalHeader: { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 20 : 20, paddingHorizontal: 20, paddingBottom: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
   modalHeaderContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   modalHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  modalHeaderIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 5 },
-  modalTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
+  modalHeaderIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  modalTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
   closeButton: { padding: 4 },
   modalContent: { flex: 1, padding: 16 },
   formGroup: { marginBottom: 20 },
-  label: { fontSize: 16, fontWeight: '800', color: '#fff', marginBottom: 8 },
-  helpText: { fontSize: 12, color: '#94a3b8', marginBottom: 8 },
-  input: { borderWidth: 1, borderColor: '#334155', borderRadius: 14, padding: 16, fontSize: 16, backgroundColor: '#1e293b', color: '#fff', fontWeight: '600' },
+  label: { fontSize: 16, fontWeight: '800', color: '#fff', marginBottom: 8, fontFamily: 'Poppins-ExtraBold' },
+  helpText: { fontSize: 12, color: '#94a3b8', marginBottom: 8, fontFamily: 'Poppins-Regular' },
+  input: { borderWidth: 1, borderColor: '#334155', borderRadius: 14, padding: 16, fontSize: 16, backgroundColor: '#1e293b', color: '#fff', fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
   addressRow: { flexDirection: 'row', alignItems: 'center' },
   geocodeButton: { backgroundColor: '#06b6d4', padding: 12, borderRadius: 8, marginLeft: 8 },
   mapContainer: { height: 200, borderRadius: 8, overflow: 'hidden' },
-  createButton: { backgroundColor: '#06b6d4', padding: 18, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, marginTop: 24, shadowColor: '#06b6d4', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
+  createButton: { backgroundColor: '#06b6d4', padding: 18, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, marginTop: 24 },
   createButtonDisabled: { opacity: 0.6 },
-  createButtonText: { color: '#fff', fontSize: 17, fontWeight: '900', letterSpacing: 0.3 },
+  createButtonText: { color: '#fff', fontSize: 17, fontWeight: '900', letterSpacing: 0.3, fontFamily: 'Poppins-Bold' },
   errorCard: { backgroundColor: '#fee2e2', borderColor: '#fca5a5', borderWidth: 1, borderRadius: 12, padding: 14, marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
-  errorText: { color: '#b91c1c', fontWeight: '800', flex: 1, fontSize: 14, textAlign: 'center' },
+  errorText: { color: '#b91c1c', fontWeight: '800', flex: 1, fontSize: 14, textAlign: 'center', fontFamily: 'Poppins-ExtraBold' },
 
   codeRow: { flexDirection: 'row', alignItems: 'center' },
   checkButton: { backgroundColor: '#06b6d4', padding: 12, borderRadius: 8, marginLeft: 8 },
@@ -895,7 +893,7 @@ const styles = StyleSheet.create({
   groupInfoFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   groupInfoMembers: { fontSize: 12, color: '#64748b' },
   groupInfoStatus: { fontSize: 12, color: '#16a34a', fontWeight: '600' },
-  joinButton: { backgroundColor: '#7c3aed', padding: 18, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, marginTop: 24, shadowColor: '#7c3aed', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
+  joinButton: { backgroundColor: '#7c3aed', padding: 18, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, marginTop: 24 },
   joinButtonDisabled: { opacity: 0.6 },
   joinButtonText: { color: '#fff', fontSize: 17, fontWeight: '900', letterSpacing: 0.3 },
 
@@ -904,13 +902,13 @@ const styles = StyleSheet.create({
   confirmCard: { width: '100%', maxWidth: 520, borderRadius: 14, overflow: 'hidden', backgroundColor: '#071028', borderWidth: 1, borderColor: '#182033' },
   confirmHeader: { padding: 18, alignItems: 'center' },
   confirmIconWrap: { marginBottom: 8, backgroundColor: 'rgba(255,255,255,0.04)', padding: 12, borderRadius: 12 },
-  confirmTitle: { color: '#fff', fontSize: 18, fontWeight: '900', marginBottom: 6, textAlign: 'center' },
-  confirmDesc: { color: '#94a3b8', fontSize: 13, textAlign: 'center' },
+  confirmTitle: { color: '#fff', fontSize: 18, fontWeight: '900', marginBottom: 6, textAlign: 'center', fontFamily: 'Poppins-Bold' },
+  confirmDesc: { color: '#94a3b8', fontSize: 13, textAlign: 'center', fontFamily: 'Poppins-Regular' },
   confirmActions: { flexDirection: 'row', justifyContent: 'space-between', padding: 12, gap: 12 },
   confirmCancel: { flex: 1, backgroundColor: 'transparent', borderRadius: 10, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#334155' },
-  confirmCancelText: { color: '#fff', fontWeight: '800' },
+  confirmCancelText: { color: '#fff', fontWeight: '800', fontFamily: 'Poppins-ExtraBold' },
   confirmButton: { flex: 1, borderRadius: 10, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
   confirmButtonPrimary: { backgroundColor: '#06b6d4' },
   confirmButtonDanger: { backgroundColor: '#dc2626' },
-  confirmButtonText: { color: '#fff', fontWeight: '900' },
+  confirmButtonText: { color: '#fff', fontWeight: '900', fontFamily: 'Poppins-Bold' },
 });

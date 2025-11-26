@@ -1,10 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Slot, SplashScreen, usePathname, useRouter } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { MessageProvider } from '../components/MessageProvider';
-import { getToken } from '../utils/auth';
+// Auth check - redirect to login if not authenticated
 
 // Splash screen'i manuel kontrol için
 SplashScreen.preventAutoHideAsync();
@@ -20,30 +20,25 @@ export default function RootLayout(): React.JSX.Element {
     
     (async () => {
       try {
-        console.log('[RootLayout] Checking onboarding status...');
-        const onboardingSeen = await AsyncStorage.getItem('onboardingSeen');
-        console.log('[RootLayout] Onboarding seen:', onboardingSeen);
-        
-        if (isMounted) {
-          // İlk açılış - rehbere yönlendir
-          if (!onboardingSeen && pathname !== '/guide') {
-            console.log('[RootLayout] First time user, redirecting to /guide');
-            router.replace('/guide');
-          } else {
-            console.log('[RootLayout] User has seen onboarding or already on guide page');
-          }
-        }
+        // Onboarding yönlendirmesi devre dışı (guide açılmasın)
 
         // Auth kontrolü
-        const token = await getToken();
-        const onAuthRoute = pathname?.startsWith('/auth');
-        if (!token && !onAuthRoute && pathname !== '/guide') {
-          console.log('[RootLayout] No token, redirecting to /auth/login');
-          router.replace('/auth/login' as any);
-        }
-        if (token && onAuthRoute) {
-          console.log('[RootLayout] Has token on auth route, redirecting to root');
-          router.replace('/' as any);
+        const token = await SecureStore.getItemAsync('auth_token');
+        const isAuthPage = pathname.startsWith('/auth');
+        // Reset-password sayfasına giriş yapmış kullanıcılar da erişebilmeli
+        const isResetPasswordPage = pathname.startsWith('/auth/reset-password');
+        const isAllowedAuthPage = isResetPasswordPage;
+        
+        if (isMounted) {
+          if (!token && !isAuthPage) {
+            console.log('[RootLayout] No token found, redirecting to login');
+            router.replace('/auth/login');
+          } else if (token && isAuthPage && !isAllowedAuthPage) {
+            // Giriş yapmış kullanıcılar sadece reset-password sayfasına erişebilir
+            // Diğer auth sayfalarına (login, register) erişemezler
+            console.log('[RootLayout] Token found, redirecting to home');
+            router.replace('/(tabs)');
+          }
         }
       } catch (error) {
         console.error('[RootLayout] Root layout init error:', error);

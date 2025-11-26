@@ -64,10 +64,17 @@ export default function TabLayout(): React.JSX.Element {
 
     const checkAuth = async () => {
         console.log('[TabLayout] Checking authentication...');
-        const workerId = await SecureStore.getItemAsync('workerId');
-        console.log('[TabLayout] WorkerId:', workerId);
-        setIsAuthenticated(!!workerId);
-        console.log('[TabLayout] Is authenticated:', !!workerId);
+        const token = await SecureStore.getItemAsync('auth_token');
+        console.log('[TabLayout] auth_token exists:', !!token);
+        
+        if (!token) {
+            console.log('[TabLayout] No token found, redirecting to login');
+            router.replace('/auth/login');
+            return;
+        }
+        
+        setIsAuthenticated(!!token);
+        console.log('[TabLayout] Is authenticated:', !!token);
     };
 
     const [fontsLoaded] = useFonts({

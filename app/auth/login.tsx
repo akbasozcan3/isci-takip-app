@@ -1,509 +1,340 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Link, useRouter } from 'expo-router';
-import React from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-    Animated,
-    Dimensions,
-    Easing,
-    Keyboard,
-    KeyboardAvoidingView,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Animated,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { BrandLogo } from '../../components/BrandLogo';
-import { useMessage } from '../../components/MessageProvider';
-import Button from '../../components/ui/Button';
-import Input from '../../components/ui/Input';
-import theme from '../../components/ui/theme';
-import { getPhpApiBase } from '../../utils/api';
+import { Toast, useToast } from '../../components/Toast';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { getApiBase } from '../../utils/api';
 import { saveToken } from '../../utils/auth';
-import { mapApiError } from '../../utils/errorMap';
 
-const { width, height } = Dimensions.get('window');
-
-const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-function looksLikeEmail(v: string): boolean { return v.includes('@'); }
-function isValidEmail(v: string): boolean { return emailRegex.test(String(v).toLowerCase()); }
-
-export default function Login(): React.JSX.Element {
-  const [identifier, setIdentifier] = React.useState('');
-  const [password, setPassword] = React.useState('');
-  const [showPassword, setShowPassword] = React.useState(false);
-  const [rememberMe, setRememberMe] = React.useState(false);
-  const [loading, setLoading] = React.useState(false);
+export default function LoginScreen() {
   const router = useRouter();
-  const message = useMessage();
-  const scrollRef = React.useRef<ScrollView | null>(null);
-  const emailRef = React.useRef<any>(null);
-  const passRef = React.useRef<any>(null);
-
-  const [identifierError, setIdentifierError] = React.useState<string | undefined>(undefined);
-  const [passwordError, setPasswordError] = React.useState<string | undefined>(undefined);
-
-  // Advanced animations
-  const fade = React.useRef(new Animated.Value(0)).current;
-  const slideUp = React.useRef(new Animated.Value(50)).current;
-  const scale = React.useRef(new Animated.Value(0.9)).current;
-  const logoScale = React.useRef(new Animated.Value(0.8)).current;
-  const logoRotate = React.useRef(new Animated.Value(0)).current;
-  const backgroundOpacity = React.useRef(new Animated.Value(0)).current;
-
-  React.useEffect(() => {
-    // Staggered entrance animation
-    Animated.sequence([
-      // Background fade in
-      Animated.timing(backgroundOpacity, {
+  const { toast, showError, showSuccess, hideToast } = useToast();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  
+  // Smooth animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 800,
-        easing: Easing.out(Easing.quad),
+        duration: 600,
         useNativeDriver: true,
       }),
-      // Logo animation
-      Animated.parallel([
-        Animated.spring(logoScale, {
-          toValue: 1,
-          tension: 50,
-          friction: 7,
-          useNativeDriver: true,
-        }),
-        Animated.timing(logoRotate, {
-          toValue: 1,
-          duration: 1000,
-          easing: Easing.out(Easing.back(1.2)),
-          useNativeDriver: true,
-        }),
-      ]),
-      // Form elements
-      Animated.parallel([
-        Animated.timing(fade, {
-          toValue: 1,
-          duration: 600,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideUp, {
-          toValue: 0,
-          duration: 600,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.spring(scale, {
-          toValue: 1,
-          tension: 50,
-          friction: 8,
-          useNativeDriver: true,
-        }),
-      ]),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }),
     ]).start();
-  }, [fade, slideUp, scale, logoScale, logoRotate, backgroundOpacity]);
-
-  // Keep important controls visible when keyboard is open
-  const [kbShown, setKbShown] = React.useState(false);
-  React.useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', () => setKbShown(true));
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKbShown(false));
-    return () => { show.remove(); hide.remove(); };
   }, []);
 
-  const scrollToEndLightly = () => {
-    // small delay to allow layout to settle
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
-  };
-
-  const validate = () => {
-    let ok = true;
-    setIdentifierError(undefined);
-    setPasswordError(undefined);
-
-    if (!identifier.trim()) {
-      setIdentifierError('Email veya kullanıcı adı gerekli.');
-      ok = false;
-    } else if (looksLikeEmail(identifier) && !isValidEmail(identifier)) {
-      setIdentifierError('Geçerli bir e-posta adresi giriniz.');
-      ok = false;
-    }
-
-    if (!password) {
-      setPasswordError('Şifre gerekli.');
-      ok = false;
-    } else if (password.length < 8) {
-      setPasswordError('Şifre en az 8 karakter olmalı.');
-      ok = false;
-    }
-
-    return ok;
-  };
-
-  const onSubmit = async () => {
-    if (!validate()) {
-      message.show({ type: 'error', title: 'Doğrulama Hatası', description: 'Lütfen formu kontrol edin.' });
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) {
+      showError('Lütfen tüm alanları doldurun');
       return;
     }
 
+    setLoading(true);
     try {
-      setLoading(true);
-
-      // Backend'in beklediği format: önceki kodunla uyumlu olsun diye form-urlencoded kullanıyorum.
-      const res = await fetch(`${getPhpApiBase()}/api/auth/login`, {
+      const response = await fetch(`${getApiBase()}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: identifier.trim(), password }),
+        body: JSON.stringify({ email: email.trim(), password }),
       });
 
-      const text = await res.text();
-      // Sunucu JSON döndürüyor mu kontrolü
-      let parsed;
-      try {
-        parsed = text ? JSON.parse(text) : null;
-      } catch {
-        parsed = null;
-      }
+      const data = await response.json();
 
-      if (!res.ok) {
-        const rawMsg = parsed?.message || parsed?.error || text || 'Giriş başarısız.';
-        if (res.status === 403) {
-          const emailId = looksLikeEmail(identifier) ? identifier.trim() : '';
-          message.show({ type: 'error', title: '⚠️ E-posta Doğrulanmadı', description: 'Hesabınızı kullanabilmek için önce e-posta adresinizi doğrulamanız gerekiyor.' });
-          if (emailId) {
-            setTimeout(() => {
-              router.push({ pathname: '/auth/verify-email' as any, params: { email: emailId, mode: 'post-register' } } as any);
-            }, 1500);
+      if (!response.ok) {
+        if (data.requiresVerification) {
+          showError('E-posta doğrulanmamış. Lütfen önce e-postanızı doğrulayın.');
+          router.push(`/auth/verify-email?email=${encodeURIComponent(email)}`);
+        } else {
+          // E-posta kayıtlı değil kontrolü
+          if (data.error && data.error.includes('kayıtlı bir hesap bulunamadı')) {
+            showError('Bu e-posta adresi ile kayıtlı bir hesap bulunamadı. Kayıt olmak için "Kayıt Ol" butonunu kullanabilirsiniz.');
+          } else {
+            showError(data.error || 'Giriş başarısız. E-posta veya şifrenizi kontrol edin.');
           }
-          return;
         }
-        if (res.status === 400 || res.status === 401) {
-          throw new Error(mapApiError(rawMsg));
-        }
-        throw new Error(mapApiError(rawMsg));
+        return;
       }
 
-      const data = parsed || {};
-      const token = data.access_token || data.token;
-      if (!token) throw new Error('Sunucudan access token alınamadı.');
-
-      // saveToken: senin utils/auth içerisindeki fonksiyon. 
-      // Eğer "rememberMe" seçildiyse secure store'a kaydet vs. (aşağıda notlar var)
-      await saveToken(token); // <-- proje-özgü: saveToken implementasyonunu kullan
-
-      message.show({ type: 'success', title: 'Giriş Başarılı', description: 'Yönlendiriliyorsunuz...' });
-
-      // yönlendirme: ana sayfa / dashboard veya istenen route
-      router.replace('/' as any);
-    } catch (err: any) {
-      message.show({ type: 'error', title: 'Giriş Hatası', description: mapApiError(err?.message) });
+      if (data.token && data.user) {
+        // Token'ı kaydet
+        await saveToken(data.token);
+        
+        // Kullanıcı bilgilerini kaydet (kalıcı oturum için)
+        if (data.user.id) {
+          await SecureStore.setItemAsync('workerId', data.user.id);
+        }
+        if (data.user.displayName || data.user.name) {
+          await SecureStore.setItemAsync('displayName', data.user.displayName || data.user.name);
+        }
+        if (data.user.email) {
+          await SecureStore.setItemAsync('userEmail', data.user.email);
+        }
+        
+        showSuccess('Giriş başarılı!');
+        router.replace('/(tabs)');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      showError('Bağlantı hatası. Lütfen tekrar deneyin.');
     } finally {
       setLoading(false);
     }
   };
 
-  const logoRotation = logoRotate.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Animated Background */}
-      <Animated.View style={[styles.background, { opacity: backgroundOpacity }]}>
-        <View style={styles.gradientOverlay} />
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
+    >
+      <LinearGradient
+        colors={['#0a0f1a', '#1a1f2e', '#2a2f3e']}
+        style={styles.gradient}
+      >
+        {/* Decorative background elements */}
         <View style={styles.decorativeCircle1} />
         <View style={styles.decorativeCircle2} />
         <View style={styles.decorativeCircle3} />
-      </Animated.View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          ref={(r) => { scrollRef.current = r; }}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Header Section */}
-          <Animated.View style={[styles.header, { 
-            opacity: fade, 
-            transform: [
-              { scale: logoScale },
-              { rotate: logoRotation }
-            ] 
-          }]}>
-            <View style={styles.logoContainer}>
-              <BrandLogo size={80} />
+        <View style={styles.content}>
+          <Animated.View 
+            style={[
+              styles.header,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              }
+            ]}
+          >
+            <View style={styles.logoWrapper}>
+              <BrandLogo size={280} withSoftContainer={false} variant="default" />
             </View>
-            <Text style={styles.title}>Hoş Geldiniz</Text>
-            <Text style={styles.subtitle}>Hesabınıza giriş yapın</Text>
+            <View style={styles.titleContainer}>
+              <Text style={styles.title}>Hoş Geldiniz</Text>
+              <Text style={styles.subtitle}>
+                Bavaxe sistemine giriş yapın
+              </Text>
+            </View>
           </Animated.View>
-
-          {/* Form Card */}
-          <Animated.View style={[
-            styles.formCard, 
-            { 
-              opacity: fade, 
-              transform: [
-                { translateY: slideUp },
-                { scale: scale }
-              ] 
-            }
-          ]}>
-            <View style={styles.formHeader}>
-              <Text style={styles.formTitle}>Giriş Yap</Text>
-              <Text style={styles.formSubtitle}>E-posta veya kullanıcı adınızla devam edin</Text>
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Input
-                ref={emailRef}
-                label="E-posta veya Kullanıcı Adı"
-                autoCapitalize="none"
-                autoCorrect={false}
-                value={identifier}
-                onChangeText={(t) => setIdentifier(t)}
-                placeholder="ornek@email.com"
-                returnKeyType="next"
-                onFocus={() => { /* first field, no-op */ }}
-                onSubmitEditing={() => passRef.current?.focus()}
-                error={identifierError}
-                leftElement={<Ionicons name="person-outline" size={20} color={theme.colors.textMuted} />}
-              />
-
-              <Input
-                ref={passRef}
-                label="Şifre"
-                secureTextEntry={!showPassword}
-                textContentType="password"
-                value={password}
-                onChangeText={setPassword}
-                placeholder="••••••••"
-                returnKeyType="go"
-                onFocus={scrollToEndLightly}
-                onSubmitEditing={() => !loading && onSubmit()}
-                error={passwordError}
-                leftElement={<Ionicons name="lock-closed-outline" size={20} color={theme.colors.textMuted} />}
-                rightElement={
-                  <TouchableOpacity 
-                    onPress={() => setShowPassword((s) => !s)} 
-                    style={styles.passwordToggle}
-                    accessibilityLabel={showPassword ? 'Şifreyi gizle' : 'Şifreyi göster'}
-                  >
-                    <Ionicons 
-                      name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                      size={20} 
-                      color={theme.colors.primary} 
-                    />
-                  </TouchableOpacity>
-                }
-              />
-            </View>
-
-            <View style={styles.optionsContainer}>
-              <TouchableOpacity 
-                style={styles.rememberMeContainer}
-                onPress={() => setRememberMe(!rememberMe)}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.checkbox, rememberMe && styles.checkboxActive]}>
-                  {rememberMe && <Ionicons name="checkmark" size={16} color={theme.colors.white} />}
+          <Animated.View 
+            style={[
+              styles.form,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              }
+            ]}
+          >
+            <Input
+              label="E-posta Adresi"
+              placeholder="ornek@email.com"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoComplete="email"
+              leftElement={
+                <View style={styles.iconCircle}>
+                  <Ionicons name="mail-outline" size={16}  color="#64748b" />
                 </View>
-                <Text style={styles.rememberMeText}>Beni Hatırla</Text>
-              </TouchableOpacity>
-
-              <Link href={"/auth/forgot" as any} style={styles.forgotPassword}>
-                <Text style={styles.forgotPasswordText}>Şifremi Unuttum?</Text>
-              </Link>
-            </View>
-
-            <Button 
-              title="Giriş Yap" 
-              onPress={onSubmit} 
-              loading={loading} 
-              disabled={loading} 
-              style={styles.loginButton}
-              accessibilityLabel="Giriş yap" 
+              }
+              style={styles.input}
             />
 
-            <View style={styles.signupContainer}>
-              <Text style={styles.signupText}>Hesabın yok mu? </Text>
-              <Link href={"/auth/register" as any} style={styles.signupLink}>
-                <Text style={styles.signupLinkText}>Kayıt Ol</Text>
-              </Link>
+            <Input
+              label="Şifre"
+              placeholder="Şifrenizi girin"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              autoComplete="password"
+              leftElement={
+                <View style={styles.iconCircle}>
+                  <Ionicons name="lock-closed-outline" size={16} color="#64748b" />
+                </View>
+              }
+              rightElement={
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.iconCircle}
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={16}
+                    color="#64748b"
+                  />
+                </TouchableOpacity>
+              }
+              style={styles.input}
+            />
+            <Button
+              title="Giriş Yap"
+              onPress={handleLogin}
+              loading={loading}
+              style={styles.loginButton}
+            />
+
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>Hesabınız yok Mu? </Text>
+              <TouchableOpacity onPress={() => router.push('/auth/register')}>
+                <Text style={styles.footerLink}>Kayıt Olun</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.footer, { marginTop: 8 }]}> 
+              <TouchableOpacity onPress={() => router.push('/auth/reset-password' as any)}>
+                <Text style={[styles.footerLink, { color: '#f59e0b' }]}>Şifremi Unuttum</Text>
+              </TouchableOpacity>
             </View>
           </Animated.View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </View>
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          visible={toast.visible}
+          onHide={hideToast}
+        />
+      </LinearGradient>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.bg,
   },
-  background: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  gradientOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: theme.colors.bg,
+  gradient: {
+    flex: 1,
+    position: 'relative',
   },
   decorativeCircle1: {
     position: 'absolute',
-    top: -100,
-    right: -100,
     width: 300,
     height: 300,
     borderRadius: 150,
-    backgroundColor: theme.colors.primary,
-    opacity: 0.1,
+    backgroundColor: 'rgba(6, 182, 212, 0.08)',
+    top: -100,
+    right: -100,
   },
   decorativeCircle2: {
     position: 'absolute',
-    bottom: -150,
-    left: -150,
-    width: 400,
-    height: 400,
-    borderRadius: 200,
-    backgroundColor: theme.colors.accent,
-    opacity: 0.08,
-  },
-  decorativeCircle3: {
-    position: 'absolute',
-    top: height * 0.3,
-    right: -50,
     width: 200,
     height: 200,
     borderRadius: 100,
-    backgroundColor: theme.colors.info,
-    opacity: 0.06,
+    backgroundColor: 'rgba(59, 130, 246, 0.06)',
+    bottom: -50,
+    left: -50,
   },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: theme.spacing(6),
-    paddingTop: theme.spacing(8),
-    paddingBottom: theme.spacing(4),
+  decorativeCircle3: {
+    position: 'absolute',
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: 'rgba(139, 92, 246, 0.05)',
+    top: '40%',
+    right: -30,
+  },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 20,
+    top:-50
   },
   header: {
     alignItems: 'center',
-    marginBottom: theme.spacing(8),
+    marginBottom: 16,
+    width: '100%',
   },
-  logoContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: theme.colors.surface,
-    justifyContent: 'center',
+  logoWrapper: {
+    top:100,
     alignItems: 'center',
-    marginBottom: theme.spacing(4),
-    ...theme.shadow.lg,
+    justifyContent: 'center',
+    width: '100%',
+  },
+  titleContainer: {
+    alignItems: 'center',
+    width: '100%',
   },
   title: {
-    ...theme.typography.h1,
-    color: theme.colors.text,
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#ffffff',
+    marginBottom: 4,
+    letterSpacing: 0.5,
     textAlign: 'center',
-    marginBottom: theme.spacing(2),
+    fontFamily: 'Poppins-Bold',
   },
   subtitle: {
-    ...theme.typography.body,
-    color: theme.colors.textMuted,
+    fontSize: 13,
+    color: '#94a3b8',
     textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: 20,
+    fontWeight: '500',
+    fontFamily: 'Poppins-Regular',
   },
-  formCard: {
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.xl,
-    padding: theme.spacing(6),
-    ...theme.shadow.xl,
-    borderWidth: 1,
-    marginTop: theme.spacing(-5),
-    borderColor: theme.colors.border,
+  form: {
+    width: '100%',
   },
-  formHeader: {
-    marginBottom: theme.spacing(6),
-    alignItems: 'center',
-  },
-  formTitle: {
-    ...theme.typography.h3,
-    color: theme.colors.text,
-    marginBottom: theme.spacing(2),
-  },
-  formSubtitle: {
-    ...theme.typography.bodySmall,
-    color: theme.colors.textMuted,
-    textAlign: 'center',
-  },
-  inputContainer: {
-    marginBottom: theme.spacing(6),
-  },
-  passwordToggle: {
-    padding: theme.spacing(2),
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  optionsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: theme.spacing(6),
-  },
-  rememberMeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: theme.radius.xs,
-    borderWidth: 2,
-    borderColor: theme.colors.border,
-    marginRight: theme.spacing(2),
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkboxActive: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  rememberMeText: {
-    ...theme.typography.bodySmall,
-    color: theme.colors.textSecondary,
-  },
-  forgotPassword: {
-    padding: theme.spacing(1),
-  },
-  forgotPasswordText: {
-    ...theme.typography.bodySmall,
-    color: theme.colors.primary,
-    fontWeight: '600',
+  input: {
+    marginBottom: 10,
   },
   loginButton: {
-    marginBottom: theme.spacing(6),
+    marginTop: 4,
+    marginBottom: 0,
   },
-  signupContainer: {
+  iconCircle: {
+    width: 30,
+    height: 30,
+    left: -4,
+    marginTop: -12,
+    borderRadius: 15,
+    backgroundColor: 'rgba(100, 116, 139, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    alignItems: 'center',
+    marginTop: 12,
+    flexWrap: 'wrap',
+    width: '100%',
   },
-  signupText: {
-    ...theme.typography.bodySmall,
-    color: theme.colors.textMuted,
+  footerText: {
+    color: '#94a3b8',
+    fontSize: 14,
+    fontWeight: '400',
+    fontFamily: 'Poppins-Regular',
   },
-  signupLink: {
-    padding: theme.spacing(1),
-  },
-  signupLinkText: {
-    ...theme.typography.bodySmall,
-    color: theme.colors.primary,
+  footerLink: {
+    color: '#60a5fa',
+    fontSize: 13,
     fontWeight: '600',
+    marginLeft: 4,
+    textDecorationLine: 'underline',
+    fontFamily: 'Poppins-SemiBold',
   },
 });
+

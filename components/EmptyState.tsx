@@ -133,6 +133,8 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 12,
     textAlign: 'center',
+    fontFamily: 'Poppins-Bold',
+    letterSpacing: 0.3,
   },
   description: {
     fontSize: 15,
@@ -140,6 +142,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 32,
+    fontFamily: 'Poppins-Regular',
   },
   actions: {
     flexDirection: 'row',
@@ -150,20 +153,18 @@ const styles = StyleSheet.create({
   primaryButton: {
     borderRadius: 12,
     overflow: 'hidden',
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
   },
   buttonGradient: {
-    paddingHorizontal: 24,
-    paddingVertical: 14,
+    paddingHorizontal: 28,
+    paddingVertical: 16,
+    borderRadius: 12,
   },
   primaryButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '900',
+    fontFamily: 'Poppins-Bold',
+    letterSpacing: 0.3,
   },
   secondaryButton: {
     paddingHorizontal: 24,
@@ -177,5 +178,7 @@ const styles = StyleSheet.create({
     color: '#06b6d4',
     fontSize: 16,
     fontWeight: '800',
+    fontFamily: 'Poppins-Bold',
+    letterSpacing: 0.3,
   },
 });
