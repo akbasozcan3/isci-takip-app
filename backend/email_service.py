@@ -8,6 +8,8 @@ Backend generates the code and sends it here for email delivery
 import os
 import smtplib
 import re
+import sys
+import json
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from flask import Flask, request, jsonify
@@ -733,6 +735,32 @@ def health():
         'smtp_configured': smtp_configured,
         'smtp_host': SMTP_HOST if smtp_configured else None
     })
+
+def send_email(data):
+    to_email = data.get('email')
+    code = data.get('code')
+    
+    if not to_email or not code:
+        return {"status": "error", "detail": "email and code are required"}
+    
+    # Send the verification email
+    success = send_verification_email(to_email, code)
+    
+    if success:
+        return {"status": "ok", "detail": "email sent"}
+    else:
+        return {"status": "error", "detail": "failed to send email"}
+
+def main():
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        payload = {}
+    result = send_email(payload)
+    sys.stdout.write(json.dumps(result))
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == '__main__':
     port = int(os.getenv('EMAIL_SERVICE_PORT', 5001))

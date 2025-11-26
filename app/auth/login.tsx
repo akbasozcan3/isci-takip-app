@@ -330,8 +330,6 @@ const styles = StyleSheet.create({
   },
   footerLink: {
     color: '#60a5fa',
-    fontWeight: '600',
-    textDecorationLine: 'underline',
     fontFamily: 'Poppins-SemiBold',
   },
 });

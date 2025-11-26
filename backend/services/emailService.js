@@ -1,5 +1,7 @@
 // Email Service using Gmail SMTP (App Password recommended)
 const nodemailer = require('nodemailer');
+const { spawn } = require('child_process');
+const path = require('path');
 
 function createTransport() {
   const user = process.env.GMAIL_USER;
@@ -140,6 +142,46 @@ async function sendResetCode(email, code) {
   return await sendMail({ to: email, subject: title, html, text });
 }
 
-module.exports = { sendResetCode, sendResetLink };
+function runPythonEmailService(payload, pythonCmd = 'python') {
+  return new Promise((resolve, reject) => {
+    const script = path.join(__dirname, '..', 'email_service.py');
+    const py = spawn(pythonCmd, [script], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+    let stdout = '';
+    let stderr = '';
+
+    py.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    py.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+
+    py.on('close', (code) => {
+      if (code !== 0) return reject(new Error(stderr || `Python exited with ${code}`));
+      try {
+        return resolve(JSON.parse(stdout));
+      } catch (e) {
+        return resolve({ raw: stdout });
+      }
+    });
+
+    // send payload as JSON via stdin
+    try {
+      py.stdin.write(JSON.stringify(payload));
+    } catch (e) { /* ignore */ }
+    py.stdin.end();
+  });
+}
+
+// örnek wrapper: mevcut email gönderme fonksiyonunuzda kullanın
+async function sendEmail(payload) {
+  // payload: { to, subject, body, ... }
+  // pythonCmd parametresini opsiyonel olarak process.env.PYTHON_CMD ile ayarlayabilirsiniz
+  const pythonCmd = process.env.PYTHON_CMD || 'python';
+  return runPythonEmailService(payload, pythonCmd);
+}
+
+module.exports = {
+  sendResetCode,
+  sendResetLink,
+  sendEmail,
+};
 
 

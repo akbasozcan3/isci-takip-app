@@ -1,4 +1,5 @@
 const db = require('../config/database');
+const emailService = require('../services/emailService');
 
 class NotificationsController {
   async list(req, res) {
@@ -38,6 +39,16 @@ class NotificationsController {
     } catch (e) {
       console.error('notifications.markRead error:', e);
       return res.status(500).json({ error: 'İşlem başarısız' });
+    }
+  }
+
+  async notifyUser(req, res) {
+    const payload = { to: req.body.to, subject: req.body.subject, body: req.body.body };
+    try {
+      const result = await emailService.sendEmail(payload);
+      res.json({ ok: true, result });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
     }
   }
 }

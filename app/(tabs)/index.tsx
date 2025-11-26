@@ -174,9 +174,8 @@ export default function HomeScreen(): React.JSX.Element {
     return () => {
       mounted = false;
       sub.remove?.();
-    };
+    }; 
   }, []);
-
   // Auto-play slider
   React.useEffect(() => {
     if (!isAuthenticated && Platform.OS === 'ios') {
