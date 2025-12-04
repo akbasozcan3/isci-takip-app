@@ -1,0 +1,70 @@
+{
+  "name": "isci-takip-backend",
+  "version": "2.0.0",
+  "description": "Professional İşçi Takip Backend API",
+  "main": "server.js",
+  "scripts": {
+    "start:node": "node server.js",
+    "start": "node scripts/start-pm2.js",
+    "start:dev": "pm2 start ecosystem.config.js --env development",
+    "start:prod": "pm2 start ecosystem.config.js --env production",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop all",
+    "pm2:restart": "pm2 restart all",
+    "pm2:delete": "pm2 delete all",
+    "pm2:logs": "pm2 logs",
+    "pm2:status": "pm2 status",
+    "stop": "pm2 stop ecosystem.config.js",
+    "restart": "pm2 restart ecosystem.config.js",
+    "reload": "pm2 reload ecosystem.config.js",
+    "delete": "pm2 delete ecosystem.config.js",
+    "logs": "pm2 logs",
+    "status": "pm2 status",
+    "monit": "pm2 monit",
+    "dev": "nodemon server.js",
+    "email": "node scripts/run-email-service.js",
+    "start:all": "pm2 start ecosystem.config.js",
+    "dev:all": "npx concurrently -n node,email -c green,cyan \"npm run dev\" \"npm run email\"",
+    "seed:articles": "node scripts/seed-articles.js",
+    "init": "node scripts/init-backend.js",
+    "setup:startup": "node scripts/setup-pm2-startup.js",
+    "ensure:running": "node scripts/ensure-pm2-running.js",
+    "save": "pm2 save",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:push": "node test-push.js"
+  },
+  "keywords": [
+    "api",
+    "backend",
+    "location-tracking",
+    "authentication",
+    "nodejs",
+    "express"
+  ],
+  "author": "Ozcan Akbas",
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "body-parser": "^2.2.0",
+    "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "iyzipay": "^2.0.64",
+    "jsonwebtoken": "^9.0.2",
+    "node-fetch": "^2.6.7",
+    "nodemailer": "^6.9.15",
+    "pm2": "^5.4.0",
+    "socket.io": "^4.8.1",
+    "stripe": "^17.7.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  }
+}

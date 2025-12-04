@@ -1,0 +1,691 @@
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Animated,
+  Dimensions,
+  Platform,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { getApiBase } from '../../utils/api';
+
+const { width: WINDOW_WIDTH } = Dimensions.get('window');
+
+type Article = {
+  id: string;
+  title: string;
+  excerpt: string;
+  content: string;
+  readTime: string;
+  category?: string;
+  tags?: string[];
+  createdAt: string;
+  updatedAt: string;
+  hero?: string | null;
+};
+
+const CATEGORIES = ['Tümü', 'Genel', 'Teknoloji', 'İş Dünyası', 'Güvenlik', 'Verimlilik', 'Gizlilik', 'Yönetim', 'Analiz', 'Kullanım', 'Hizmet', 'Sektör'];
+
+export default function BlogScreen(): React.JSX.Element {
+  const router = useRouter();
+  const params = useLocalSearchParams();
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('Tümü');
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  // Fetch articles from backend
+  useEffect(() => {
+    fetchArticles();
+  }, []);
+
+  // If navigated with /blog?id=..., open that article directly
+  useEffect(() => {
+    const id = String(params.id || '');
+    if (!id || !articles.length) return;
+    const art = articles.find(a => a.id === id);
+    if (art) setSelectedArticle(art);
+  }, [params.id, articles]);
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  const fetchArticles = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${getApiBase()}/api/articles`);
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        setArticles(data);
+      }
+    } catch (error) {
+      console.error('Error fetching articles:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openArticle = (article: Article) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setSelectedArticle(article);
+  };
+
+  const closeArticle = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    try {
+      router.back();
+    } catch (e) {
+      setSelectedArticle(null);
+    }
+  };
+
+  // Filter articles
+  const filteredArticles = useMemo(() => {
+    let filtered = articles;
+
+    // Category filter
+    if (selectedCategory !== 'Tümü') {
+      filtered = filtered.filter(article => 
+        article.category === selectedCategory
+      );
+    }
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(article =>
+        article.title.toLowerCase().includes(query) ||
+        article.excerpt.toLowerCase().includes(query) ||
+        article.tags?.some(tag => tag.toLowerCase().includes(query))
+      );
+    }
+
+    return filtered.sort((a, b) => {
+      const dateA = new Date(a.createdAt || a.updatedAt).getTime();
+      const dateB = new Date(b.createdAt || b.updatedAt).getTime();
+      return dateB - dateA; // Newest first
+    });
+  }, [articles, selectedCategory, searchQuery]);
+
+  const getCategoryColor = (category?: string) => {
+    const colors: Record<string, string> = {
+      'Genel': '#06b6d4',
+      'Teknoloji': '#7c3aed',
+      'İş Dünyası': '#10b981',
+      'Güvenlik': '#ef4444',
+      'Verimlilik': '#f59e0b',
+      'Gizlilik': '#3b82f6',
+      'Yönetim': '#8b5cf6',
+      'Analiz': '#ec4899',
+      'Kullanım': '#14b8a6',
+      'Hizmet': '#f97316',
+      'Sektör': '#6366f1',
+    };
+    return colors[category || ''] || '#64748b';
+  };
+
+  const getCategoryIcon = (category?: string) => {
+    const icons: Record<string, string> = {
+      'Genel': 'document-text',
+      'Teknoloji': 'hardware-chip',
+      'İş Dünyası': 'business',
+      'Güvenlik': 'shield-checkmark',
+      'Verimlilik': 'speedometer',
+      'Gizlilik': 'lock-closed',
+      'Yönetim': 'people',
+      'Analiz': 'analytics',
+      'Kullanım': 'phone-portrait',
+      'Hizmet': 'headset',
+      'Sektör': 'grid',
+    };
+    return icons[category || ''] || 'document';
+  };
+
+  // Article detail view
+  if (selectedArticle) {
+    const categoryColor = getCategoryColor(selectedArticle.category);
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <LinearGradient colors={['#0a0f1a', '#1a1f2e', '#2a2f3e']} style={styles.articleContainer}>
+          {/* Article Header */}
+          <View style={styles.articleHeader}>
+            <Pressable onPress={closeArticle} style={styles.backButton}>
+              <Ionicons name="arrow-back" size={24} color="#fff" />
+            </Pressable>
+            <View style={[styles.categoryBadge, { backgroundColor: `${categoryColor}20` }]}>
+              <Ionicons name={getCategoryIcon(selectedArticle.category) as any} size={14} color={categoryColor} />
+              <Text style={[styles.categoryText, { color: categoryColor }]}>
+                {selectedArticle.category || 'Genel'}
+              </Text>
+            </View>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.articleContent}>
+            <View style={styles.brandBadge}>
+              <Text style={styles.brandBadgeText}>Bavaxe Bilgi Merkezi</Text>
+            </View>
+
+            {/* Title */}
+            <Text style={styles.articleTitle}>{selectedArticle.title}</Text>
+            
+            {/* Meta */}
+            <View style={styles.articleMeta}>
+              <View style={styles.metaItem}>
+                <Ionicons name="calendar-outline" size={16} color="#94a3b8" />
+                <Text style={styles.metaText}>
+                  {new Date(selectedArticle.createdAt || selectedArticle.updatedAt).toLocaleDateString('tr-TR', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })}
+                </Text>
+              </View>
+              <View style={styles.metaItem}>
+                <Ionicons name="time-outline" size={16} color="#94a3b8" />
+                <Text style={styles.metaText}>{selectedArticle.readTime || '5 dk'}</Text>
+              </View>
+            </View>
+
+            {/* Content */}
+            <View style={styles.contentWrapper}>
+              <Text style={styles.articleExcerpt}>{selectedArticle.excerpt}</Text>
+              <Text style={styles.articleBody}>{selectedArticle.content}</Text>
+            </View>
+
+            {/* Tags */}
+            {selectedArticle.tags && selectedArticle.tags.length > 0 && (
+              <View style={styles.tagsContainer}>
+                {selectedArticle.tags.map((tag, idx) => (
+                  <View key={idx} style={styles.tag}>
+                    <Text style={styles.tagText}>#{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </ScrollView>
+        </LinearGradient>
+      </SafeAreaView>
+    );
+  }
+
+  // Loading state
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <LinearGradient colors={['#0a0f1a', '#1a1f2e']} style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#06b6d4" />
+          <Text style={styles.loadingText}>Makaleler yükleniyor...</Text>
+        </LinearGradient>
+      </SafeAreaView>
+    );
+  }
+
+  // Main list view
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      
+      {/* Header */}
+      <LinearGradient colors={['#0a0f1a', '#1a1f2e']} style={styles.header}>
+        <View style={styles.headerContent}>
+          <Pressable onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </Pressable>
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.headerTitle}>Bavaxe Makaleleri</Text>
+            <Text style={styles.headerSubtitle}>Bavaxe bilgi merkezinde {filteredArticles.length} içerik</Text>
+          </View>
+        </View>
+
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color="#64748b" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Makale ara..."
+            placeholderTextColor="#64748b"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
+              <Ionicons name="close-circle" size={20} color="#64748b" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Category Filter */}
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryContainer}
+        >
+          {CATEGORIES.map((category) => (
+            <TouchableOpacity
+              key={category}
+              onPress={() => setSelectedCategory(category)}
+              style={[
+                styles.categoryChip,
+                selectedCategory === category && {
+                  backgroundColor: getCategoryColor(category),
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.categoryChipText,
+                  selectedCategory === category && styles.categoryChipTextActive,
+                ]}
+              >
+                {category}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </LinearGradient>
+
+      {/* Articles List */}
+      <Animated.ScrollView
+        style={[styles.scrollView, { opacity: fadeAnim }]}
+        contentContainerStyle={styles.articlesContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        {filteredArticles.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="document-text-outline" size={64} color="#64748b" />
+            <Text style={styles.emptyStateText}>Makale bulunamadı</Text>
+            <Text style={styles.emptyStateSubtext}>
+              {searchQuery ? 'Arama kriterlerinizi değiştirmeyi deneyin' : 'Henüz makale eklenmemiş'}
+            </Text>
+          </View>
+        ) : (
+          filteredArticles.map((article, index) => {
+            const categoryColor = getCategoryColor(article.category);
+            return (
+              <Pressable
+                key={article.id}
+                onPress={() => openArticle(article)}
+                style={({ pressed }) => [
+                  styles.articleCard,
+                  pressed && { opacity: 0.7, transform: [{ scale: 0.98 }] },
+                ]}
+              >
+                <LinearGradient
+                  colors={['rgba(15, 31, 53, 0.95)', 'rgba(11, 18, 32, 0.98)']}
+                  style={styles.cardGradient}
+                >
+                  <View style={styles.cardHeader}>
+                    <View style={[styles.cardIcon, { backgroundColor: `${categoryColor}20` }]}>
+                      <Ionicons name={getCategoryIcon(article.category) as any} size={24} color={categoryColor} />
+                    </View>
+                    <View style={[styles.cardCategory, { backgroundColor: `${categoryColor}15` }]}>
+                      <Text style={[styles.cardCategoryText, { color: categoryColor }]}>
+                        {article.category || 'Genel'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.cardTitle}>{article.title}</Text>
+                  <Text style={styles.cardExcerpt}>{article.excerpt}</Text>
+
+                  <View style={styles.cardFooter}>
+                    <View style={styles.cardMeta}>
+                      <Ionicons name="calendar-outline" size={14} color="#64748b" />
+                      <Text style={styles.cardMetaText}>
+                        {new Date(article.createdAt || article.updatedAt).toLocaleDateString('tr-TR', {
+                          day: 'numeric',
+                          month: 'short'
+                        })}
+                      </Text>
+                    </View>
+                    <View style={styles.cardMeta}>
+                      <Ionicons name="time-outline" size={14} color="#64748b" />
+                      <Text style={styles.cardMetaText}>{article.readTime || '5 dk'}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={categoryColor} />
+                  </View>
+                </LinearGradient>
+              </Pressable>
+            );
+          })
+        )}
+      </Animated.ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0a0f1a',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#94a3b8',
+    marginTop: 16,
+    fontSize: 16,
+    fontFamily: 'Poppins-Medium',
+  },
+  header: {
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 20 : 20,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 16,
+    marginBottom: 20,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTextContainer: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#fff',
+    letterSpacing: -0.5,
+    fontFamily: 'Poppins-Bold',
+    lineHeight: 38,
+  },
+  headerSubtitle: {
+    fontSize: 15,
+    color: '#64748b',
+    marginTop: 6,
+    fontWeight: '500',
+    fontFamily: 'Poppins-Medium',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  searchIcon: {
+    marginRight: 12,
+  },
+  searchInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 15,
+    fontFamily: 'Poppins-Regular',
+  },
+  clearButton: {
+    padding: 4,
+  },
+  categoryContainer: {
+    paddingVertical: 8,
+    gap: 8,
+  },
+  categoryChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  categoryChipText: {
+    color: '#94a3b8',
+    fontSize: 13,
+    fontWeight: '600',
+    fontFamily: 'Poppins-SemiBold',
+  },
+  categoryChipTextActive: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  articlesContainer: {
+    padding: 20,
+    gap: 16,
+  },
+  articleCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  cardGradient: {
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(6,182,212,0.2)',
+    borderRadius: 20,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  cardIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardCategory: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  cardCategoryText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    fontFamily: 'Poppins-Bold',
+  },
+  cardTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 8,
+    lineHeight: 28,
+    fontFamily: 'Poppins-ExtraBold',
+  },
+  cardExcerpt: {
+    fontSize: 14,
+    color: '#94a3b8',
+    lineHeight: 20,
+    marginBottom: 16,
+    fontFamily: 'Poppins-Regular',
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  cardMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  cardMetaText: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '600',
+    fontFamily: 'Poppins-SemiBold',
+  },
+  
+  // Article View
+  articleContainer: {
+    flex: 1,
+  },
+  articleHeader: {
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 20 : 20,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  categoryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 6,
+  },
+  categoryText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    fontFamily: 'Poppins-Bold',
+  },
+  articleContent: {
+    padding: 24,
+    paddingBottom: 80,
+  },
+  brandBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(6,182,212,0.12)',
+    marginBottom: 16,
+  },
+  brandBadgeText: {
+    color: '#06b6d4',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  articleTitle: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#fff',
+    lineHeight: 40,
+    marginBottom: 16,
+    fontFamily: 'Poppins-Bold',
+  },
+  articleMeta: {
+    flexDirection: 'row',
+    gap: 20,
+    marginBottom: 24,
+    paddingBottom: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  metaText: {
+    fontSize: 14,
+    color: '#94a3b8',
+    fontWeight: '600',
+    fontFamily: 'Poppins-SemiBold',
+  },
+  contentWrapper: {
+    marginBottom: 24,
+  },
+  articleExcerpt: {
+    fontSize: 18,
+    color: '#cbd5e1',
+    lineHeight: 28,
+    marginBottom: 24,
+    fontWeight: '600',
+    fontFamily: 'Poppins-SemiBold',
+  },
+  articleBody: {
+    fontSize: 16,
+    color: '#94a3b8',
+    lineHeight: 26,
+    fontFamily: 'Poppins-Regular',
+  },
+  tagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 24,
+    paddingTop: 24,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  tag: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(6,182,212,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(6,182,212,0.3)',
+  },
+  tagText: {
+    color: '#06b6d4',
+    fontSize: 12,
+    fontWeight: '600',
+    fontFamily: 'Poppins-SemiBold',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 80,
+    paddingHorizontal: 40,
+  },
+  emptyStateText: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '700',
+    marginTop: 20,
+    fontFamily: 'Poppins-Bold',
+    textAlign: 'center',
+  },
+  emptyStateSubtext: {
+    color: '#64748b',
+    fontSize: 15,
+    marginTop: 10,
+    textAlign: 'center',
+    fontFamily: 'Poppins-Regular',
+    lineHeight: 22,
+  },
+});

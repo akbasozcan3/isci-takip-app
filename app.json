@@ -1,0 +1,106 @@
+{
+  "expo": {
+    "name": "Bavaxe",
+    "slug": "isci-takip-paneli",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "bavaxe",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./Nexora (2).png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "bundleIdentifier": "com.iscitakip.app",
+      "supportsTablet": true,
+      "buildNumber": "1",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "location",
+          "fetch",
+          "remote-notification"
+        ],
+        "NSLocationWhenInUseUsageDescription": "Konumunuzu iş takibi sırasında göstermek için kullanılır.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Konumunuz, görev takibi ve güvenlik için arka planda toplanır.",
+        "NSLocationAlwaysUsageDescription": "Arka planda konum takibi için izin gereklidir.",
+        "UIRequiresFullScreen": false,
+        "UIViewControllerBasedStatusBarAppearance": true,
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.iscitakip.app",
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "icon": "./assets/images/android-icon-foreground.png",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "POST_NOTIFICATIONS",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ],
+      "softwareKeyboardLayoutMode": "pan"
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./Nexora (2).png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./Nexora (2).png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0f172a",
+          "dark": {
+            "backgroundColor": "#0f172a"
+          }
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Konumunuz, görev takibi ve güvenlik için arka planda toplanır.",
+          "locationAlwaysPermission": "Arka planda konum takibi için izin gereklidir.",
+          "locationWhenInUsePermission": "Konumunuzu iş takibi sırasında göstermek için kullanılır.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true
+        }
+      ],
+      "expo-task-manager",
+      "expo-font",
+      "expo-secure-store",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "apiBase": "http://localhost:4000",
+      "apiBaseDev": "http://10.0.2.2:4000",
+      "apiBaseIOS": "http://localhost:4000",
+      "apiBaseWeb": "http://127.0.0.1:4000",
+      "router": {},
+      "eas": {
+        "projectId": "3122850c-b69c-40f3-b1fd-935cc91346fd"
+      },
+      "oneSignalAppId": "4a846145-621c-4a0d-a29f-0598da946c50",
+      "firebaseAnalyticsEnabled": true
+    },
+    "owner": "ozcanakb0"
+  }
+}

@@ -1,0 +1,95 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Expo
+.expo/
+.expo-shared/
+dist/
+web-build/
+
+# Native
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# Debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# Local env files
+.env*.local
+.env
+
+# Typescript
+*.tsbuildinfo
+
+# Backend
+backend/data.json
+backend/logs/
+backend/.env
+backend/.env.local
+backend/.env.production
+backend/node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Build
+build/
+*.apk
+*.aab
+*.ipa
+
+# Temporary
+tmp/
+temp/
+*.log
+
+# Secure
+*.pem
+*.key
+*.cert
+
+# Firebase Service Account (GÜVENLİK - ASLA PUSH ETME!)
+*-firebase-adminsdk-*.json
+*-service-account.json
+firebase-service-account*.json
+bavaxe-*-*.json
+bavaxe-f26c3-firebase-adminsdk-*.json
+google-services.json
+
+# API Keys in files
+*API_KEYS*.md
+*KEYS*.md
