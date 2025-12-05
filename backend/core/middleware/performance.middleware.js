@@ -1,5 +1,5 @@
 const performanceService = require('../services/performance.service');
-const { createLogger } = require('../utils/logger');
+const { createLogger } = require('../core/utils/logger');
 
 const logger = createLogger('Performance');
 

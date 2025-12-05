@@ -3,7 +3,6 @@ const db = require('../config/database');
 
 let Iyzipay;
 let iyzipay;
-let stripe;
 
 try {
   Iyzipay = require('iyzipay');
@@ -16,13 +15,6 @@ try {
   iyzipay = null;
 }
 
-try {
-  const Stripe = require('stripe');
-  stripe = new Stripe(process.env.STRIPE_SECRET_KEY || process.env.STRIPE_TEST_SECRET_KEY || 'sk_test_xxxxxxxx');
-} catch (err) {
-  stripe = null;
-}
-
 const transactions = new Map();
 
 class PaymentService {
@@ -31,9 +23,6 @@ class PaymentService {
   }
 
   detectGateway() {
-    if (stripe && process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY !== 'sk_test_xxxxxxxx') {
-      return 'stripe';
-    }
     if (iyzipay && process.env.IYZICO_API_KEY && process.env.IYZICO_API_KEY !== 'sandbox-xxxxxxxx' && process.env.IYZICO_SECRET_KEY && process.env.IYZICO_SECRET_KEY !== 'sandbox-xxxxxxxx') {
       return 'iyzico';
     }
@@ -74,57 +63,6 @@ class PaymentService {
     return transaction;
   }
 
-  async processWithStripe(transaction, cardData) {
-    if (!stripe) {
-      throw new Error('Stripe gateway not available');
-    }
-
-    const paymentMethod = await stripe.paymentMethods.create({
-      type: 'card',
-      card: {
-        number: cardData.cardNumber,
-        exp_month: parseInt(cardData.expiryMonth, 10),
-        exp_year: parseInt(cardData.expiryYear, 10),
-        cvc: cardData.cvc
-      },
-      billing_details: {
-        name: cardData.cardName,
-        email: transaction.metadata.userEmail
-      }
-    });
-
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(transaction.amount * 100),
-      currency: transaction.currency.toLowerCase(),
-      payment_method: paymentMethod.id,
-      confirm: true,
-      description: `Subscription: ${transaction.planId}`,
-      metadata: {
-        userId: transaction.userId,
-        planId: transaction.planId,
-        transactionId: transaction.id
-      }
-    });
-
-    if (paymentIntent.status === 'succeeded') {
-      this.updateTransaction(transaction.id, {
-        status: 'succeeded',
-        gatewayTransactionId: paymentIntent.id,
-        paymentMethodId: paymentMethod.id,
-        cardLast4: paymentMethod.card.last4,
-        cardBrand: paymentMethod.card.brand
-      });
-
-      return {
-        success: true,
-        transactionId: transaction.id,
-        paymentId: paymentIntent.id,
-        gateway: 'stripe'
-      };
-    }
-
-    throw new Error(`Payment failed: ${paymentIntent.status}`);
-  }
 
   async processWithIyzico(transaction, cardData) {
     if (!iyzipay) {
@@ -275,8 +213,10 @@ class PaymentService {
     return 'unknown';
   }
 
-  async processPayment(userId, planId, amount, currency, cardData, metadata = {}) {
+  async processPayment(userId, planId, amount, currency, cardData, metadata = {}, retryCount = 0) {
     const paymentGateway = require('./paymentGateway.service');
+    const maxRetries = 2;
+    const retryDelay = 1000;
     
     const validation = paymentGateway.validateCardData(cardData);
     if (!validation.valid) {
@@ -286,6 +226,10 @@ class PaymentService {
     const cleanedCardNumber = cardData.cardNumber.replace(/\s/g, '');
     if (!/^\d+$/.test(cleanedCardNumber)) {
       throw new Error('Kart numarası sadece rakam içermelidir');
+    }
+
+    if (!/^[0-9]{13,19}$/.test(cleanedCardNumber)) {
+      throw new Error('Kart numarası 13-19 haneli olmalıdır');
     }
 
     const transaction = this.createTransaction(userId, planId, amount, currency, metadata);
@@ -299,59 +243,92 @@ class PaymentService {
         clientIp: metadata.clientIp || '127.0.0.1'
       };
 
-      const result = await paymentGateway.processPayment(transaction, {
+      const normalizedCardData = {
         cardNumber: cleanedCardNumber,
-        expiryMonth: cardData.expiryMonth.padStart(2, '0'),
-        expiryYear: cardData.expiryYear,
-        cvc: cardData.cvc,
-        cardName: cardData.cardName.trim()
-      }, userData);
+        expiryMonth: String(cardData.expiryMonth).padStart(2, '0'),
+        expiryYear: String(cardData.expiryYear),
+        cvc: String(cardData.cvc),
+        cardName: String(cardData.cardName).trim()
+      };
+
+      let result;
+      try {
+        result = await paymentGateway.processPayment(transaction, normalizedCardData, userData);
+      } catch (gatewayError) {
+        const isRetryable = gatewayError.message && (
+          gatewayError.message.includes('timeout') ||
+          gatewayError.message.includes('network') ||
+          gatewayError.message.includes('connection') ||
+          gatewayError.message.includes('ECONNRESET') ||
+          gatewayError.message.includes('ETIMEDOUT')
+        );
+
+        if (isRetryable && retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, retryDelay * (retryCount + 1)));
+          return this.processPayment(userId, planId, amount, currency, cardData, metadata, retryCount + 1);
+        }
+
+        throw gatewayError;
+      }
 
       if (result.success) {
         this.updateTransaction(transaction.id, {
           status: 'succeeded',
-          gatewayTransactionId: result.gatewayTransactionId,
-          cardLast4: result.cardLast4,
-          cardBrand: result.cardBrand
+          gatewayTransactionId: result.gatewayTransactionId || result.paymentId,
+          cardLast4: result.cardLast4 || cleanedCardNumber.slice(-4),
+          cardBrand: result.cardBrand || this.detectCardBrand(cleanedCardNumber),
+          retryCount: retryCount
         });
         
         this.recordBillingEvent(userId, transaction, result);
+      } else {
+        this.updateTransaction(transaction.id, {
+          status: 'failed',
+          error: result.error || 'Payment failed',
+          retryCount: retryCount
+        });
       }
 
       return {
         success: result.success,
         transactionId: transaction.id,
-        paymentId: result.paymentId,
-        gateway: result.gateway
+        paymentId: result.paymentId || result.gatewayTransactionId,
+        gateway: result.gateway || this.gateway,
+        error: result.error || null
       };
     } catch (error) {
       this.updateTransaction(transaction.id, {
         status: 'failed',
-        error: error.message
+        error: error.message || 'Payment processing failed',
+        retryCount: retryCount
       });
       throw error;
     }
   }
 
   recordBillingEvent(userId, transaction, result) {
-    const plan = this.getPlanDetails(transaction.planId);
-    
-    db.addBillingEvent(userId, {
-      type: 'payment',
-      planId: transaction.planId,
-      planName: plan.name,
-      amount: transaction.amount,
-      currency: transaction.currency,
-      interval: 'monthly',
-      provider: result.gateway,
-      status: 'succeeded',
-      paymentId: result.paymentId,
-      transactionId: transaction.id,
-      cardLast4: transaction.cardLast4,
-      cardBrand: transaction.cardBrand,
-      description: `${plan.name} subscription payment completed`,
-      timestamp: Date.now()
-    });
+    try {
+      const plan = this.getPlanDetails(transaction.planId);
+      
+      db.addBillingEvent(userId, {
+        type: 'payment',
+        planId: transaction.planId,
+        planName: plan.name,
+        amount: transaction.amount,
+        currency: transaction.currency,
+        interval: 'monthly',
+        provider: result.gateway || this.gateway,
+        status: 'succeeded',
+        paymentId: result.paymentId || result.gatewayTransactionId,
+        transactionId: transaction.id,
+        cardLast4: transaction.cardLast4 || result.cardLast4,
+        cardBrand: transaction.cardBrand || result.cardBrand,
+        description: `${plan.name} abonelik ödemesi tamamlandı`,
+        timestamp: Date.now()
+      });
+    } catch (error) {
+      console.error('[PaymentService] recordBillingEvent error:', error);
+    }
   }
 
   getPlanDetails(planId) {
@@ -464,14 +441,6 @@ class PaymentService {
   }
 
   async verifyWebhook(gateway, signature, payload, secret) {
-    if (gateway === 'stripe' && stripe) {
-      try {
-        const event = stripe.webhooks.constructEvent(payload, signature, secret);
-        return { valid: true, event };
-      } catch (err) {
-        return { valid: false, error: err.message };
-      }
-    }
     return { valid: true };
   }
 

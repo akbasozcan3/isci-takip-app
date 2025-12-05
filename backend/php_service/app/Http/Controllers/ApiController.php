@@ -57,6 +57,10 @@ class ApiController extends Controller
         ]);
     }
 
+    private static array $statsCache = [];
+    private const CACHE_TTL = 300;
+    private const MAX_CACHE_SIZE = 200;
+
     public function getNotificationStats(Request $request): JsonResponse
     {
         $userId = $request->query('user_id');
@@ -67,28 +71,56 @@ class ApiController extends Controller
             ], 400);
         }
 
+        $cacheKey = "stats:{$userId}";
+        $now = time();
+        
+        if (isset(self::$statsCache[$cacheKey])) {
+            [$cachedData, $cachedTime] = self::$statsCache[$cacheKey];
+            if ($now - $cachedTime < self::CACHE_TTL) {
+                return response()->json($cachedData);
+            }
+        }
+
         try {
-            $response = Http::timeout(5)->get("{$this->nodejsServiceUrl}/api/notifications/{$userId}");
+            $response = Http::timeout(3)
+                ->retry(2, 100)
+                ->get("{$this->nodejsServiceUrl}/api/notifications/{$userId}");
             
             if ($response->successful()) {
                 $notifications = $response->json();
+                $notificationsList = $notifications['notifications'] ?? [];
+                
                 $stats = [
-                    'total' => count($notifications['notifications'] ?? []),
-                    'unread' => count(array_filter($notifications['notifications'] ?? [], fn($n) => !($n['read'] ?? false))),
-                    'by_type' => $this->groupByType($notifications['notifications'] ?? []),
-                    'by_priority' => $this->groupByPriority($notifications['notifications'] ?? [])
+                    'total' => count($notificationsList),
+                    'unread' => count(array_filter($notificationsList, fn($n) => !($n['read'] ?? false))),
+                    'by_type' => $this->groupByType($notificationsList),
+                    'by_priority' => $this->groupByPriority($notificationsList)
                 ];
 
-                return response()->json([
+                $result = [
                     'user_id' => $userId,
                     'stats' => $stats,
                     'timestamp' => Carbon::now()->timestamp
-                ]);
+                ];
+                
+                self::$statsCache[$cacheKey] = [$result, $now];
+                if (count(self::$statsCache) > self::MAX_CACHE_SIZE) {
+                    self::$statsCache = array_filter(
+                        self::$statsCache,
+                        fn($entry) => $now - $entry[1] < self::CACHE_TTL
+                    );
+                    if (count(self::$statsCache) > self::MAX_CACHE_SIZE) {
+                        uasort(self::$statsCache, fn($a, $b) => $a[1] <=> $b[1]);
+                        self::$statsCache = array_slice(self::$statsCache, -self::MAX_CACHE_SIZE + 20, null, true);
+                    }
+                }
+
+                return response()->json($result);
             }
         } catch (\Exception $e) {
         }
 
-        return response()->json([
+        $result = [
             'user_id' => $userId,
             'stats' => [
                 'total' => 0,
@@ -97,7 +129,9 @@ class ApiController extends Controller
                 'by_priority' => []
             ],
             'timestamp' => Carbon::now()->timestamp
-        ]);
+        ];
+        
+        return response()->json($result);
     }
 
     private function groupByType(array $notifications): array

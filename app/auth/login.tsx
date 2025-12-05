@@ -374,9 +374,9 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   iconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: 'rgba(100, 116, 139, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',

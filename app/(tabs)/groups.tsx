@@ -34,16 +34,6 @@ import { authFetch } from '../../utils/auth';
 
 const API_BASE = getApiBase();
 
-/**
- * Cloud-only fetch helper. Always uses API_BASE (Render domain).
- */
-async function fetchWithFallback(path: string, init?: RequestInit) {
-  const base = API_BASE.replace(/\/$/, '');
-  const url = `${base}${path}`;
-  console.log('[Network] request:', url);
-  return fetch(url, init);
-}
-
 /* ---------- Types ---------- */
 interface Group {
   id: string;
@@ -250,7 +240,7 @@ function CreateGroupModal({ visible, onClose, onGroupCreated, onMessage }: Creat
     }
     setLoading(true);
     try {
-      const response = await fetchWithFallback(`/api/groups`, {
+      const response = await authFetch(`/groups`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -264,7 +254,8 @@ function CreateGroupModal({ visible, onClose, onGroupCreated, onMessage }: Creat
       });
 
       if (response.ok) {
-        const group = await response.json();
+        const data = await response.json();
+        const group = data.data || data;
         onGroupCreated(group);
         onClose();
         setGroupName('');
@@ -367,9 +358,10 @@ function JoinGroupModal({ visible, onClose, onJoined, onMessage }: JoinGroupModa
   const checkGroupInfo = async () => {
     if (!groupCode.trim()) return;
     try {
-      const response = await fetchWithFallback(`/api/groups/${groupCode}/info`);
+      const response = await authFetch(`/groups/${groupCode}/info`);
       if (response.ok) {
-        const info = await response.json();
+        const data = await response.json();
+        const info = data.data || data;
         setGroupInfo(info);
       } else {
         setGroupInfo(null);
@@ -390,7 +382,7 @@ function JoinGroupModal({ visible, onClose, onJoined, onMessage }: JoinGroupModa
     }
     setLoading(true);
     try {
-      const response = await fetchWithFallback(`/api/groups/${groupCode}/join-request`, {
+      const response = await authFetch(`/groups/${groupCode}/join-request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, displayName }),
@@ -568,18 +560,17 @@ export default function GroupsScreen() {
     if (!userId) return setLoading(false);
     setLoading(true);
     try {
-      const response = await fetchWithFallback(`/api/groups/user/${userId}/active`);
+      const response = await authFetch(`/groups/user/${userId}/active`);
       if (response.ok) {
-        const userGroups = await response.json();
-        setGroups(userGroups);
+        const data = await response.json();
+        const userGroups = data.data || data;
+        setGroups(Array.isArray(userGroups) ? userGroups : []);
       } else {
-        // Boş grup listesi normal bir durum, hata gösterme
         setGroups([]);
       }
     } catch (error) {
       console.error('[GroupsScreen] loadGroups error', error);
       setGroups([]);
-      // Sadece gerçek ağ hatalarında mesaj göster
       if (error instanceof Error && error.message.includes('fetch')) {
         showMessage('error', 'Ağ hatası: Gruplar yüklenemedi');
       }
@@ -607,7 +598,7 @@ export default function GroupsScreen() {
         return;
       }
 
-      const res = await fetchWithFallback(`/api/groups/${group.id}/leave`, {
+      const res = await authFetch(`/groups/${group.id}/leave`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
@@ -635,22 +626,22 @@ export default function GroupsScreen() {
         if (lower.includes('last admin')) {
           // Try to automatically transfer admin to another member, then retry leave
           try {
-            const memRes = await fetchWithFallback(`/api/groups/${group.id}/members`);
+            const memRes = await authFetch(`/groups/${group.id}/members`);
             if (memRes.ok) {
-              const members: { userId: string; role: string }[] = await memRes.json();
+              const memData = await memRes.json();
+              const members: { userId: string; role: string }[] = memData.data || memData;
               const candidate = members.find(m => m.userId !== userId);
               if (!candidate) {
                 showMessage('error', 'Bu grupta başka üye yok. Ayrılmadan önce başka bir üye ekleyin.');
                 return;
               }
-              const trRes = await fetchWithFallback(`/api/groups/${group.id}/transfer-admin`, {
+              const trRes = await authFetch(`/groups/${group.id}/transfer-admin`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ currentAdminId: userId, newAdminId: candidate.userId })
               });
               if (trRes.ok) {
-                // Retry leave after successful transfer
-                const retry = await fetchWithFallback(`/api/groups/${group.id}/leave`, {
+                const retry = await authFetch(`/groups/${group.id}/leave`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ userId }),
@@ -686,7 +677,7 @@ export default function GroupsScreen() {
 
   const doDelete = async (group: Group) => {
     try {
-      const res = await fetchWithFallback(`/api/groups/${group.id}`, {
+      const res = await authFetch(`/groups/${group.id}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adminUserId: userId }),

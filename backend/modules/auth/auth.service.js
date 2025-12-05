@@ -90,6 +90,26 @@ class AuthService {
 
     return { valid: true };
   }
+
+  generateResetToken(email) {
+    return jwt.sign(
+      { email, type: 'password-reset' },
+      process.env.JWT_SECRET || 'fallback-secret',
+      { expiresIn: '1h' }
+    );
+  }
+
+  verifyResetToken(token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret');
+      if (decoded.type !== 'password-reset') {
+        return null;
+      }
+      return decoded;
+    } catch (error) {
+      return null;
+    }
+  }
 }
 
 module.exports = new AuthService();

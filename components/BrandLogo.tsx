@@ -22,7 +22,7 @@ export function BrandLogo({
 
   const img = (
     <Image
-      source={require('../app/(tabs)/assets/logo/Bavaxe.png')}
+      source={require('../app/assets/logo/Nexora.png')}
       resizeMode="contain"
       style={[
         styles.image,

@@ -156,12 +156,26 @@ class AdvancedCacheService {
     setInterval(() => {
       this.l1Cache.cleanup();
       const now = Date.now();
+      const keysToDelete = [];
+      let processed = 0;
+      const maxProcessPerIteration = 10000;
+      
       for (const [key, item] of this.l2Cache.entries()) {
+        if (processed >= maxProcessPerIteration) break;
         if (item.expiry && now > item.expiry) {
-          this.l2Cache.delete(key);
+          keysToDelete.push(key);
+          processed++;
         }
       }
-    }, 60000);
+      
+      for (const key of keysToDelete) {
+        this.l2Cache.delete(key);
+      }
+      
+      if (this.l2Cache.size > 100000 && global.gc) {
+        global.gc();
+      }
+    }, 45000);
   }
 }
 

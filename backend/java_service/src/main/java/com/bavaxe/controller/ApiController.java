@@ -21,15 +21,33 @@ import org.springframework.web.client.RestTemplate;
 @RequestMapping("/api")
 public class ApiController {
 
+    private static class CacheEntry {
+        Map<String, Object> data;
+        long timestamp;
+        
+        CacheEntry(Map<String, Object> data) {
+            this.data = data;
+            this.timestamp = System.currentTimeMillis();
+        }
+        
+        boolean isExpired() {
+            return System.currentTimeMillis() - timestamp > CACHE_TTL_MS;
+        }
+    }
+
+    private static final long CACHE_TTL_MS = 300000;
+    private static final int MAX_CACHE_SIZE = 200;
+
     @Value("${nodejs.service.url:http://localhost:4000}")
     private String nodejsServiceUrl;
 
     private final RestTemplate restTemplate;
 
+    private final Map<String, CacheEntry> cache = new java.util.concurrent.ConcurrentHashMap<>();
+
     public ApiController(RestTemplate restTemplate) {
         this.restTemplate = restTemplate;
     }
-
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> health() {
         Map<String, Object> response = new HashMap<>();
@@ -68,16 +86,38 @@ public class ApiController {
 
     @GetMapping("/billing/history")
     public ResponseEntity<Map<String, Object>> getBillingHistory(@RequestParam String user_id) {
+        String cacheKey = "billing:" + user_id;
+        CacheEntry cached = cache.get(cacheKey);
+        
+        if (cached != null && !cached.isExpired()) {
+            return ResponseEntity.ok(cached.data);
+        }
+        
         try {
             String url = nodejsServiceUrl + "/api/billing/history?user_id=" + user_id;
+            @SuppressWarnings("unchecked")
             ResponseEntity<Map> response = restTemplate.getForEntity(url, Map.class);
             
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> body = (Map<String, Object>) response.getBody();
                 Map<String, Object> result = new HashMap<>();
                 result.put("user_id", user_id);
-                result.put("transactions", response.getBody().get("transactions"));
-                result.put("total_amount", calculateTotal(response.getBody()));
+                result.put("transactions", body.get("transactions"));
+                result.put("total_amount", calculateTotal(body));
                 result.put("timestamp", Instant.now().toString());
+                
+                cache.put(cacheKey, new CacheEntry(result));
+                if (cache.size() > MAX_CACHE_SIZE) {
+                    cache.entrySet().removeIf(e -> e.getValue().isExpired());
+                    if (cache.size() > MAX_CACHE_SIZE) {
+                        cache.entrySet().stream()
+                            .sorted((a, b) -> Long.compare(a.getValue().timestamp, b.getValue().timestamp))
+                            .limit(cache.size() - MAX_CACHE_SIZE + 20)
+                            .forEach(e -> cache.remove(e.getKey()));
+                    }
+                }
+                
                 return ResponseEntity.ok(result);
             }
         } catch (Exception e) {
@@ -94,7 +134,6 @@ public class ApiController {
     @PostMapping("/billing/validate")
     public ResponseEntity<Map<String, Object>> validatePayment(@RequestBody Map<String, Object> request) {
         String paymentMethod = (String) request.get("payment_method");
-        String cardNumber = (String) request.get("card_number");
 
         Map<String, Object> result = new HashMap<>();
         result.put("valid", paymentMethod != null && !paymentMethod.isEmpty());

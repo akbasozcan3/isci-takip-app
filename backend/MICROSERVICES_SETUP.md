@@ -2,14 +2,13 @@
 
 ## Overview
 
-Bavaxe platformu 7 farklı mikroservis ile çalışır:
+Bavaxe platformu 6 farklı mikroservis ile çalışır:
 1. Node.js (Port 4000) - Ana API
-2. Ruby on Rails (Port 3001) - Analytics
-3. Python FastAPI (Port 8000) - AI/ML
-4. Go (Port 8080) - Location Processing
-5. PHP Laravel (Port 9000) - Notifications
-6. Java Spring Boot (Port 7000) - Billing
-7. C# ASP.NET Core (Port 6000) - Reports
+2. Python FastAPI (Port 8000) - AI/ML Analytics
+3. Go (Port 8080) - Location Processing
+4. PHP Laravel (Port 9000) - Notifications
+5. Java Spring Boot (Port 7000) - Billing
+6. Python Email (Port 5001) - Email Service
 
 ## Quick Start
 
@@ -50,12 +49,6 @@ mvn clean install
 mvn spring-boot:run
 ```
 
-### 6. C# ASP.NET Core Service
-```bash
-cd backend/csharp_service
-dotnet restore
-dotnet run
-```
 
 ## Environment Variables
 
@@ -67,7 +60,6 @@ PYTHON_SERVICE_URL=http://localhost:8000
 GO_SERVICE_URL=http://localhost:8080
 PHP_SERVICE_URL=http://localhost:9000
 JAVA_SERVICE_URL=http://localhost:7000
-CSHARP_SERVICE_URL=http://localhost:6000
 ```
 
 ## Health Checks
@@ -78,7 +70,6 @@ Tüm servislerin health endpoint'leri:
 - Go: `GET http://localhost:8080/health`
 - PHP: `GET http://localhost:9000/health`
 - Java: `GET http://localhost:7000/api/health`
-- C#: `GET http://localhost:6000/api/health`
 
 ## API Gateway
 

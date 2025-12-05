@@ -41,7 +41,11 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 LOGO_PATHS = [
     os.path.join(PROJECT_ROOT, 'Nexora (2).png'),
+    os.path.join(PROJECT_ROOT, 'app', 'assets', 'logo', 'Nexora.png'),
+    os.path.join(PROJECT_ROOT, 'app', '(tabs)', 'assets', 'logo', 'Nexora.png'),
     os.path.join(SCRIPT_DIR, '..', 'Nexora (2).png'),
+    os.path.join(SCRIPT_DIR, '..', 'app', 'assets', 'logo', 'Nexora.png'),
+    os.path.join(SCRIPT_DIR, '..', 'app', '(tabs)', 'assets', 'logo', 'Nexora.png'),
     os.path.join(os.getcwd(), 'Nexora (2).png'),
     os.path.join(os.getcwd(), '..', 'Nexora (2).png'),
     'Nexora (2).png',

@@ -1,4 +1,4 @@
-const { createLogger } = require('../utils/logger');
+const { createLogger } = require('../core/utils/logger');
 
 const logger = createLogger('QueueService');
 
@@ -7,7 +7,7 @@ class QueueService {
     this.queues = new Map();
     this.processing = new Map();
     this.maxConcurrency = 5;
-    this.retryService = require('./retry.service');
+    this.retryService = require('../core/services/retry.service');
   }
 
   createQueue(name, options = {}) {

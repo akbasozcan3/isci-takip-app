@@ -331,7 +331,7 @@ export default function PaymentScreen({
       const cleanedCard = cardNumber.replace(/\s/g, '');
       const expiryParts = expiry.split('/');
 
-      const response = await authFetch('/api/payment/process', {
+      const response = await authFetch('/payment/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -353,7 +353,20 @@ export default function PaymentScreen({
 
       const data = await response.json();
       
-      if (data.success) {
+      if (data.success && data.data) {
+        const paymentData = data.data;
+        console.log('[PaymentScreen] Payment successful:', {
+          paymentId: paymentData.paymentId,
+          transactionId: paymentData.transactionId,
+          gateway: paymentData.gateway,
+          receiptNumber: paymentData.receiptNumber
+        });
+        Alert.alert(
+          'Ödeme Başarılı',
+          `${planName} planınız aktifleştirildi.${paymentData.receiptNumber ? '\n\nMakbuz No: ' + paymentData.receiptNumber : ''}`,
+          [{ text: 'Tamam', onPress: onSuccess }]
+        );
+      } else if (data.success) {
         console.log('[PaymentScreen] Payment successful:', {
           paymentId: data.paymentId,
           transactionId: data.transactionId,
@@ -704,7 +717,7 @@ export default function PaymentScreen({
                   <View style={styles.securityContent}>
                     <Text style={styles.securityTitle}>256-bit SSL Şifreleme ile Güvenli Ödeme</Text>
                     <Text style={styles.securityText}>
-                      Ödeme bilgileriniz PCI DSS standartlarına uygun olarak işlenir. Kart bilgileriniz sunucularımızda saklanmaz ve doğrudan ödeme sağlayıcıya iletilir. İyzico ve Stripe gibi güvenilir ödeme altyapıları kullanılmaktadır.
+                      Ödeme bilgileriniz PCI DSS standartlarına uygun olarak işlenir. Kart bilgileriniz sunucularımızda saklanmaz ve doğrudan ödeme sağlayıcıya iletilir. İyzico gibi güvenilir ödeme altyapıları kullanılmaktadır.
                     </Text>
                   </View>
                 </View>

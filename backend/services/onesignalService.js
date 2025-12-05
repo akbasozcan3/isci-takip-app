@@ -3,8 +3,31 @@ const https = require('https');
 class OneSignalService {
   constructor() {
     this.appId = process.env.ONESIGNAL_APP_ID || '4a846145-621c-4a0d-a29f-0598da946c50';
-    this.apiKey = process.env.ONESIGNAL_REST_API_KEY || '';
+    this.apiKey = process.env.ONESIGNAL_REST_API_KEY || 'os_v2_app_jkcgcrlcdrfa3iu7awmnvfdmkcctfawalebefpvzgzqmeqr6i366rzjtwoznrcj4f733oxeaavwcxvyh6b63d6w36wl2i57cc5wjyri';
     this.baseUrl = 'https://onesignal.com/api/v1';
+    this.maxRetries = 3;
+    this.retryDelay = 1000;
+    this.requestTimeout = 30000;
+  }
+
+  async sendWithRetry(fn, retries = this.maxRetries) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await fn();
+      } catch (error) {
+        const isLastAttempt = i === retries - 1;
+        const shouldRetry = error.message.includes('timeout') || 
+                          error.message.includes('ECONNRESET') || 
+                          error.message.includes('network') ||
+                          (error.message.includes('5') && !isLastAttempt);
+        
+        if (!shouldRetry || isLastAttempt) {
+          throw error;
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, this.retryDelay * (i + 1)));
+      }
+    }
   }
 
   async sendNotification({
@@ -21,8 +44,7 @@ class OneSignalService {
     sound = 'default',
     badge = null
   }) {
-    if (!this.apiKey) {
-      console.warn('[OneSignal] REST API Key not configured. Set ONESIGNAL_REST_API_KEY in environment variables.');
+    if (!this.apiKey || this.apiKey === 'YOUR_ONESIGNAL_REST_API_KEY') {
       return { success: false, error: 'OneSignal API Key not configured' };
     }
 
@@ -30,12 +52,19 @@ class OneSignalService {
       return { success: false, error: 'Either userIds or segments must be provided' };
     }
 
+    if (!title || !message) {
+      return { success: false, error: 'Title and message are required' };
+    }
+
     const notification = {
       app_id: this.appId,
-      headings: { en: title },
-      contents: { en: message },
-      priority: priority,
+      headings: { en: String(title).substring(0, 100) },
+      contents: { en: String(message).substring(0, 500) },
+      priority: Math.min(Math.max(priority, 0), 10),
       sound: sound,
+      android_channel_id: 'default',
+      android_visibility: 1,
+      android_accent_color: 'FF14B8A6',
       data: {
         ...data,
         ...(deepLink ? { deepLink, url: deepLink } : {}),
@@ -47,11 +76,11 @@ class OneSignalService {
     };
 
     if (userIds.length > 0) {
-      notification.include_external_user_ids = userIds;
+      notification.include_external_user_ids = userIds.map(String).slice(0, 2000);
     }
 
     if (segments.length > 0) {
-      notification.included_segments = segments;
+      notification.included_segments = segments.slice(0, 10);
     }
 
     if (deepLink) {
@@ -61,10 +90,11 @@ class OneSignalService {
     }
 
     try {
-      const response = await this.makeRequest('/notifications', 'POST', notification);
+      const response = await this.sendWithRetry(() => 
+        this.makeRequest('/notifications', 'POST', notification)
+      );
       return { success: true, data: response };
     } catch (error) {
-      console.error('[OneSignal] Error sending notification:', error);
       return { success: false, error: error.message };
     }
   }
@@ -109,19 +139,26 @@ class OneSignalService {
   async makeRequest(endpoint, method = 'GET', body = null) {
     return new Promise((resolve, reject) => {
       const url = new URL(`${this.baseUrl}${endpoint}`);
-      
       const authHeader = Buffer.from(`${this.apiKey}:`).toString('base64');
+      
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${authHeader}`
+      };
+
+      let bodyString = null;
+      if (body) {
+        bodyString = JSON.stringify(body);
+        headers['Content-Length'] = Buffer.byteLength(bodyString);
+      }
       
       const options = {
         hostname: url.hostname,
         port: 443,
         path: url.pathname + (url.search || ''),
         method: method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Basic ${authHeader}`
-        },
-        timeout: 30000
+        headers: headers,
+        timeout: this.requestTimeout
       };
 
       const req = https.request(options, (res) => {
@@ -155,8 +192,8 @@ class OneSignalService {
         reject(new Error('OneSignal request timeout'));
       });
 
-      if (body) {
-        req.write(JSON.stringify(body));
+      if (bodyString) {
+        req.write(bodyString);
       }
 
       req.end();

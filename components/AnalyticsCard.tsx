@@ -65,7 +65,7 @@ export function AnalyticsCard({ userId, dateRange = '7d' }: AnalyticsCardProps) 
           </View>
         </View>
         <Pressable
-          onPress={() => router.push('/analytics' as any)}
+          onPress={() => router.push('/(tabs)/analytics' as any)}
           style={styles.viewAllButton}
         >
           <Text style={styles.viewAllText}>Detaylar</Text>

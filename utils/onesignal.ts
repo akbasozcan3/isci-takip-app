@@ -8,34 +8,27 @@ let isInitialized = false;
 
 export const initializeOneSignal = () => {
   if (isInitialized) {
-    console.log('[OneSignal] Already initialized');
     return;
   }
 
   if (!ONESIGNAL_APP_ID || ONESIGNAL_APP_ID === 'YOUR_ONESIGNAL_APP_ID') {
-    console.warn('[OneSignal] App ID not configured. Please set oneSignalAppId in app.json or EXPO_PUBLIC_ONESIGNAL_APP_ID in environment variables.');
+    console.error('[OneSignal] App ID not configured');
     return;
   }
 
   try {
-    console.log('[OneSignal] Initializing with App ID:', ONESIGNAL_APP_ID);
     OneSignal.initialize(ONESIGNAL_APP_ID);
     isInitialized = true;
 
     OneSignal.Notifications.addEventListener('foregroundWillDisplay', (event: NotificationWillDisplayEvent) => {
-      console.log('[OneSignal] Notification received in foreground:', event);
-      event.getNotification().display();
+      const notification = event.getNotification();
+      notification.display();
     });
 
     OneSignal.Notifications.addEventListener('click', (event: NotificationClickEvent) => {
-      console.log('[OneSignal] Notification opened:', event);
       const notification = event.notification;
       
-      // Deep linking handling
       if (notification.additionalData) {
-        console.log('[OneSignal] Additional data:', notification.additionalData);
-        
-        // Handle deep link if present
         const additionalData = notification.additionalData as Record<string, any>;
         const deepLink = additionalData.deepLink || additionalData.url || notification.launchURL;
         if (deepLink && typeof deepLink === 'string') {
@@ -47,22 +40,24 @@ export const initializeOneSignal = () => {
     });
 
     OneSignal.Notifications.requestPermission(true).then((response) => {
-      console.log('[OneSignal] Push notification permission granted:', response);
       if (response) {
         OneSignal.User.pushSubscription.getIdAsync().then((userId) => {
-          console.log('[OneSignal] Push Subscription ID:', userId);
-        }).catch((err) => {
-          console.error('[OneSignal] Error getting subscription ID:', err);
-        });
+          if (userId) {
+            console.log('[OneSignal] Active - Subscription ID:', userId);
+          }
+        }).catch(() => {});
       }
-    }).catch((error) => {
-      console.error('[OneSignal] Permission request error:', error);
-    });
+    }).catch(() => {});
 
-    console.log('[OneSignal] Initialized successfully');
+    console.log('[OneSignal] Active and ready');
   } catch (error) {
-    console.error('[OneSignal] Initialization error:', error);
+    console.error('[OneSignal] Initialization failed:', error);
     isInitialized = false;
+    setTimeout(() => {
+      if (!isInitialized) {
+        initializeOneSignal();
+      }
+    }, 5000);
   }
 };
 
@@ -78,10 +73,27 @@ export const getOneSignalUserId = async (): Promise<string | null> => {
 
 export const setOneSignalExternalUserId = (userId: string): void => {
   try {
+    if (!isInitialized) {
+      initializeOneSignal();
+      setTimeout(() => {
+        if (isInitialized) {
+          OneSignal.login(userId);
+        }
+      }, 1000);
+      return;
+    }
     OneSignal.login(userId);
-    console.log('[OneSignal] External user ID set:', userId);
   } catch (error) {
     console.error('[OneSignal] Error setting external user ID:', error);
+    setTimeout(() => {
+      try {
+        if (isInitialized) {
+          OneSignal.login(userId);
+        }
+      } catch (retryError) {
+        console.error('[OneSignal] Retry failed:', retryError);
+      }
+    }, 2000);
   }
 };
 

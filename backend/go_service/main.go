@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 	"sync"
 	"context"
@@ -36,21 +37,40 @@ type HealthResponse struct {
 
 type LocationProcessor struct {
 	redisClient *redis.Client
-	mu         sync.Mutex
+	mu         sync.RWMutex
 	processed  int64
+	workerPool chan struct{}
+}
+
+func init() {
+	gin.SetMode(gin.ReleaseMode)
 }
 
 var processor *LocationProcessor
 var startTime = time.Now()
 
 func main() {
-	rdb := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
-		DB:  0,
-	})
+	var rdb *redis.Client
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL != "" {
+		opt, err := redis.ParseURL(redisURL)
+		if err == nil {
+			rdb = redis.NewClient(opt)
+			ctx := context.Background()
+			if err := rdb.Ping(ctx).Err(); err != nil {
+				log.Printf("Redis bağlantı hatası (devam ediliyor): %v", err)
+				rdb = nil
+			} else {
+				log.Println("Redis bağlantısı başarılı")
+			}
+		}
+	} else {
+		log.Println("Redis URL tanımlı değil, Redis olmadan çalışıyor")
+	}
 
 	processor = &LocationProcessor{
 		redisClient: rdb,
+		workerPool: make(chan struct{}, 100),
 	}
 
 	router := gin.Default()
@@ -101,11 +121,54 @@ func processBatchLocations(c *gin.Context) {
 		return
 	}
 
+	if len(req.Locations) > 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Batch size exceeds maximum of 1000"})
+		return
+	}
+
 	results := make([]map[string]interface{}, 0, len(req.Locations))
 	
-	for _, loc := range req.Locations {
-		processed := processLocation(loc)
-		results = append(results, processed)
+	workerCount := 8
+	if len(req.Locations) < 20 {
+		workerCount = 2
+	}
+	if len(req.Locations) < 5 {
+		workerCount = 1
+	}
+	
+	chunkSize := len(req.Locations) / workerCount
+	if chunkSize == 0 {
+		chunkSize = 1
+	}
+	
+	var wg sync.WaitGroup
+	resultChan := make(chan map[string]interface{}, len(req.Locations))
+	
+	for i := 0; i < len(req.Locations); i += chunkSize {
+		end := i + chunkSize
+		if end > len(req.Locations) {
+			end = len(req.Locations)
+		}
+		
+		wg.Add(1)
+		processor.workerPool <- struct{}{}
+		go func(locs []Location) {
+			defer wg.Done()
+			defer func() { <-processor.workerPool }()
+			for _, loc := range locs {
+				processed := processLocation(loc)
+				resultChan <- processed
+			}
+		}(req.Locations[i:end])
+	}
+	
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+	
+	for result := range resultChan {
+		results = append(results, result)
 	}
 
 	processor.mu.Lock()
@@ -120,12 +183,15 @@ func processBatchLocations(c *gin.Context) {
 }
 
 func processLocation(loc Location) map[string]interface{} {
-	ctx := context.Background()
-	
-	key := fmt.Sprintf("location:%s:%d", loc.UserID, loc.Timestamp)
-	
-	locData, _ := json.Marshal(loc)
-	processor.redisClient.Set(ctx, key, locData, time.Hour*24)
+	if processor.redisClient != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		key := fmt.Sprintf("location:%s:%d", loc.UserID, loc.Timestamp)
+		locData, err := json.Marshal(loc)
+		if err == nil {
+			processor.redisClient.Set(ctx, key, locData, time.Hour*24)
+		}
+	}
 	
 	return map[string]interface{}{
 		"user_id":   loc.UserID,
@@ -144,14 +210,16 @@ func optimizeLocation(loc Location) map[string]interface{} {
 }
 
 func getStats(c *gin.Context) {
-	processor.mu.Lock()
+	processor.mu.RLock()
 	processed := processor.processed
-	processor.mu.Unlock()
+	processor.mu.RUnlock()
 
 	c.JSON(http.StatusOK, gin.H{
 		"processed_locations": processed,
 		"uptime":              time.Since(startTime).String(),
 		"service":             "go-location-processor",
+		"active_workers":      len(processor.workerPool),
+		"max_workers":         cap(processor.workerPool),
 	})
 }
 

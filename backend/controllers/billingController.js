@@ -10,10 +10,11 @@ const subscriptionService = require('../services/subscriptionService');
 const mobileDeepLink = require('../services/mobileDeepLinkService');
 const paymentRetry = require('../services/paymentRetryService');
 const { logPaymentAttempt } = require('../middleware/paymentSecurity');
+const ResponseFormatter = require('../core/utils/responseFormatter');
+const { createError } = require('../core/utils/errorHandler');
 
 let Iyzipay;
 let iyzipay;
-let stripe;
 
 try {
   Iyzipay = require('iyzipay');
@@ -35,15 +36,6 @@ try {
 } catch (err) {
   console.warn('[Billing] iyzico SDK yüklenemedi, mock mod aktif:', err.message);
   iyzipay = null;
-}
-
-try {
-  const Stripe = require('stripe');
-  stripe = new Stripe(process.env.STRIPE_SECRET_KEY || process.env.STRIPE_TEST_SECRET_KEY || 'sk_test_xxxxxxxx');
-  console.log('[Billing] Stripe SDK yüklendi');
-} catch (err) {
-  console.warn('[Billing] Stripe SDK yüklenemedi:', err.message);
-  stripe = null;
 }
 
 const pricingService = require('../services/pricingService');
@@ -223,8 +215,7 @@ class BillingController {
         }
       });
 
-      return res.json({
-        success: true,
+      return res.json(ResponseFormatter.success({
         plans: enrichedPlans,
         currentPlan: subscription?.planId || 'free',
         subscription: subscription ? {
@@ -235,7 +226,7 @@ class BillingController {
           createdAt: subscription.createdAt
         } : null,
         history: Array.isArray(history) ? history.slice(0, 10) : []
-      });
+      }));
     } catch (error) {
       console.error('[BillingController] getPlans error:', error);
       const fallbackPlans = this.plans.map(plan => {
@@ -255,180 +246,197 @@ class BillingController {
         };
       });
       
-      return res.json({
-        success: true,
+      return res.json(ResponseFormatter.success({
         plans: fallbackPlans,
         currentPlan: 'free',
         subscription: null,
         history: []
-      });
+      }));
     }
   }
 
-  // GET /api/me/subscription - Kullanıcının aktif aboneliği
   getMySubscription(req, res) {
-    const user = this.requireUser(req, res);
-    if (!user) return;
+    try {
+      const user = this.requireUser(req, res);
+      if (!user) return;
 
-    const subscription = db.getUserSubscription(user.id) || {
-      planId: 'free',
-      planName: 'Free',
-      price: 0,
-      currency: 'TRY',
-      interval: 'monthly',
-      status: 'active',
-      renewsAt: null
-    };
+      const subscription = db.getUserSubscription(user.id) || {
+        planId: 'free',
+        planName: 'Free',
+        price: 0,
+        currency: 'TRY',
+        interval: 'monthly',
+        status: 'active',
+        renewsAt: null
+      };
 
-    return res.json({
-      success: true,
-      subscription
-    });
+      const SubscriptionModel = require('../core/database/models/subscription.model');
+      const limits = SubscriptionModel.getPlanLimits(subscription.planId);
+
+      return res.json(ResponseFormatter.success({
+        subscription: {
+          ...subscription,
+          limits
+        }
+      }));
+    } catch (error) {
+      console.error('[BillingController] getMySubscription error:', error);
+      return res.status(500).json(ResponseFormatter.error('Abonelik bilgisi alınamadı', 'SUBSCRIPTION_ERROR'));
+    }
   }
 
   // POST /api/checkout veya /api/billing/checkout
   // iyzico Checkout Form ile güvenli ödeme sayfası oluşturur
   async checkout(req, res) {
-    const user = this.requireUser(req, res);
-    if (!user) return;
+    try {
+      const user = this.requireUser(req, res);
+      if (!user) return;
 
-    const { planId } = req.body || {};
-    if (!planId) {
-      return res.status(400).json({ error: 'planId zorunludur' });
-    }
+      const { planId } = req.body || {};
+      if (!planId) {
+        return res.status(400).json(ResponseFormatter.error('planId zorunludur', 'MISSING_PLAN_ID'));
+      }
 
-    const plan = this.getPlan(planId);
-    if (!plan) {
-      return res.status(404).json({ error: 'Plan bulunamadı' });
-    }
+      const plan = this.getPlan(planId);
+      if (!plan) {
+        return res.status(404).json(ResponseFormatter.error('Plan bulunamadı', 'PLAN_NOT_FOUND'));
+      }
 
-    if (plan.id === 'free') {
-      return res.status(400).json({ error: 'Free plan için ödeme gerekli değil' });
-    }
+      if (plan.id === 'free') {
+        return res.status(400).json(ResponseFormatter.error('Free plan için ödeme gerekli değil', 'FREE_PLAN_NO_PAYMENT'));
+      }
 
-    // Benzersiz conversation ID oluştur
-    const conversationId = crypto.randomBytes(16).toString('hex');
-    const basketId = 'B' + Date.now();
+      const conversationId = crypto.randomBytes(16).toString('hex');
+      const basketId = 'B' + Date.now();
 
-    // Session bilgilerini kaydet (webhook'ta kullanılacak)
-    const session = {
-      id: conversationId,
-      basketId,
-      userId: user.id,
-      userEmail: user.email,
-      planId: plan.id,
-      planName: plan.title,
-      amount: plan.monthlyPriceTRY,
-      currency: plan.currency,
-      status: 'pending',
-      createdAt: Date.now()
-    };
-    checkoutSessions.set(conversationId, session);
+      const session = {
+        id: conversationId,
+        basketId,
+        userId: user.id,
+        userEmail: user.email,
+        planId: plan.id,
+        planName: plan.title,
+        amount: plan.monthlyPriceTRY,
+        currency: plan.currency,
+        status: 'pending',
+        createdAt: Date.now()
+      };
+      checkoutSessions.set(conversationId, session);
 
-    // iyzico SDK yoksa mock URL döndür
-    if (!iyzipay) {
-      const baseUrl = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 4000}`;
-      const mockUrl = `${baseUrl}/api/checkout/mock/${conversationId}`;
-      
-      return res.json({
-        success: true,
-        sessionId: conversationId,
-        checkoutUrl: mockUrl,
-        mode: 'mock',
-        message: 'iyzico SDK yüklü değil, mock ödeme sayfası kullanılıyor'
-      });
-    }
-
-    // Callback URL'leri
-    const baseUrl = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 4000}`;
-    const callbackUrl = process.env.IYZICO_CALLBACK_URL || `${baseUrl}/api/payment/callback`;
-
-    // iyzico Checkout Form isteği
-    const request = {
-      locale: Iyzipay.LOCALE.TR,
-      conversationId: conversationId,
-      price: plan.monthlyPriceTRY.toString(),
-      paidPrice: plan.monthlyPriceTRY.toString(),
-      currency: Iyzipay.CURRENCY.TRY,
-      basketId: basketId,
-      paymentGroup: Iyzipay.PAYMENT_GROUP.SUBSCRIPTION,
-      callbackUrl: callbackUrl,
-      enabledInstallments: [1], // Tek çekim
-      buyer: {
-        id: user.id,
-        name: user.displayName?.split(' ')[0] || 'Kullanıcı',
-        surname: user.displayName?.split(' ').slice(1).join(' ') || 'Kullanıcı',
-        gsmNumber: '+905350000000', // Zorunlu alan
-        email: user.email,
-        identityNumber: '11111111111', // TC Kimlik (zorunlu, test için sabit)
-        lastLoginDate: new Date().toISOString().replace('T', ' ').substring(0, 19),
-        registrationDate: new Date(user.createdAt || Date.now()).toISOString().replace('T', ' ').substring(0, 19),
-        registrationAddress: 'Türkiye',
-        ip: req.ip || '127.0.0.1',
-        city: 'Istanbul',
-        country: 'Turkey',
-        zipCode: '34000'
-      },
-      shippingAddress: {
-        contactName: user.displayName || 'Kullanıcı',
-        city: 'Istanbul',
-        country: 'Turkey',
-        address: 'Türkiye',
-        zipCode: '34000'
-      },
-      billingAddress: {
-        contactName: user.displayName || 'Kullanıcı',
-        city: 'Istanbul',
-        country: 'Turkey',
-        address: 'Türkiye',
-        zipCode: '34000'
-      },
-      basketItems: [
-        {
-          id: plan.id,
-          name: `${plan.title} Plan - Aylık Abonelik`,
-          category1: 'Abonelik',
-          category2: 'Dijital Hizmet',
-          itemType: Iyzipay.BASKET_ITEM_TYPE.VIRTUAL,
-          price: plan.monthlyPriceTRY.toString()
-        }
-      ]
-    };
-
-    // iyzico Checkout Form oluştur
-    return new Promise((resolve) => {
-      iyzipay.checkoutFormInitialize.create(request, (err, result) => {
-        if (err) {
-          console.error('[Billing] iyzico error:', err);
-          return resolve(res.status(500).json({ 
-            error: 'Ödeme sayfası oluşturulamadı', 
-            details: err.message 
-          }));
-        }
-
-        if (result.status !== 'success') {
-          console.error('[Billing] iyzico result error:', result);
-          return resolve(res.status(400).json({ 
-            error: result.errorMessage || 'Ödeme başlatılamadı',
-            errorCode: result.errorCode
-          }));
-        }
-
-        console.log('[Billing] Checkout created:', conversationId);
-
-        // iyzico'nun döndürdüğü token'ı session'a kaydet
-        session.token = result.token;
-        checkoutSessions.set(conversationId, session);
-
-        return resolve(res.json({
-          success: true,
+      if (!iyzipay) {
+        const baseUrl = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 4000}`;
+        const mockUrl = `${baseUrl}/api/checkout/mock/${conversationId}`;
+        
+        return res.json(ResponseFormatter.success({
           sessionId: conversationId,
-          checkoutUrl: result.paymentPageUrl,
-          token: result.token,
-          mode: 'live'
+          checkoutUrl: mockUrl,
+          mode: 'mock',
+          message: 'iyzico SDK yüklü değil, mock ödeme sayfası kullanılıyor',
+          plan: {
+            id: plan.id,
+            title: plan.title,
+            amount: plan.monthlyPriceTRY,
+            currency: plan.currency
+          }
         }));
+      }
+
+      const baseUrl = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 4000}`;
+      const callbackUrl = process.env.IYZICO_CALLBACK_URL || `${baseUrl}/api/payment/callback`;
+
+      const request = {
+        locale: Iyzipay.LOCALE.TR,
+        conversationId: conversationId,
+        price: plan.monthlyPriceTRY.toString(),
+        paidPrice: plan.monthlyPriceTRY.toString(),
+        currency: Iyzipay.CURRENCY.TRY,
+        basketId: basketId,
+        paymentGroup: Iyzipay.PAYMENT_GROUP.SUBSCRIPTION,
+        callbackUrl: callbackUrl,
+        enabledInstallments: [1],
+        buyer: {
+          id: user.id,
+          name: user.displayName?.split(' ')[0] || 'Kullanıcı',
+          surname: user.displayName?.split(' ').slice(1).join(' ') || 'Kullanıcı',
+          gsmNumber: '+905350000000',
+          email: user.email,
+          identityNumber: '11111111111',
+          lastLoginDate: new Date().toISOString().replace('T', ' ').substring(0, 19),
+          registrationDate: new Date(user.createdAt || Date.now()).toISOString().replace('T', ' ').substring(0, 19),
+          registrationAddress: 'Türkiye',
+          ip: req.ip || '127.0.0.1',
+          city: 'Istanbul',
+          country: 'Turkey',
+          zipCode: '34000'
+        },
+        shippingAddress: {
+          contactName: user.displayName || 'Kullanıcı',
+          city: 'Istanbul',
+          country: 'Turkey',
+          address: 'Türkiye',
+          zipCode: '34000'
+        },
+        billingAddress: {
+          contactName: user.displayName || 'Kullanıcı',
+          city: 'Istanbul',
+          country: 'Turkey',
+          address: 'Türkiye',
+          zipCode: '34000'
+        },
+        basketItems: [
+          {
+            id: plan.id,
+            name: `${plan.title} Plan - Aylık Abonelik`,
+            category1: 'Abonelik',
+            category2: 'Dijital Hizmet',
+            itemType: Iyzipay.BASKET_ITEM_TYPE.VIRTUAL,
+            price: plan.monthlyPriceTRY.toString()
+          }
+        ]
+      };
+
+      return new Promise((resolve) => {
+        iyzipay.checkoutFormInitialize.create(request, (err, result) => {
+          if (err) {
+            console.error('[Billing] iyzico error:', err);
+            return resolve(res.status(500).json(ResponseFormatter.error(
+              'Ödeme sayfası oluşturulamadı', 
+              'CHECKOUT_ERROR',
+              { details: err.message }
+            )));
+          }
+
+          if (result.status !== 'success') {
+            console.error('[Billing] iyzico result error:', result);
+            return resolve(res.status(400).json(ResponseFormatter.error(
+              result.errorMessage || 'Ödeme başlatılamadı',
+              result.errorCode || 'CHECKOUT_FAILED'
+            )));
+          }
+
+          console.log('[Billing] Checkout created:', conversationId);
+
+          session.token = result.token;
+          checkoutSessions.set(conversationId, session);
+
+          return resolve(res.json(ResponseFormatter.success({
+            sessionId: conversationId,
+            checkoutUrl: result.paymentPageUrl,
+            token: result.token,
+            mode: 'live',
+            plan: {
+              id: plan.id,
+              title: plan.title,
+              amount: plan.monthlyPriceTRY,
+              currency: plan.currency
+            }
+          })));
+        });
       });
-    });
+    } catch (error) {
+      console.error('[BillingController] checkout error:', error);
+      return res.status(500).json(ResponseFormatter.error('Checkout oluşturulamadı', 'CHECKOUT_ERROR'));
+    }
   }
 
   async paymentCallback(req, res) {
@@ -533,124 +541,173 @@ class BillingController {
     });
   }
 
-  // POST /api/webhook/payment - iyzico webhook (opsiyonel, callback yeterli)
   async handleWebhook(req, res) {
-    const { type, data, token } = req.body || {};
+    try {
+      const { type, data, token } = req.body || {};
 
-    console.log('[Webhook] Received:', type || 'iyzico-callback', data || req.body);
-
-    // Mock webhook (test için)
-    if (type === 'checkout.session.completed' && data?.sessionId) {
-      const session = checkoutSessions.get(data.sessionId);
-      if (!session) {
-        return res.status(404).json({ error: 'Session bulunamadı' });
-      }
-
-      if (session.status === 'completed') {
-        return res.json({ success: true, message: 'Zaten işlendi', subscription: db.getUserSubscription(session.userId) });
-      }
-
-      const plan = this.getPlan(session.planId);
-      if (!plan) {
-        return res.status(404).json({ error: 'Plan bulunamadı' });
-      }
-
-      // Ödeme kaydı
-      db.addBillingEvent(session.userId, {
-        type: 'payment',
-        planId: plan.id,
-        planName: plan.title,
-        amount: plan.monthlyPriceTRY,
-        currency: 'TRY',
-        interval: plan.interval,
-        provider: 'MOCK',
-        status: 'succeeded',
-        cardLast4: data.cardLast4 || '4242',
-        cardBrand: data.cardBrand || 'visa',
-        sessionId: data.sessionId,
-        description: `${plan.title} planı için ödeme tamamlandı`,
-        timestamp: Date.now()
+      paymentLogger.logWebhook('webhook', 'iyzico', type || 'unknown', {
+        type,
+        hasData: !!data,
+        hasToken: !!token
       });
 
-      // Abonelik aktifleştir
-      const subscription = db.setUserSubscription(session.userId, {
-        planId: plan.id,
-        planName: plan.title,
-        price: plan.monthlyPriceTRY,
-        priceLabel: plan.priceLabel,
-        currency: 'TRY',
-        interval: plan.interval,
-        status: 'active',
-        renewsAt: this.getRenewalDate(plan.interval),
-        activatedAt: new Date().toISOString(),
-        updatedAt: Date.now()
-      });
+      if (type === 'checkout.session.completed' && data?.sessionId) {
+        const session = checkoutSessions.get(data.sessionId);
+        if (!session) {
+          return res.status(404).json(ResponseFormatter.error('Session bulunamadı', 'SESSION_NOT_FOUND'));
+        }
 
-      session.status = 'completed';
-      checkoutSessions.set(data.sessionId, session);
+        if (session.status === 'completed') {
+          return res.json(ResponseFormatter.success({
+            message: 'Zaten işlendi',
+            subscription: db.getUserSubscription(session.userId)
+          }));
+        }
 
-      console.log(`[Billing] Mock payment completed: ${session.userId} -> ${plan.id}`);
+        const plan = this.getPlan(session.planId);
+        if (!plan) {
+          return res.status(404).json(ResponseFormatter.error('Plan bulunamadı', 'PLAN_NOT_FOUND'));
+        }
 
-      return res.json({
-        success: true,
-        message: 'Abonelik aktifleştirildi',
-        subscription: subscription
-      });
-    }
+        const transaction = paymentService.getTransaction(session.id) || paymentService.createTransaction(
+          session.userId,
+          session.planId,
+          session.amount,
+          session.currency,
+          { userEmail: session.userEmail }
+        );
 
-    // iyzico webhook (token ile)
-    if (token && iyzipay) {
-      return new Promise((resolve) => {
-        iyzipay.checkoutForm.retrieve({
-          locale: Iyzipay.LOCALE.TR,
-          token: token
-        }, (err, result) => {
-          if (err) {
-            console.error('[Webhook] iyzico error:', err);
-            return resolve(res.status(500).json({ error: 'Webhook işlenemedi' }));
-          }
-
-          console.log('[Webhook] iyzico result:', result.status, result.paymentStatus);
-
-          if (result.status === 'success' && result.paymentStatus === 'SUCCESS') {
-            const session = checkoutSessions.get(result.conversationId);
-            if (session && session.status !== 'completed') {
-              const plan = this.getPlan(session.planId);
-              
-              db.addBillingEvent(session.userId, {
-                type: 'payment',
-                planId: plan.id,
-                planName: plan.title,
-                amount: plan.monthlyPriceTRY,
-                currency: 'TRY',
-                interval: plan.interval,
-                provider: 'iyzico',
-                status: 'succeeded',
-                paymentId: result.paymentId,
-                description: `${plan.title} planı için ödeme tamamlandı`
-              });
-
-              db.setUserSubscription(session.userId, {
-                planId: plan.id,
-                planName: plan.title,
-                price: plan.monthlyPriceTRY,
-                priceLabel: plan.priceLabel,
-                currency: 'TRY',
-                interval: plan.interval,
-                status: 'active',
-                renewsAt: this.getRenewalDate(plan.interval)
-              });
-
-              session.status = 'completed';
-            }
-          }
-
-          return resolve(res.json({ success: true, received: true }));
+        db.addBillingEvent(session.userId, {
+          type: 'payment',
+          planId: plan.id,
+          planName: plan.title,
+          amount: plan.monthlyPriceTRY,
+          currency: 'TRY',
+          interval: plan.interval,
+          provider: 'MOCK',
+          status: 'succeeded',
+          paymentId: `mock_${session.id}`,
+          transactionId: transaction.id,
+          cardLast4: data.cardLast4 || '4242',
+          cardBrand: data.cardBrand || 'visa',
+          sessionId: data.sessionId,
+          description: `${plan.title} planı için ödeme tamamlandı`,
+          timestamp: Date.now()
         });
-      });
-    }
 
-    return res.json({ success: true, message: 'Webhook received' });
+        paymentService.updateTransaction(transaction.id, {
+          status: 'succeeded',
+          gatewayTransactionId: `mock_${session.id}`,
+          cardLast4: data.cardLast4 || '4242',
+          cardBrand: data.cardBrand || 'visa'
+        });
+
+        const subscription = await subscriptionService.activateSubscription(
+          session.userId,
+          plan.id,
+          {
+            paymentId: `mock_${session.id}`,
+            transactionId: transaction.id,
+            gateway: 'mock'
+          }
+        );
+
+        if (transaction) {
+          receiptService.createReceipt(session.userId, transaction, subscription);
+        }
+
+        session.status = 'completed';
+        checkoutSessions.set(data.sessionId, session);
+
+        paymentLogger.logPaymentSuccess(transaction.id, `mock_${session.id}`, 'mock');
+
+        return res.json(ResponseFormatter.success({
+          message: 'Abonelik aktifleştirildi',
+          subscription: subscription
+        }));
+      }
+
+      if (token && iyzipay) {
+        return new Promise((resolve) => {
+          iyzipay.checkoutForm.retrieve({
+            locale: Iyzipay.LOCALE.TR,
+            token: token
+          }, async (err, result) => {
+            if (err) {
+              console.error('[Webhook] iyzico error:', err);
+              paymentLogger.log('error', 'webhook', 'Webhook işlenemedi', { error: err.message });
+              return resolve(res.status(500).json(ResponseFormatter.error('Webhook işlenemedi', 'WEBHOOK_ERROR')));
+            }
+
+            paymentLogger.logWebhook(result.conversationId || 'unknown', 'iyzico', 'webhook', {
+              status: result.status,
+              paymentStatus: result.paymentStatus
+            });
+
+            if (result.status === 'success' && result.paymentStatus === 'SUCCESS') {
+              const session = checkoutSessions.get(result.conversationId);
+              if (session && session.status !== 'completed') {
+                const plan = this.getPlan(session.planId);
+                
+                const transaction = paymentService.getTransaction(result.conversationId);
+                if (transaction) {
+                  paymentService.updateTransaction(result.conversationId, {
+                    status: 'succeeded',
+                    gatewayTransactionId: result.paymentId,
+                    cardLast4: result.lastFourDigits,
+                    cardBrand: result.cardAssociation
+                  });
+                }
+
+                db.addBillingEvent(session.userId, {
+                  type: 'payment',
+                  planId: plan.id,
+                  planName: plan.title,
+                  amount: plan.monthlyPriceTRY,
+                  currency: 'TRY',
+                  interval: plan.interval,
+                  provider: 'iyzico',
+                  status: 'succeeded',
+                  paymentId: result.paymentId,
+                  transactionId: result.conversationId,
+                  cardLast4: result.lastFourDigits,
+                  cardBrand: result.cardAssociation,
+                  description: `${plan.title} planı için ödeme tamamlandı`,
+                  timestamp: Date.now()
+                });
+
+                const subscription = await subscriptionService.activateSubscription(
+                  session.userId,
+                  plan.id,
+                  {
+                    paymentId: result.paymentId,
+                    transactionId: result.conversationId,
+                    gateway: 'iyzico'
+                  }
+                );
+
+                if (transaction) {
+                  receiptService.createReceipt(session.userId, transaction, subscription);
+                }
+
+                session.status = 'completed';
+                checkoutSessions.set(result.conversationId, session);
+
+                paymentLogger.logPaymentSuccess(result.conversationId, result.paymentId, 'iyzico');
+              }
+            }
+
+            return resolve(res.json(ResponseFormatter.success({ received: true })));
+          });
+        });
+      }
+
+      return res.json(ResponseFormatter.success({ message: 'Webhook received' }));
+    } catch (error) {
+      console.error('[BillingController] handleWebhook error:', error);
+      paymentLogger.log('error', 'webhook', 'Webhook processing error', { error: error.message });
+      return res.status(500).json(ResponseFormatter.error('Webhook işlenemedi', 'WEBHOOK_ERROR'));
+    }
   }
 
   // Mock checkout sayfası (iyzico yokken test için)
@@ -806,54 +863,62 @@ class BillingController {
   }
 
   async processPayment(req, res) {
-    const user = this.requireUser(req, res);
-    if (!user) return;
-
-    const { planId, amount } = req.body || {};
-    const cardData = req.validatedCardData;
-
-    if (!cardData) {
-      return res.status(400).json({
-        success: false,
-        error: 'Kart bilgileri doğrulanamadı',
-        code: 'VALIDATION_ERROR'
-      });
-    }
-
-    const plan = this.getPlan(planId);
-    if (!plan) {
-      return res.status(404).json({ 
-        success: false,
-        error: 'Plan bulunamadı',
-        code: 'PLAN_NOT_FOUND',
-        planId 
-      });
-    }
-
-    if (plan.id === 'free') {
-      return res.status(400).json({ 
-        success: false,
-        error: 'Free plan için ödeme gerekli değil',
-        code: 'FREE_PLAN_PAYMENT'
-      });
-    }
-
-    const expectedAmount = plan.monthlyPriceTRY;
-    if (amount !== undefined && Math.abs(parseFloat(amount) - expectedAmount) > 0.01) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'Fiyat uyuşmazlığı',
-        code: 'AMOUNT_MISMATCH',
-        expected: expectedAmount,
-        received: amount,
-        planId: plan.id
-      });
-    }
-
+    const startTime = Date.now();
     let transaction = null;
-
+    
     try {
-      paymentLogger.logPaymentStart('pending', user.id, planId, expectedAmount);
+      const user = this.requireUser(req, res);
+      if (!user) return;
+
+      const { planId, amount } = req.body || {};
+      const cardData = req.validatedCardData;
+
+      if (!cardData) {
+        return res.status(400).json(ResponseFormatter.error(
+          'Kart bilgileri doğrulanamadı',
+          'VALIDATION_ERROR'
+        ));
+      }
+
+      const plan = this.getPlan(planId);
+      if (!plan) {
+        return res.status(404).json(ResponseFormatter.error(
+          'Plan bulunamadı',
+          'PLAN_NOT_FOUND',
+          { planId }
+        ));
+      }
+
+      if (plan.id === 'free') {
+        return res.status(400).json(ResponseFormatter.error(
+          'Free plan için ödeme gerekli değil',
+          'FREE_PLAN_PAYMENT'
+        ));
+      }
+
+      const expectedAmount = plan.monthlyPriceTRY;
+      if (amount !== undefined && Math.abs(parseFloat(amount) - expectedAmount) > 0.01) {
+        return res.status(400).json(ResponseFormatter.error(
+          'Fiyat uyuşmazlığı',
+          'AMOUNT_MISMATCH',
+          {
+            expected: expectedAmount,
+            received: amount,
+            planId: plan.id
+          }
+        ));
+      }
+
+      const currentSubscription = db.getUserSubscription(user.id);
+      if (currentSubscription?.planId === planId && currentSubscription?.status === 'active') {
+        return res.status(400).json(ResponseFormatter.error(
+          'Bu plan zaten aktif',
+          'PLAN_ALREADY_ACTIVE',
+          { planId }
+        ));
+      }
+
+      paymentLogger.logPaymentStart(transaction?.id || 'pending', user.id, planId, expectedAmount);
       logPaymentAttempt(req, user.id, planId, false);
 
       const result = await paymentService.processPayment(
@@ -873,7 +938,7 @@ class BillingController {
       transaction = paymentService.getTransaction(result.transactionId);
 
       if (!transaction) {
-        throw new Error('Transaction oluşturulamadı');
+        throw createError('Transaction oluşturulamadı', 500, 'TRANSACTION_CREATION_FAILED');
       }
 
       if (result.success) {
@@ -892,15 +957,33 @@ class BillingController {
         );
 
         if (!subscription) {
-          throw new Error('Abonelik aktivasyonu başarısız');
+          throw createError('Abonelik aktivasyonu başarısız', 500, 'SUBSCRIPTION_ACTIVATION_FAILED');
         }
 
         const receipt = receiptService.createReceipt(user.id, transaction, subscription);
 
-        console.log(`[Billing] ✅ Payment successful: User ${user.id}, Plan ${planId}, Amount ${expectedAmount} ${plan.currency || 'TRY'}, Transaction ${result.transactionId}, Gateway: ${result.gateway}`);
+        db.addBillingEvent(user.id, {
+          type: 'payment',
+          planId: plan.id,
+          planName: plan.title,
+          amount: expectedAmount,
+          currency: plan.currency || 'TRY',
+          interval: plan.interval || 'monthly',
+          provider: result.gateway,
+          status: 'succeeded',
+          paymentId: result.paymentId,
+          transactionId: result.transactionId,
+          receiptNumber: receipt?.receiptNumber,
+          cardLast4: transaction.cardLast4,
+          cardBrand: transaction.cardBrand,
+          description: `${plan.title} planı için ödeme tamamlandı`,
+          timestamp: Date.now()
+        });
 
-        return res.json({
-          success: true,
+        const processingTime = Date.now() - startTime;
+        console.log(`[Billing] ✅ Payment successful: User ${user.id}, Plan ${planId}, Amount ${expectedAmount} ${plan.currency || 'TRY'}, Transaction ${result.transactionId}, Gateway: ${result.gateway}, Time: ${processingTime}ms`);
+
+        return res.json(ResponseFormatter.success({
           message: 'Ödeme başarıyla tamamlandı',
           paymentId: result.paymentId,
           transactionId: result.transactionId,
@@ -912,20 +995,31 @@ class BillingController {
             status: subscription.status,
             renewsAt: subscription.renewsAt
           },
-          timestamp: new Date().toISOString()
-        });
+          transaction: {
+            id: transaction.id,
+            status: transaction.status,
+            amount: transaction.amount,
+            currency: transaction.currency,
+            cardLast4: transaction.cardLast4,
+            cardBrand: transaction.cardBrand
+          },
+          timestamp: new Date().toISOString(),
+          processingTime: `${processingTime}ms`
+        }));
       } else {
-        throw new Error(result.error || 'Ödeme başarısız');
+        throw createError(result.error || 'Ödeme başarısız', 400, 'PAYMENT_FAILED');
       }
     } catch (error) {
       const transactionId = transaction?.id || 'unknown';
       paymentLogger.logPaymentFailure(transactionId, error, paymentService.gateway);
 
+      const processingTime = Date.now() - startTime;
       console.error('[Billing] ❌ Payment processing error:', {
-        userId: user.id,
-        planId,
+        userId: req.user?.id || 'unknown',
+        planId: req.body?.planId || 'unknown',
         error: error.message,
-        transactionId
+        transactionId,
+        processingTime: `${processingTime}ms`
       });
 
       const errorMessage = error.message || 'Ödeme işlenirken bir hata oluştu';
@@ -935,78 +1029,112 @@ class BillingController {
         error.message.includes('kart') || 
         error.message.includes('CVV') ||
         error.message.includes('expiry') ||
-        error.message.includes('tarih')
+        error.message.includes('tarih') ||
+        error.message.includes('reddedildi') ||
+        error.message.includes('bakiye')
       );
       
       if (isCardError) {
-        return res.status(400).json({
-          success: false,
-          error: errorMessage,
-          errorCode: 'CARD_ERROR',
-          transactionId: transaction?.id
-        });
+        return res.status(400).json(ResponseFormatter.error(
+          errorMessage,
+          'CARD_ERROR',
+          { transactionId: transaction?.id }
+        ));
       }
 
-      return res.status(500).json({
-        success: false,
-        error: errorMessage,
-        errorCode: 'PAYMENT_FAILED',
-        transactionId: transaction?.id
-      });
+      if (error.isOperational) {
+        return res.status(error.statusCode || 500).json(ResponseFormatter.error(
+          errorMessage,
+          error.code || 'PAYMENT_FAILED',
+          { transactionId: transaction?.id }
+        ));
+      }
+
+      return res.status(500).json(ResponseFormatter.error(
+        errorMessage,
+        'PAYMENT_FAILED',
+        { transactionId: transaction?.id }
+      ));
     }
   }
 
   async cancelSubscription(req, res) {
-    const user = this.requireUser(req, res);
-    if (!user) return;
+    try {
+      const user = this.requireUser(req, res);
+      if (!user) return;
 
-    const { reason } = req.body || {};
-    const subscription = db.getUserSubscription(user.id);
+      const { reason } = req.body || {};
+      const subscription = db.getUserSubscription(user.id);
 
-    if (!subscription || subscription.planId === 'free') {
-      return res.status(400).json({ error: 'İptal edilecek aktif abonelik bulunamadı' });
+      if (!subscription || subscription.planId === 'free') {
+        return res.status(400).json(ResponseFormatter.error('İptal edilecek aktif abonelik bulunamadı', 'NO_ACTIVE_SUBSCRIPTION'));
+      }
+
+      if (subscription.status === 'cancelled') {
+        return res.status(400).json(ResponseFormatter.error('Abonelik zaten iptal edilmiş', 'ALREADY_CANCELLED'));
+      }
+
+      const SubscriptionService = require('../services/subscriptionService');
+      const cancelled = await SubscriptionService.cancelSubscription(user.id, reason || 'user_requested');
+
+      if (cancelled) {
+        db.addBillingEvent(user.id, {
+          type: 'cancellation',
+          planId: cancelled.planId,
+          planName: cancelled.planName,
+          reason: reason || 'user_requested',
+          status: 'cancelled',
+          timestamp: Date.now()
+        });
+
+        return res.json(ResponseFormatter.success({
+          message: 'Abonelik iptal edildi',
+          subscription: cancelled
+        }));
+      }
+
+      return res.status(500).json(ResponseFormatter.error('Abonelik iptal edilemedi', 'CANCEL_FAILED'));
+    } catch (error) {
+      console.error('[BillingController] cancelSubscription error:', error);
+      return res.status(500).json(ResponseFormatter.error('Abonelik iptal edilemedi', 'CANCEL_ERROR'));
     }
-
-    if (subscription.status === 'cancelled') {
-      return res.status(400).json({ error: 'Abonelik zaten iptal edilmiş' });
-    }
-
-    const SubscriptionService = require('../services/subscriptionService');
-    const cancelled = await SubscriptionService.cancelSubscription(user.id, reason || 'user_requested');
-
-    if (cancelled) {
-      return res.json({
-        success: true,
-        message: 'Abonelik iptal edildi',
-        subscription: cancelled
-      });
-    }
-
-    return res.status(500).json({ error: 'Abonelik iptal edilemedi' });
   }
 
   async renewSubscription(req, res) {
-    const user = this.requireUser(req, res);
-    if (!user) return;
+    try {
+      const user = this.requireUser(req, res);
+      if (!user) return;
 
-    const subscription = db.getUserSubscription(user.id);
+      const subscription = db.getUserSubscription(user.id);
 
-    if (!subscription || subscription.planId === 'free') {
-      return res.status(400).json({ error: 'Yenilenecek aktif abonelik bulunamadı' });
+      if (!subscription || subscription.planId === 'free') {
+        return res.status(400).json(ResponseFormatter.error('Yenilenecek aktif abonelik bulunamadı', 'NO_ACTIVE_SUBSCRIPTION'));
+      }
+
+      const SubscriptionService = require('../services/subscriptionService');
+      const renewed = await SubscriptionService.renewSubscription(user.id);
+
+      if (renewed) {
+        db.addBillingEvent(user.id, {
+          type: 'renewal',
+          planId: renewed.planId,
+          planName: renewed.planName,
+          status: 'renewed',
+          renewsAt: renewed.renewsAt,
+          timestamp: Date.now()
+        });
+
+        return res.json(ResponseFormatter.success({
+          message: 'Abonelik yenilendi',
+          subscription: renewed
+        }));
+      }
+
+      return res.status(500).json(ResponseFormatter.error('Abonelik yenilenemedi', 'RENEW_FAILED'));
+    } catch (error) {
+      console.error('[BillingController] renewSubscription error:', error);
+      return res.status(500).json(ResponseFormatter.error('Abonelik yenilenemedi', 'RENEW_ERROR'));
     }
-
-    const SubscriptionService = require('../services/subscriptionService');
-    const renewed = await SubscriptionService.renewSubscription(user.id);
-
-    if (renewed) {
-      return res.json({
-        success: true,
-        message: 'Abonelik yenilendi',
-        subscription: renewed
-      });
-    }
-
-    return res.status(500).json({ error: 'Abonelik yenilenemedi' });
   }
 
   async changePlan(req, res) {
@@ -1031,174 +1159,152 @@ class BillingController {
     if (plan.id === 'free') {
       const SubscriptionService = require('../services/subscriptionService');
       await SubscriptionService.cancelSubscription(user.id, 'downgrade_to_free');
+      const newSubscription = db.getUserSubscription(user.id);
       
-      return res.json({
-        success: true,
-        message: 'Free plana geçiş yapıldı',
-        subscription: db.getUserSubscription(user.id)
+      db.addBillingEvent(user.id, {
+        type: 'downgrade',
+        fromPlanId: currentSubscription?.planId || 'unknown',
+        toPlanId: 'free',
+        status: 'completed',
+        timestamp: Date.now()
       });
+
+      return res.json(ResponseFormatter.success({
+        message: 'Free plana geçiş yapıldı',
+        subscription: newSubscription
+      }));
     }
 
-    return res.status(400).json({ 
-      error: 'Plan değiştirmek için önce yeni plan için ödeme yapmalısınız',
-      message: 'Lütfen /api/payment/process endpoint\'ini kullanarak ödeme yapın'
-    });
+    return this.checkout(req, res);
   }
 
   async getPaymentStatus(req, res) {
-    const user = this.requireUser(req, res);
-    if (!user) return;
+    try {
+      const user = this.requireUser(req, res);
+      if (!user) return;
 
-    const { paymentId } = req.params || {};
-    if (!paymentId) {
-      return res.status(400).json({ error: 'paymentId zorunludur' });
-    }
-
-    const history = db.getBillingHistory(user.id);
-    const payment = history.find(event => 
-      event.paymentId === paymentId || 
-      event.id === paymentId ||
-      event.sessionId === paymentId
-    );
-
-    if (!payment) {
-      return res.status(404).json({ error: 'Ödeme bulunamadı' });
-    }
-
-    return res.json({
-      success: true,
-      payment: {
-        id: payment.paymentId || payment.id,
-        status: payment.status,
-        amount: payment.amount,
-        currency: payment.currency,
-        planId: payment.planId,
-        planName: payment.planName,
-        timestamp: payment.timestamp,
-        description: payment.description
+      const { paymentId } = req.params || {};
+      if (!paymentId) {
+        return res.status(400).json(ResponseFormatter.error('Ödeme ID gereklidir', 'MISSING_PAYMENT_ID'));
       }
-    });
-  }
 
-  async handleStripeWebhook(req, res) {
-    const sig = req.headers['stripe-signature'];
-    
-    if (!stripe || !sig) {
-      return res.status(400).json({ error: 'Stripe webhook signature gerekli' });
-    }
+      const history = db.getBillingHistory(user.id) || [];
+      const payment = history.find(event => 
+        event.paymentId === paymentId || 
+        event.id === paymentId ||
+        event.sessionId === paymentId ||
+        event.conversationId === paymentId
+      );
 
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || process.env.STRIPE_TEST_WEBHOOK_SECRET;
-    const verification = await paymentService.verifyWebhook('stripe', sig, req.body, webhookSecret);
-
-    if (!verification.valid) {
-      paymentLogger.log('error', 'webhook', 'Stripe webhook verification failed', {
-        error: verification.error
-      });
-      return res.status(400).json({ error: `Webhook verification failed: ${verification.error}` });
-    }
-
-    const event = verification.event;
-    paymentLogger.logWebhook(event.id, 'stripe', event.type, {
-      eventId: event.id
-    });
-
-    if (event.type === 'payment_intent.succeeded') {
-      const paymentIntent = event.data.object;
-      const metadata = paymentIntent.metadata || {};
-      const userId = metadata.userId;
-      const planId = metadata.planId;
-      const transactionId = metadata.transactionId;
-
-      if (userId && planId) {
-        const plan = this.getPlan(planId);
-        if (plan) {
-          const transaction = transactionId ? paymentService.getTransaction(transactionId) : null;
-          
-          if (transaction) {
-            paymentService.updateTransaction(transactionId, {
-              status: 'succeeded',
-              gatewayTransactionId: paymentIntent.id
-            });
-          }
-
-          db.addBillingEvent(userId, {
-            type: 'payment',
-            planId: plan.id,
-            planName: plan.title,
-            amount: plan.monthlyPriceTRY,
-            currency: 'TRY',
-            interval: plan.interval,
-            provider: 'stripe',
-            status: 'succeeded',
-            paymentId: paymentIntent.id,
-            transactionId: transactionId,
-            description: `${plan.title} planı için ödeme tamamlandı (webhook)`,
-            timestamp: Date.now()
-          });
-
-          const subscription = await subscriptionService.activateSubscription(
-            userId,
-            plan.id,
-            {
-              paymentId: paymentIntent.id,
-              transactionId: transactionId,
-              gateway: 'stripe'
+      if (!payment) {
+        const transaction = paymentService.getTransaction(paymentId);
+        if (transaction && transaction.userId === user.id) {
+          return res.json(ResponseFormatter.success({
+            payment: {
+              id: transaction.id,
+              status: transaction.status,
+              amount: transaction.amount,
+              currency: transaction.currency,
+              planId: transaction.planId,
+              gateway: transaction.gateway || 'iyzico',
+              createdAt: transaction.createdAt,
+              updatedAt: transaction.updatedAt
             }
-          );
-
-          if (transaction) {
-            receiptService.createReceipt(userId, transaction, subscription);
-          }
-
-          paymentLogger.logPaymentSuccess(transactionId || 'webhook', paymentIntent.id, 'stripe');
+          }));
         }
+        return res.status(404).json(ResponseFormatter.error('Ödeme bulunamadı', 'PAYMENT_NOT_FOUND'));
       }
-    }
 
-    return res.json({ received: true });
+      return res.json(ResponseFormatter.success({
+        payment: {
+          id: payment.paymentId || payment.id,
+          status: payment.status,
+          amount: payment.amount,
+          currency: payment.currency,
+          planId: payment.planId,
+          planName: payment.planName,
+          timestamp: payment.timestamp,
+          description: payment.description,
+          provider: payment.provider || 'iyzico'
+        }
+      }));
+    } catch (error) {
+      console.error('[BillingController] getPaymentStatus error:', error);
+      return res.status(500).json(ResponseFormatter.error('Ödeme durumu alınamadı', 'PAYMENT_STATUS_ERROR'));
+    }
   }
+
 
   subscribe(req, res) {
     return this.checkout(req, res);
   }
 
   getHistory(req, res) {
-    const user = this.requireUser(req, res);
-    if (!user) return;
-    
-    const history = db.getBillingHistory(user.id);
-    const receipts = receiptService.getReceipts(user.id);
-    
-    return res.json({ 
-      success: true, 
-      history,
-      receipts
-    });
+    try {
+      const user = this.requireUser(req, res);
+      if (!user) return;
+      
+      const history = db.getBillingHistory(user.id) || [];
+      const receipts = receiptService.getReceipts(user.id) || [];
+      const subscription = db.getUserSubscription(user.id);
+      
+      return res.json(ResponseFormatter.success({ 
+        history: Array.isArray(history) ? history.slice(0, 50) : [],
+        receipts: Array.isArray(receipts) ? receipts.slice(0, 20) : [],
+        subscription: subscription ? {
+          planId: subscription.planId,
+          planName: subscription.planName,
+          status: subscription.status,
+          renewsAt: subscription.renewsAt
+        } : null,
+        totalPayments: history.filter(h => h.type === 'payment' && h.status === 'succeeded').length,
+        totalAmount: history
+          .filter(h => h.type === 'payment' && h.status === 'succeeded')
+          .reduce((sum, h) => sum + (parseFloat(h.amount) || 0), 0)
+      }));
+    } catch (error) {
+      console.error('[BillingController] getHistory error:', error);
+      return res.status(500).json(ResponseFormatter.error('Fatura geçmişi alınamadı', 'HISTORY_ERROR'));
+    }
   }
 
   async getReceipts(req, res) {
-    const user = this.requireUser(req, res);
-    if (!user) return;
-    
-    const receipts = receiptService.getReceipts(user.id);
-    return res.json({ success: true, receipts });
+    try {
+      const user = this.requireUser(req, res);
+      if (!user) return;
+      
+      const receipts = receiptService.getReceipts(user.id) || [];
+      
+      return res.json(ResponseFormatter.success({ 
+        receipts: Array.isArray(receipts) ? receipts.slice(0, 50) : [],
+        count: receipts.length
+      }));
+    } catch (error) {
+      console.error('[BillingController] getReceipts error:', error);
+      return res.status(500).json(ResponseFormatter.error('Makbuzlar alınamadı', 'RECEIPTS_ERROR'));
+    }
   }
 
   async getReceipt(req, res) {
-    const user = this.requireUser(req, res);
-    if (!user) return;
-    
-    const { receiptNumber } = req.params;
-    if (!receiptNumber) {
-      return res.status(400).json({ error: 'Receipt number required' });
+    try {
+      const user = this.requireUser(req, res);
+      if (!user) return;
+      
+      const { receiptNumber } = req.params;
+      if (!receiptNumber) {
+        return res.status(400).json(ResponseFormatter.error('Makbuz numarası gereklidir', 'MISSING_RECEIPT_NUMBER'));
+      }
+      
+      const receipt = receiptService.getReceiptByNumber(receiptNumber);
+      if (!receipt || receipt.userId !== user.id) {
+        return res.status(404).json(ResponseFormatter.error('Makbuz bulunamadı', 'RECEIPT_NOT_FOUND'));
+      }
+      
+      return res.json(ResponseFormatter.success({ receipt }));
+    } catch (error) {
+      console.error('[BillingController] getReceipt error:', error);
+      return res.status(500).json(ResponseFormatter.error('Makbuz alınamadı', 'RECEIPT_ERROR'));
     }
-    
-    const receipt = receiptService.getReceiptByNumber(receiptNumber);
-    if (!receipt || receipt.userId !== user.id) {
-      return res.status(404).json({ error: 'Receipt not found' });
-    }
-    
-    return res.json({ success: true, receipt });
   }
 }
 

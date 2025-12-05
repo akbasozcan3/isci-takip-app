@@ -9,6 +9,29 @@ class SmartTrackingService {
       maxAcceleration: 50,
       maxJumpDistance: 1000
     };
+    this.startCleanup();
+  }
+
+  startCleanup() {
+    setInterval(() => {
+      const now = Date.now();
+      const maxAge = 24 * 60 * 60 * 1000;
+      const keysToDelete = [];
+      
+      for (const [deviceId, profile] of this.deviceProfiles.entries()) {
+        if (now - profile.lastUpdateTime > maxAge) {
+          keysToDelete.push(deviceId);
+        }
+      }
+      
+      for (const key of keysToDelete) {
+        this.deviceProfiles.delete(key);
+      }
+      
+      if (this.deviceProfiles.size > 10000 && global.gc) {
+        global.gc();
+      }
+    }, 60 * 60 * 1000);
   }
 
   getDeviceProfile(deviceId) {

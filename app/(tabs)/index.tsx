@@ -6,7 +6,6 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import React from 'react';
 import {
-  ActivityIndicator,
   Animated,
   DeviceEventEmitter,
   Dimensions,
@@ -28,7 +27,8 @@ import { AnalyticsCard } from '../../components/AnalyticsCard';
 import { OnboardingModal } from '../../components/OnboardingModal';
 import { Toast, useToast } from '../../components/Toast';
 import { getApiBase } from '../../utils/api';
-import { getToken } from '../../utils/auth';
+import { authFetch, getToken } from '../../utils/auth';
+import { shareCurrentLocation } from '../../utils/locationShare';
 
 const { width } = Dimensions.get('window');
 
@@ -100,6 +100,8 @@ const SLIDES: Slide[] = [
 const QUICK_ACTIONS = [
   { id: 'track', title: 'Canlı Takip', icon: 'navigate-circle', route: '/(tabs)/track', color: '#06b6d4' },
   { id: 'groups', title: 'Gruplarım', icon: 'people-circle', route: '/(tabs)/groups', color: '#7c3aed' },
+  { id: 'location-features', title: 'Konum Özellikleri', icon: 'location', route: '/(tabs)/location-features', color: '#10b981' },
+  { id: 'analytics', title: 'Analitik', icon: 'stats-chart', route: '/(tabs)/analytics', color: '#8b5cf6' },
   { id: 'admin', title: 'Yönetim', icon: 'shield-checkmark-outline', route: '/(tabs)/admin', color: '#f59e0b' },
   { id: 'settings', title: 'Ayarlar', icon: 'settings-outline', route: '/(tabs)/settings', color: '#64748b' },
 ];
@@ -108,14 +110,14 @@ export default function HomeScreen(): React.JSX.Element {
   const { toast, showError, showSuccess, showWarning, showInfo, hideToast } = useToast();
 
   const [isAuthenticated, setIsAuthenticated] = React.useState(false);
-  const [loading, setLoading] = React.useState(false);
   const [refreshing, setRefreshing] = React.useState(false);
   const [userName, setUserName] = React.useState('Ekip Üyesi');
   const [userId, setUserId] = React.useState('');
   const [stats, setStats] = React.useState<DashboardStats>({ activeWorkers: 0, totalGroups: 0, todayDistance: 0, activeAlerts: 0 });
   const [activities, setActivities] = React.useState<RecentActivity[]>([]);
   const [hasLocationPermission, setHasLocationPermission] = React.useState(false);
-  const [hidePermissionBanner, setHidePermissionBanner] = React.useState(false);
+  const [hidePermissionBanner, setHidePermissionBanner] = React.useState(true);
+  const [permissionChecked, setPermissionChecked] = React.useState(false);
   const [currentSlide, setCurrentSlide] = React.useState(0);
   const [showLightbox, setShowLightbox] = React.useState(false);
   const [lightboxImage, setLightboxImage] = React.useState<string | null>(null);
@@ -203,7 +205,7 @@ export default function HomeScreen(): React.JSX.Element {
       let subscriptionPlan = 'free';
       let activitiesLimit = 10;
       try {
-        const subRes = await fetch(`${API_BASE}/api/me/subscription`, { headers: authHeaders });
+        const subRes = await authFetch('/me/subscription');
         if (subRes.ok) {
           const subData = await subRes.json();
           subscriptionPlan = subData.subscription?.planId || 'free';
@@ -220,12 +222,10 @@ export default function HomeScreen(): React.JSX.Element {
 
       try {
         const [statsRes, activitiesRes] = await Promise.all([
-          fetch(`${API_BASE}/api/dashboard/${worker}`, { 
-            headers: authHeaders,
+          authFetch(`/dashboard/${worker}`, { 
             signal: controller.signal 
           }).catch(() => ({ ok: false, status: 404, json: async () => ({}) } as Response)),
-          fetch(`${API_BASE}/api/activities?limit=${activitiesLimit}`, { 
-            headers: authHeaders,
+          authFetch(`/activities?limit=${activitiesLimit}`, { 
             signal: controller.signal 
           }).catch(() => ({ ok: false, status: 404, json: async () => ([]) } as Response)),
         ]);
@@ -247,7 +247,7 @@ export default function HomeScreen(): React.JSX.Element {
           }
         } else {
           if (statsRes.status !== 429) {
-            console.warn('Stats fetch failed:', statsRes.status);
+          console.warn('Stats fetch failed:', statsRes.status);
           }
           setStats({ activeWorkers: 0, totalGroups: 0, todayDistance: 0, activeAlerts: 0 });
         }
@@ -259,7 +259,7 @@ export default function HomeScreen(): React.JSX.Element {
           console.log(`Activities loaded: ${Array.isArray(data) ? data.length : 0} (Plan: ${subscriptionPlan}, Limit: ${activitiesLimit})`);
         } else {
           if (activitiesRes.status !== 429) {
-            console.warn('Activities fetch failed:', activitiesRes.status);
+          console.warn('Activities fetch failed:', activitiesRes.status);
           }
           setActivities([]);
         }
@@ -282,8 +282,6 @@ export default function HomeScreen(): React.JSX.Element {
   // checkAuth loadDashboardData'yı kullandığı için loadDashboardData'dan sonra tanımlanmalı
   const checkAuth = React.useCallback(async () => {
     try {
-      setLoading(true);
-      
       const workerId = await SecureStore.getItemAsync('workerId');
       const displayName = await SecureStore.getItemAsync('displayName');
 
@@ -296,10 +294,20 @@ export default function HomeScreen(): React.JSX.Element {
 
         try {
           const { status } = await Location.getForegroundPermissionsAsync();
-          setHasLocationPermission(status === 'granted');
+          const granted = status === 'granted';
+          setHasLocationPermission(granted);
+          if (granted) {
+            setHidePermissionBanner(true);
+            try { await AsyncStorage.setItem('hide_permission_banner', '1'); } catch {}
+          } else {
+            const hidden = await AsyncStorage.getItem('hide_permission_banner');
+            setHidePermissionBanner(hidden === '1');
+          }
+          setPermissionChecked(true);
         } catch (e) {
           console.warn('Location permission check failed:', e);
           setHasLocationPermission(false);
+          setPermissionChecked(true);
         }
       } else {
         setIsAuthenticated(false);
@@ -307,8 +315,6 @@ export default function HomeScreen(): React.JSX.Element {
     } catch (err) {
       console.error('Auth check failed:', err);
       setIsAuthenticated(false);
-    } finally {
-      setLoading(false);
     }
   }, [loadDashboardData]);
 
@@ -326,17 +332,11 @@ export default function HomeScreen(): React.JSX.Element {
         return;
       }
       try {
-        const token = await getToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json'
-        };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        
-        const response = await fetch(`${API_BASE}/api/articles`, { headers });
+        const response = await authFetch('/articles');
         if (response.ok) {
-          const data = await response.json();
-          if (Array.isArray(data)) {
-            setArticles(data.slice(0, 3));
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          setArticles(data.slice(0, 3));
           } else if (data.articles && Array.isArray(data.articles)) {
             setArticles(data.articles.slice(0, 3));
           }
@@ -350,7 +350,7 @@ export default function HomeScreen(): React.JSX.Element {
       }
     };
     if (isAuthenticated) {
-      fetchArticles();
+    fetchArticles();
     }
   }, [isAuthenticated]);
 
@@ -362,17 +362,8 @@ export default function HomeScreen(): React.JSX.Element {
         return;
       }
       try {
-        const token = await getToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json'
-        };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        
         try {
-          const plansRes = await fetch(`${API_BASE}/api/plans`, { 
-            headers,
-            method: 'GET'
-          });
+          const plansRes = await authFetch('/plans');
           
           if (plansRes.ok) {
             const plansData = await plansRes.json();
@@ -389,9 +380,9 @@ export default function HomeScreen(): React.JSX.Element {
             }
           } else {
             if (plansRes.status !== 429) {
-              console.warn('[Home] Plans fetch failed:', plansRes.status);
-              const errorText = await plansRes.text();
-              console.warn('[Home] Error response:', errorText);
+            console.warn('[Home] Plans fetch failed:', plansRes.status);
+            const errorText = await plansRes.text();
+            console.warn('[Home] Error response:', errorText);
             }
           }
         } catch (fetchError) {
@@ -399,7 +390,7 @@ export default function HomeScreen(): React.JSX.Element {
         }
         
         try {
-          const subscriptionRes = await fetch(`${API_BASE}/api/me/subscription`, { headers });
+          const subscriptionRes = await authFetch('/me/subscription');
           if (subscriptionRes.ok) {
             const subData = await subscriptionRes.json();
             if (subData?.subscription?.planId) {
@@ -463,9 +454,6 @@ export default function HomeScreen(): React.JSX.Element {
         }
       } catch (e) {
         console.error('Init error:', e);
-        if (mounted) {
-          setLoading(false);
-        }
       }
     };
     
@@ -483,13 +471,25 @@ export default function HomeScreen(): React.JSX.Element {
 
   useFocusEffect(
     React.useCallback(() => {
-      // Blur sorununu önlemek için fadeAnim'i direkt 1'e set et
       fadeAnim.setValue(1);
       resetAnimations();
-      // Verileri yenile
       if (userId) {
         loadDashboardData(userId).catch(e => console.error('Dashboard refresh failed:', e));
       }
+      (async () => {
+        try {
+          const { status } = await Location.getForegroundPermissionsAsync();
+          const granted = status === 'granted';
+          setHasLocationPermission(granted);
+          if (granted) {
+            setHidePermissionBanner(true);
+            await AsyncStorage.setItem('hide_permission_banner', '1');
+          } else {
+            const hidden = await AsyncStorage.getItem('hide_permission_banner');
+            setHidePermissionBanner(hidden === '1');
+          }
+        } catch {}
+      })();
       return () => {};
     }, [resetAnimations, fadeAnim, userId, loadDashboardData])
   );
@@ -519,15 +519,20 @@ export default function HomeScreen(): React.JSX.Element {
     };
   }, [isAuthenticated]);
 
-  // Load permission banner preference
+  // Load permission banner preference - sadece bir kez
   React.useEffect(() => {
+    if (!permissionChecked) return;
     (async () => {
       try {
         const v = await AsyncStorage.getItem('hide_permission_banner');
-        if (v === '1') setHidePermissionBanner(true);
+        if (v === '1') {
+          setHidePermissionBanner(true);
+        } else if (!hasLocationPermission) {
+          setHidePermissionBanner(false);
+        }
       } catch {}
     })();
-  }, []);
+  }, [permissionChecked, hasLocationPermission]);
 
   // Check if onboarding should be shown
   React.useEffect(() => {
@@ -595,19 +600,23 @@ export default function HomeScreen(): React.JSX.Element {
     const setup = async () => {
       try {
         // fetch active groups to know which rooms to join
-        const res = await fetch(`${API_BASE}/api/groups/user/${userId}/active`);
+        const res = await authFetch(`/groups/user/${userId}/active`);
         const groups = res.ok ? await res.json() : [];
         interface Group {
           id: string;
         }
         const groupIds: string[] = (groups || []).map((g: Group) => g.id);
 
+        // Get token for Socket.IO authentication
+        const token = await getToken();
         const s = io(API_BASE, {
           transports: ['websocket'],
           reconnection: true,
           reconnectionAttempts: 5,
           reconnectionDelay: 1000,
           reconnectionDelayMax: 5000,
+          auth: token ? { token } : undefined,
+          extraHeaders: token ? { Authorization: `Bearer ${token}` } : undefined
         });
         socketRef.current = s;
 
@@ -666,14 +675,21 @@ export default function HomeScreen(): React.JSX.Element {
   const requestLocationPermission = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      setHasLocationPermission(status === 'granted');
-      if (status === 'granted') {
+      const granted = status === 'granted';
+      setHasLocationPermission(granted);
+      if (granted) {
         showSuccess('Konum izni verildi');
-        // Hide banner and persist choice
         setHidePermissionBanner(true);
-        try { await AsyncStorage.setItem('hide_permission_banner', '1'); } catch {}
+        setPermissionChecked(true);
+        try { 
+          await AsyncStorage.setItem('hide_permission_banner', '1');
+          await AsyncStorage.setItem('location_permission_granted', '1');
+        } catch {}
+      } else {
+        showError('Konum izni verilmedi');
       }
     } catch (e) {
+      console.error('Request location permission error:', e);
       showError('Konum izni alınamadı');
     }
   };
@@ -814,14 +830,6 @@ export default function HomeScreen(): React.JSX.Element {
     return map[cardId] || 'getting-started';
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#06b6d4" />
-        <Text style={styles.loadingText}>Hazırlanıyor...</Text>
-      </View>
-    );
-  }
 
 
   // --- Authenticated UI ---
@@ -850,24 +858,45 @@ export default function HomeScreen(): React.JSX.Element {
               <Ionicons name="book-outline" size={20} color="#fff" />
             </Pressable>
             <Pressable 
-              onPress={() => router.push('/notifications' as any)} 
+              onPress={async () => {
+                try {
+                  if (!hasLocationPermission) {
+                    const { status } = await Location.requestForegroundPermissionsAsync();
+                    if (status !== 'granted') {
+                      showError('Konum izni gerekli');
+                      return;
+                    }
+                    setHasLocationPermission(true);
+                  }
+                  
+                  showInfo('Konum alınıyor...');
+                  const location = await Location.getCurrentPositionAsync({
+                    accuracy: Location.Accuracy.High
+                  });
+                  
+                  await shareCurrentLocation(
+                    async () => ({ latitude: location.coords.latitude, longitude: location.coords.longitude }),
+                    userName || 'Konumum',
+                    () => showSuccess('Konum başarıyla paylaşıldı!'),
+                    (error: string) => showError(error)
+                  );
+                } catch (e: any) {
+                  console.error('[Home] Share location error:', e);
+                  if (e.code === 'E_LOCATION_UNAVAILABLE') {
+                    showError('Konum servisleri kapalı. Lütfen ayarlardan açın.');
+                  } else if (e.code === 'E_LOCATION_TIMEOUT') {
+                    showError('Konum alınamadı. Lütfen tekrar deneyin.');
+                  } else {
+                    showError('Konum alınamadı: ' + (e.message || 'Bilinmeyen hata'));
+                  }
+                }
+              }}
               style={({ pressed }) => [
                 styles.headerIconButton,
                 pressed && styles.headerIconButtonPressed
               ]}
             >
-              <Ionicons name="notifications-outline" size={20} color="#fff" />
-            </Pressable>
-            <Pressable 
-              onPress={onRefresh} 
-              style={({ pressed }) => [
-                styles.headerIconButton,
-                pressed && styles.headerIconButtonPressed,
-                refreshing && styles.headerIconButtonDisabled
-              ]}
-              disabled={refreshing}
-            >
-              <Ionicons name="refresh-outline" size={20} color="#fff" />
+              <Ionicons name="share-social-outline" size={20} color="#fff" />
             </Pressable>
             <Pressable 
               onPress={() => router.push('/(tabs)/settings')} 
@@ -923,7 +952,7 @@ export default function HomeScreen(): React.JSX.Element {
         </View>
 
         {/* Permission banner */}
-        {!hasLocationPermission && !hidePermissionBanner && (
+        {!hasLocationPermission && !hidePermissionBanner && permissionChecked && (
           <View style={styles.permissionBanner}>
             <Ionicons name="location-outline" size={24} color="#f59e0b" />
             <View style={{ flex: 1, marginLeft: 12 }}>
@@ -932,7 +961,12 @@ export default function HomeScreen(): React.JSX.Element {
             </View>
             <Pressable onPress={requestLocationPermission} style={styles.permissionButton} android_ripple={{ color: 'rgba(6,182,212,0.25)' }}><Text style={styles.permissionButtonText}>İzin Ver</Text></Pressable>
             <Pressable
-              onPress={async () => { try { await AsyncStorage.setItem('hide_permission_banner', '1'); } catch {}; setHidePermissionBanner(true); }}
+              onPress={async () => { 
+                try { 
+                  await AsyncStorage.setItem('hide_permission_banner', '1'); 
+                  setHidePermissionBanner(true);
+                } catch {} 
+              }}
               style={{ marginLeft: 8, paddingHorizontal: 10, paddingVertical: 6 }}
               android_ripple={{ color: 'rgba(255,255,255,0.15)' }}
             >

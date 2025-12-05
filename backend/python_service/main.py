@@ -36,8 +36,10 @@ class PredictionRequest(BaseModel):
     locations: List[LocationData]
     prediction_type: str = "route"
 
-NODEJS_SERVICE_URL = "http://localhost:4000"
-REDIS_URL = "redis://localhost:6379"
+import os
+
+NODEJS_SERVICE_URL = os.getenv("NODEJS_SERVICE_URL", "http://localhost:4000")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 @app.get("/health")
 async def health_check():
@@ -99,16 +101,44 @@ async def get_insights(user_id: str, date_range: str = "30d"):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+_session_cache = {}
+_cache_ttl = 300
+_max_cache_size = 200
+
 async def fetch_analytics_data(user_id: str, date_range: str) -> Dict:
-    async with aiohttp.ClientSession() as session:
+    cache_key = f"{user_id}:{date_range}"
+    now = datetime.utcnow()
+    
+    if cache_key in _session_cache:
+        cached_data, cached_time = _session_cache[cache_key]
+        if (now - cached_time).total_seconds() < _cache_ttl:
+            return cached_data
+    
+    async with aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=5),
+        connector=aiohttp.TCPConnector(limit=20, limit_per_host=10, ttl_dns_cache=300)
+    ) as session:
         try:
             url = f"{NODEJS_SERVICE_URL}/api/analytics/{user_id}"
             async with session.get(url, params={"date_range": date_range}) as response:
                 if response.status == 200:
-                    return await response.json()
+                    data = await response.json()
+                    _session_cache[cache_key] = (data, now)
+                    if len(_session_cache) > _max_cache_size:
+                        expired_keys = [
+                            k for k, (_, cached_time) in _session_cache.items()
+                            if (now - cached_time).total_seconds() > _cache_ttl
+                        ]
+                        for k in expired_keys[:10]:
+                            _session_cache.pop(k, None)
+                        if len(_session_cache) > _max_cache_size:
+                            oldest_key = min(_session_cache.keys(), key=lambda k: _session_cache[k][1])
+                            _session_cache.pop(oldest_key, None)
+                    return data
                 return {}
-        except Exception as e:
-            print(f"Error fetching analytics: {e}")
+        except asyncio.TimeoutError:
+            return {}
+        except Exception:
             return {}
 
 async def generate_predictions(user_id: str, analytics: Dict) -> Dict:

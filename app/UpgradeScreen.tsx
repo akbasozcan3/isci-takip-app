@@ -132,9 +132,9 @@ const UpgradeScreen: React.FC = () => {
       setErrorMessage(null);
       
       const [plansRes, subscriptionRes, historyRes] = await Promise.all([
-        authFetch('/api/plans'),
-        authFetch('/api/me/subscription'),
-        authFetch('/api/billing/history')
+        authFetch('/plans'),
+        authFetch('/me/subscription'),
+        authFetch('/billing/history')
       ]);
       
       if (plansRes.ok) {
@@ -206,8 +206,8 @@ const UpgradeScreen: React.FC = () => {
   const refreshSubscription = React.useCallback(async () => {
     try {
       const [subscriptionRes, historyRes] = await Promise.all([
-        authFetch('/api/me/subscription'),
-        authFetch('/api/billing/history')
+        authFetch('/me/subscription'),
+        authFetch('/billing/history')
       ]);
       
       if (subscriptionRes.ok) {
@@ -256,7 +256,7 @@ const UpgradeScreen: React.FC = () => {
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     try {
-      const subRes = await authFetch('/api/me/subscription');
+      const subRes = await authFetch('/me/subscription');
       if (subRes.ok) {
         const subData = await subRes.json();
         if (subData.subscription) {

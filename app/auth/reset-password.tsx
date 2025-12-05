@@ -841,9 +841,9 @@ const styles = StyleSheet.create({
   },
   input: { marginBottom: 10 },
   iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: 'rgba(100, 116, 139, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',

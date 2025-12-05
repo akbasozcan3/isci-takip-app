@@ -8,7 +8,7 @@ import { Platform } from 'react-native';
 let resolvedBase: string | null = null;
 
 // Lazy require to avoid breaking web builds that tree shake different modules
-let Constants: any;
+let Constants: { expoConfig?: { extra?: Record<string, unknown> }; manifest?: { extra?: Record<string, unknown> } } | null;
 try {
   Constants = require('expo-constants').default;
 } catch {
@@ -18,17 +18,16 @@ try {
 function pickFromConstants(): string | undefined {
   const extra = Constants?.expoConfig?.extra || Constants?.manifest?.extra || {};
   if (Platform.OS === 'android') {
-    return extra.apiBaseDev || extra.apiBase;
+    return (extra.apiBaseDev as string) || (extra.apiBase as string);
   }
   if (Platform.OS === 'ios') {
-    return extra.apiBaseIOS || extra.apiBase;
+    return (extra.apiBaseIOS as string) || (extra.apiBase as string);
   }
-  return extra.apiBaseWeb || extra.apiBase;
+  return (extra.apiBaseWeb as string) || (extra.apiBase as string);
 }
 
 function resolveBaseUrl(): string {
   if (resolvedBase) {
-    console.log('[API] Using cached api base:', resolvedBase);
     return resolvedBase;
   }
 
@@ -39,28 +38,21 @@ function resolveBaseUrl(): string {
       : undefined;
   if (envBase?.trim()) {
     resolvedBase = envBase.trim().replace(/\/+$/, '');
-    console.log('[API] ✅ Using EXPO_PUBLIC api base:', resolvedBase);
     return resolvedBase;
   }
 
-  // 2) app.json -> extra section
   const extraBase = pickFromConstants();
   if (extraBase && extraBase.trim()) {
     resolvedBase = extraBase.trim().replace(/\/+$/, '');
-    console.log('[API] ✅ Using app.json extra api base:', resolvedBase, 'Platform:', Platform.OS);
     return resolvedBase;
   }
 
-  // 3) Local fallback (emulator vs iOS/web)
   if (Platform.OS === 'android') {
     resolvedBase = 'http://10.0.2.2:4000';
-    console.log('[API] ⚠️  Falling back to Android emulator default:', resolvedBase);
   } else if (Platform.OS === 'ios') {
     resolvedBase = 'http://localhost:4000';
-    console.log('[API] ⚠️  Falling back to iOS simulator default:', resolvedBase);
   } else {
     resolvedBase = 'http://127.0.0.1:4000';
-    console.log('[API] ⚠️  Falling back to web default:', resolvedBase);
   }
   return resolvedBase;
 }

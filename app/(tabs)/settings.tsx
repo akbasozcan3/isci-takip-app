@@ -11,6 +11,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -112,6 +113,7 @@ export default function SettingsScreen() {
   const [phone, setPhone] = React.useState('');
   const [createdAt, setCreatedAt] = React.useState('');
   const [loading, setLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
   const [apiStatus, setApiStatus] = React.useState<'online' | 'offline'>('offline');
   const [confirmState, setConfirmState] = React.useState<{
     visible: boolean;
@@ -166,11 +168,17 @@ export default function SettingsScreen() {
         if (storedEmail) setEmail(storedEmail);
         
         // Backend health check
+        const controller = new AbortController();
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+        
         try {
           const healthUrl = `${API_BASE}/api/health`;
           console.log('[Settings] Checking API health:', healthUrl);
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 saniye timeout
+          timeoutId = setTimeout(() => {
+            if (!controller.signal.aborted) {
+              controller.abort();
+            }
+          }, 8000) as ReturnType<typeof setTimeout>;
           
           const healthResponse = await fetch(healthUrl, { 
             method: 'GET',
@@ -178,7 +186,11 @@ export default function SettingsScreen() {
             signal: controller.signal
           });
           
-          clearTimeout(timeoutId);
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          
           console.log('[Settings] Health check response:', healthResponse.status);
           
           if (healthResponse.ok) {
@@ -211,7 +223,7 @@ export default function SettingsScreen() {
 
             try {
               console.log('[Settings] Fetching subscription info...');
-              const subscriptionResponse = await authFetch('/api/me/subscription');
+              const subscriptionResponse = await authFetch('/me/subscription');
               if (subscriptionResponse.ok) {
                 const subData = await subscriptionResponse.json();
                 if (subData?.subscription) {
@@ -226,13 +238,19 @@ export default function SettingsScreen() {
               console.warn('[Settings] Subscription fetch error:', err);
             }
           } else {
-            console.warn('[Settings] API is offline');
+            console.warn('[Settings] API returned non-OK status:', healthResponse.status);
             setApiStatus('offline');
           }
         } catch (err: unknown) {
-          console.error('[Settings] API health check error:', err);
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          
           if (err instanceof Error && err.name === 'AbortError') {
             console.warn('[Settings] Health check timeout - API may be slow or offline');
+          } else if (err instanceof Error) {
+            console.warn('[Settings] Health check failed:', err.message);
           }
           setApiStatus('offline');
         }
@@ -354,7 +372,7 @@ export default function SettingsScreen() {
       onConfirm: async () => {
         setConfirmState(prev => ({ ...prev, loading: true }));
         try {
-          const response = await authFetch('/api/auth/account', {
+          const response = await authFetch('/auth/account', {
             method: 'DELETE',
           });
 
@@ -421,46 +439,43 @@ export default function SettingsScreen() {
               <Text style={styles.subtitle}>Hesap ve uygulama ayarları</Text>
             </View>
           </View>
-
-          <Pressable 
-            style={styles.headerButton}
-            onPress={async () => {
-              await safePress(async () => {
-                showSuccess('Sayfa yenileniyor...');
-                const loadUser = async () => {
-                  try {
-                    setLoading(true);
-                    const response = await authFetch('/users/me');
-                    if (response.ok) {
-                      const data = await response.json();
-                      const userData = data.user || data;
-                      if (userData) {
-                        if (userData.displayName) setDisplayName(userData.displayName);
-                        else if (userData.name) setDisplayName(userData.name);
-                        if (userData.email) setEmail(userData.email);
-                        if (userData.phone) setPhone(userData.phone);
-                        if (userData.id) setUserId(userData.id);
-                        if (userData.createdAt) setCreatedAt(userData.createdAt);
-                      }
-                      showSuccess('Bilgiler güncellendi');
-                    }
-                  } catch (error) {
-                    showError('Yenileme başarısız');
-                  } finally {
-                    setLoading(false);
-                  }
-                };
-                await loadUser();
-              });
-            }}
-            android_ripple={{ color: 'rgba(255,255,255,0.3)', borderless: true, radius: 20 }}
-          >
-            <Ionicons name="reload-outline" size={24} color="#fff" />
-          </Pressable>
         </View>
       </LinearGradient>
 
-      <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 140 }}>
+      <ScrollView 
+        style={styles.content} 
+        contentContainerStyle={{ paddingBottom: 140 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={async () => {
+              setRefreshing(true);
+              try {
+                const response = await authFetch('/users/me');
+                if (response.ok) {
+                  const data = await response.json();
+                  const userData = data.user || data;
+                  if (userData) {
+                    if (userData.displayName) setDisplayName(userData.displayName);
+                    else if (userData.name) setDisplayName(userData.name);
+                    if (userData.email) setEmail(userData.email);
+                    if (userData.phone) setPhone(userData.phone);
+                    if (userData.id) setUserId(userData.id);
+                    if (userData.createdAt) setCreatedAt(userData.createdAt);
+                  }
+                  showSuccess('Bilgiler güncellendi');
+                }
+              } catch (error) {
+                showError('Yenileme başarısız');
+              } finally {
+                setRefreshing(false);
+              }
+            }}
+            tintColor="#06b6d4"
+            colors={['#06b6d4']}
+          />
+        }
+      >
         {/* Hesap Bilgileri Kartı */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Profil Bilgileri</Text>
@@ -808,16 +823,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  headerButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
   content: { flex: 1, paddingHorizontal: 18, marginTop: 12 },
   accountCard: {
     backgroundColor: '#1e293b',
@@ -825,11 +830,6 @@ const styles = StyleSheet.create({
     padding: 24,
     borderWidth: 1,
     borderColor: '#334155',
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 10,
   },
   accountHeader: {
     flexDirection: 'row',
@@ -914,11 +914,6 @@ const styles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     borderColor: '#2c2c3e',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10,
     gap: 14
   },
   subscriptionBadge: {
@@ -1010,11 +1005,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a', 
     borderWidth: 1, 
     borderColor: '#1e293b',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
   },
   confirmHeader: { 
     padding: 24, 

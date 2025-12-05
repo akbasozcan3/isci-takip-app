@@ -1,4 +1,4 @@
-const { createLogger } = require('../utils/logger');
+const { createLogger } = require('../core/utils/logger');
 
 const logger = createLogger('RetryService');
 

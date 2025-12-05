@@ -1,11 +1,51 @@
 const onesignalService = require('./onesignalService');
 const db = require('../config/database');
 const retryService = require('../core/services/retry.service');
+const SubscriptionModel = require('../core/database/models/subscription.model');
 
 class NotificationService {
   constructor() {
     this.channels = new Map();
+    this.notificationCounts = new Map();
     this.setupDefaultChannels();
+    this.resetDailyCounts();
+    setInterval(() => this.resetDailyCounts(), 24 * 60 * 60 * 1000);
+  }
+
+  resetDailyCounts() {
+    this.notificationCounts.clear();
+  }
+
+  canSendPushNotification(userId) {
+    const subscription = db.getUserSubscription(userId);
+    const planId = subscription?.planId || 'free';
+    const limits = SubscriptionModel.getPlanLimits(planId);
+    
+    if (!limits.pushNotificationsEnabled) {
+      return { allowed: false, reason: 'Push notifications disabled for this plan' };
+    }
+
+    const maxPerDay = limits.maxPushNotificationsPerDay;
+    if (maxPerDay === -1) {
+      return { allowed: true };
+    }
+
+    const today = new Date().toDateString();
+    const key = `${userId}:${today}`;
+    const count = this.notificationCounts.get(key) || 0;
+
+    if (count >= maxPerDay) {
+      return { allowed: false, reason: `Daily limit reached (${maxPerDay})` };
+    }
+
+    return { allowed: true, remaining: maxPerDay - count };
+  }
+
+  recordNotificationSent(userId) {
+    const today = new Date().toDateString();
+    const key = `${userId}:${today}`;
+    const count = this.notificationCounts.get(key) || 0;
+    this.notificationCounts.set(key, count + 1);
   }
 
   setupDefaultChannels() {
@@ -33,9 +73,20 @@ class NotificationService {
         throw new Error('User not found');
       }
 
-      return await retryService.execute(
+      const pushCheck = this.canSendPushNotification(userId);
+      if (!pushCheck.allowed) {
+        throw new Error(pushCheck.reason || 'Push notification not allowed');
+      }
+
+      const subscription = db.getUserSubscription(userId);
+      const planId = subscription?.planId || 'free';
+      const limits = SubscriptionModel.getPlanLimits(planId);
+      const priorityMap = { normal: 5, high: 8, max: 10 };
+      const notificationPriority = priorityMap[limits.pushNotificationPriority] || 10;
+
+      const result = await retryService.execute(
         async () => {
-          const result = await onesignalService.sendToUser(
+          const sendResult = await onesignalService.sendToUser(
             userId,
             notification.title || notification.subject || 'Bildirim',
             notification.message || notification.body || '',
@@ -43,15 +94,16 @@ class NotificationService {
               data: notification.data || {},
               deepLink: notification.deepLink || notification.url,
               imageUrl: notification.imageUrl,
-              priority: notification.priority || 10
+              priority: notification.priority || notificationPriority
             }
           );
 
-          if (!result.success) {
-            throw new Error(result.error || 'OneSignal send failed');
+          if (!sendResult.success) {
+            throw new Error(sendResult.error || 'OneSignal send failed');
           }
 
-          return result;
+          this.recordNotificationSent(userId);
+          return sendResult;
         },
         {
           maxRetries: 3,
@@ -60,10 +112,13 @@ class NotificationService {
           shouldRetry: (error) => {
             return error.message.includes('timeout') || 
                    error.message.includes('network') ||
-                   error.message.includes('ECONNRESET');
+                   error.message.includes('ECONNRESET') ||
+                   error.message.includes('5');
           }
         }
       );
+
+      return result;
     });
   }
 
@@ -88,7 +143,8 @@ class NotificationService {
                 if (channel === 'onesignal') {
                   return error.message.includes('timeout') || 
                          error.message.includes('network') ||
-                         error.message.includes('ECONNRESET');
+                         error.message.includes('ECONNRESET') ||
+                         error.message.includes('5');
                 }
                 return false;
               }
@@ -96,9 +152,13 @@ class NotificationService {
           );
           results.push({ channel, success: true, result });
         } catch (error) {
-          console.error(`[NotificationService] Channel ${channel} failed:`, error);
+          if (channel === 'onesignal') {
+            console.error(`[NotificationService] OneSignal failed for user ${userId}:`, error.message);
+          }
           results.push({ channel, success: false, error: error.message });
         }
+      } else {
+        results.push({ channel, success: false, error: `Channel ${channel} not registered` });
       }
     }
 

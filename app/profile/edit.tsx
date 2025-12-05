@@ -13,6 +13,7 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -30,6 +31,33 @@ export default function EditProfileScreen() {
   const [displayName, setDisplayName] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [phone, setPhone] = React.useState('');
+  
+  const formatPhoneNumber = (text: string): string => {
+    const cleaned = text.replace(/\D/g, '');
+    if (cleaned.length === 0) return '';
+    
+    let digits = cleaned;
+    if (cleaned.startsWith('90') && cleaned.length > 2) {
+      digits = cleaned.slice(2);
+    } else if (cleaned.startsWith('0') && cleaned.length > 1) {
+      digits = cleaned.slice(1);
+    }
+    
+    if (digits.length > 10) {
+      digits = digits.slice(0, 10);
+    }
+    
+    if (digits.length === 0) return '+90 ';
+    if (digits.length <= 3) return `+90 ${digits}`;
+    if (digits.length <= 6) return `+90 ${digits.slice(0, 3)} ${digits.slice(3)}`;
+    if (digits.length <= 8) return `+90 ${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
+    return `+90 ${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 8)} ${digits.slice(8, 10)}`;
+  };
+  
+  const handlePhoneChange = (text: string) => {
+    const formatted = formatPhoneNumber(text);
+    setPhone(formatted);
+  };
   const [currentPassword, setCurrentPassword] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
@@ -121,7 +149,7 @@ export default function EditProfileScreen() {
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const response = await authFetch('/users/me');
+      const response = await authFetch('/auth/profile');
       if (response.ok) {
         const data = await response.json();
         if (data.user) {
@@ -182,7 +210,8 @@ export default function EditProfileScreen() {
       };
 
       if (phone) {
-        updates.phone = phone.trim();
+        const cleanedPhone = phone.replace(/\s/g, '').replace('+90', '').replace(/^0+/, '');
+        updates.phone = cleanedPhone ? `+90${cleanedPhone}` : phone.trim();
       }
 
       if (newPassword) {
@@ -284,7 +313,17 @@ export default function EditProfileScreen() {
         >
           {/* Profil Bilgileri */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Kişisel Bilgiler</Text>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionIconWrapper}>
+                <LinearGradient
+                  colors={['#06b6d4', '#0891b2']}
+                  style={styles.sectionIconGradient}
+                >
+                  <Ionicons name="person" size={20} color="#fff" />
+                </LinearGradient>
+              </View>
+              <Text style={styles.sectionTitle}>Kişisel Bilgiler</Text>
+            </View>
             
             <Input
               label="Ad Soyad"
@@ -293,7 +332,7 @@ export default function EditProfileScreen() {
               onChangeText={setDisplayName}
               leftElement={
                 <View style={styles.iconCircle}>
-                  <Ionicons name="person-outline" size={16} color="#64748b" />
+                  <Ionicons name="person-outline" size={18} color="#64748b" />
                 </View>
               }
               style={styles.input}
@@ -317,8 +356,9 @@ export default function EditProfileScreen() {
               label="Telefon (Opsiyonel)"
               placeholder="+90 5XX XXX XX XX"
               value={phone}
-              onChangeText={setPhone}
+              onChangeText={handlePhoneChange}
               keyboardType="phone-pad"
+              maxLength={17}
               leftElement={
                 <View style={styles.iconCircle}>
                   <Ionicons name="call-outline" size={16} color="#64748b" />
@@ -330,10 +370,22 @@ export default function EditProfileScreen() {
 
           {/* Şifre Değiştirme */}
           <View ref={passwordSectionRef} style={styles.section}>
-            <Text style={styles.sectionTitle}>Şifre Değiştir</Text>
-            <Text style={styles.sectionDescription}>
-              Şifrenizi değiştirmek istemiyorsanız bu alanları boş bırakın
-            </Text>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionIconWrapper}>
+                <LinearGradient
+                  colors={['#7c3aed', '#6d28d9']}
+                  style={styles.sectionIconGradient}
+                >
+                  <Ionicons name="lock-closed" size={20} color="#fff" />
+                </LinearGradient>
+              </View>
+              <View style={styles.sectionHeaderText}>
+                <Text style={styles.sectionTitle}>Şifre Değiştir</Text>
+                <Text style={styles.sectionDescription}>
+                  Şifrenizi değiştirmek istemiyorsanız bu alanları boş bırakın
+                </Text>
+              </View>
+            </View>
 
             {!forgotPassword ? (
               <>
@@ -374,10 +426,22 @@ export default function EditProfileScreen() {
             ) : (
               <>
                 <View style={styles.verificationSection}>
-                  <Text style={styles.verificationTitle}>E-posta Doğrulama</Text>
-                  <Text style={styles.verificationDescription}>
-                    {email} adresine gönderilen doğrulama kodunu girin
-                  </Text>
+                  <View style={styles.verificationHeader}>
+                    <View style={styles.verificationIconWrapper}>
+                      <LinearGradient
+                        colors={['#06b6d4', '#0891b2']}
+                        style={styles.verificationIconGradient}
+                      >
+                        <Ionicons name="mail" size={20} color="#fff" />
+                      </LinearGradient>
+                    </View>
+                    <View style={styles.verificationHeaderText}>
+                      <Text style={styles.verificationTitle}>E-posta Doğrulama</Text>
+                      <Text style={styles.verificationDescription}>
+                        <Text style={styles.emailHighlight}>{email}</Text> adresine gönderilen doğrulama kodunu girin
+                      </Text>
+                    </View>
+                  </View>
                   
                   {!codeSent ? (
                     <Button
@@ -409,32 +473,45 @@ export default function EditProfileScreen() {
                     />
                   ) : (
                     <>
-                      <View style={styles.codeInputContainer}>
-                        {[0, 1, 2, 3, 4, 5].map((index) => (
-                          <Input
-                            key={index}
-                            value={codeDigits[index]}
+                      <View style={styles.codeInputWrapper}>
+                        <Text style={styles.codeInputLabel}>Doğrulama Kodu</Text>
+                        <View style={styles.codeInputContainer}>
+                          {[0, 1, 2, 3, 4, 5].map((index) => (
+                            <View
+                              key={index}
+                              style={[
+                                styles.codeDigitContainer,
+                                codeDigits[index] && styles.codeDigitFilled,
+                                codeVerified && codeDigits[index] && styles.codeDigitVerified,
+                                checkingCode && codeDigits[index] && styles.codeDigitChecking
+                              ]}
+                            >
+                              <Text style={styles.codeDigitText}>
+                                {codeDigits[index] || ''}
+                              </Text>
+                            </View>
+                          ))}
+                          <TextInput
+                            style={styles.hiddenCodeInput}
+                            value={verificationCode}
                             onChangeText={(text) => {
-                              const newDigits = [...codeDigits];
-                              newDigits[index] = text.replace(/[^0-9]/g, '').slice(0, 1);
+                              const digits = text.replace(/[^0-9]/g, '').slice(0, 6).split('');
+                              const newDigits: string[] = [...Array(6).fill('')];
+                              digits.forEach((digit, i) => {
+                                newDigits[i] = digit;
+                              });
                               setCodeDigits(newDigits);
-                              const fullCode = newDigits.join('');
-                              setVerificationCode(fullCode);
+                              setVerificationCode(digits.join(''));
                               if (codeVerified) {
                                 setCodeVerified(false);
                               }
-                              
-                              // Auto-focus next input
-                              if (text && index < 5) {
-                                // Focus next input (handled by Input component)
-                              }
                             }}
                             keyboardType="number-pad"
-                            maxLength={1}
-                            style={[styles.codeInput, { width: 50 }]}
-                            textAlign="center"
+                            maxLength={6}
+                            autoFocus={codeSent}
+                            autoComplete="off"
                           />
-                        ))}
+                        </View>
                       </View>
                       {codeVerified && verificationCode.length === 6 && (
                         <View style={styles.verifiedBadge}>
@@ -605,23 +682,50 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   section: {
-    marginBottom: 28,
+    marginBottom: 32,
+    padding: 20,
+    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.1)',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    gap: 12,
+  },
+  sectionIconWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  sectionIconGradient: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionHeaderText: {
+    flex: 1,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '900',
     color: '#fff',
-    marginBottom: 8,
-    letterSpacing: 0.3,
+    marginBottom: 4,
+    letterSpacing: 0.5,
+    fontFamily: 'Poppins-Bold',
   },
   sectionDescription: {
     fontSize: 13,
     color: '#94a3b8',
-    marginBottom: 16,
     lineHeight: 18,
+    fontFamily: 'Poppins-Regular',
   },
   input: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   inputDisabled: {
     opacity: 0.6,
@@ -657,49 +761,127 @@ const styles = StyleSheet.create({
   },
   forgotPasswordText: {
     color: '#06b6d4',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: 'Poppins-SemiBold',
     textDecorationLine: 'underline',
   },
   verificationSection: {
-    marginBottom: 16,
-    padding: 16,
-    backgroundColor: 'rgba(6, 182, 212, 0.1)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(6, 182, 212, 0.2)',
+    marginBottom: 20,
+    padding: 20,
+    backgroundColor: 'rgba(6, 182, 212, 0.08)',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(6, 182, 212, 0.25)',
+    shadowColor: '#06b6d4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
   },
   verificationTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '900',
     color: '#06b6d4',
-    marginBottom: 8,
+    marginBottom: 6,
+    fontFamily: 'Poppins-Bold',
+    letterSpacing: 0.3,
   },
   verificationDescription: {
-    fontSize: 13,
-    color: '#94a3b8',
-    marginBottom: 16,
-    lineHeight: 18,
+    fontSize: 14,
+    color: '#cbd5e1',
+    lineHeight: 20,
+    fontFamily: 'Poppins-Regular',
   },
   sendCodeButton: {
     marginTop: 8,
   },
+  codeInputWrapper: {
+    marginBottom: 20,
+  },
+  codeInputLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 12,
+    fontFamily: 'Poppins-SemiBold',
+  },
   codeInputContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 16,
-    gap: 8,
+    gap: 10,
+    position: 'relative',
   },
-  codeInput: {
+  codeDigitContainer: {
     flex: 1,
-    height: 56,
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
+    height: 68,
+    borderRadius: 18,
+    backgroundColor: 'rgba(100, 116, 139, 0.12)',
     borderWidth: 2,
-    borderColor: 'rgba(6, 182, 212, 0.3)',
+    borderColor: 'rgba(100, 116, 139, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  codeDigitFilled: {
+    borderColor: '#06b6d4',
+    backgroundColor: 'rgba(6, 182, 212, 0.2)',
+    shadowColor: '#06b6d4',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  codeDigitVerified: {
+    borderColor: '#10b981',
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+  },
+  codeDigitChecking: {
+    borderColor: '#06b6d4',
+    backgroundColor: 'rgba(6, 182, 212, 0.15)',
+  },
+  codeDigitText: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#fff',
+    fontFamily: 'Poppins-ExtraBold',
+    letterSpacing: 1,
+  },
+  hiddenCodeInput: {
+    position: 'absolute',
+    opacity: 0,
+    width: 1,
+    height: 1,
+  },
+  verificationHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+    gap: 12,
+  },
+  verificationIconWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  verificationIconGradient: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verificationHeaderText: {
+    flex: 1,
+  },
+  emailHighlight: {
+    color: '#06b6d4',
+    fontWeight: '700',
+    fontFamily: 'Poppins-SemiBold',
   },
   resendCodeLink: {
     marginTop: 8,
@@ -736,6 +918,7 @@ const styles = StyleSheet.create({
   verifiedText: {
     color: '#10b981',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
+    fontFamily: 'Poppins-SemiBold',
   },
 });

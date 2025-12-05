@@ -30,8 +30,7 @@
     "setup:startup": "node scripts/setup-pm2-startup.js",
     "ensure:running": "node scripts/ensure-pm2-running.js",
     "save": "pm2 save",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "test:push": "node test-push.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
     "api",
@@ -57,8 +56,7 @@
     "node-fetch": "^2.6.7",
     "nodemailer": "^6.9.15",
     "pm2": "^5.4.0",
-    "socket.io": "^4.8.1",
-    "stripe": "^17.7.0"
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "nodemon": "^2.0.22"

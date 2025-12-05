@@ -1,13 +1,13 @@
 const db = require('../../config/database');
 const locationService = require('../../services/locationService');
-const { createLogger } = require('../utils/logger');
+const { createLogger } = require('../core/utils/logger');
 
 const logger = createLogger('LocationAnalytics');
 
 class LocationAnalyticsService {
   calculateRouteMetrics(deviceId, startTime = null, endTime = null) {
     const locations = db.getStore(deviceId);
-    if (!Array.isArray(locations) || locations.length < 2) {
+    if (!Array.isArray(locations) || locations.length === 0) {
       return {
         totalDistance: 0,
         averageSpeed: 0,
@@ -19,9 +19,31 @@ class LocationAnalyticsService {
       };
     }
 
-    let filtered = locations;
+    const validLocations = locations.filter(loc => {
+      if (!loc || !loc.coords) return false;
+      const lat = parseFloat(loc.coords.latitude);
+      const lng = parseFloat(loc.coords.longitude);
+      return isFinite(lat) && isFinite(lng) && 
+             lat >= -90 && lat <= 90 && 
+             lng >= -180 && lng <= 180 &&
+             loc.timestamp && typeof loc.timestamp === 'number' && loc.timestamp > 0;
+    });
+
+    if (validLocations.length < 2) {
+      return {
+        totalDistance: 0,
+        averageSpeed: 0,
+        maxSpeed: 0,
+        movingTime: 0,
+        stoppedTime: 0,
+        stops: 0,
+        route: []
+      };
+    }
+
+    let filtered = validLocations;
     if (startTime || endTime) {
-      filtered = locations.filter(loc => {
+      filtered = validLocations.filter(loc => {
         if (startTime && loc.timestamp < startTime) return false;
         if (endTime && loc.timestamp > endTime) return false;
         return true;
@@ -53,7 +75,11 @@ class LocationAnalyticsService {
     for (let i = 1; i < filtered.length; i++) {
       const prev = filtered[i - 1];
       const curr = filtered[i];
+      if (!prev || !prev.coords || !curr || !curr.coords || !prev.timestamp || !curr.timestamp) continue;
+      
       const timeDiff = curr.timestamp - prev.timestamp;
+      if (timeDiff <= 0) continue;
+      
       const distance = locationService.haversineDistance(
         prev.coords.latitude,
         prev.coords.longitude,
@@ -132,9 +158,26 @@ class LocationAnalyticsService {
 
   calculateSpeedZones(deviceId) {
     const locations = db.getStore(deviceId);
-    if (!Array.isArray(locations) || locations.length < 2) {
+    if (!Array.isArray(locations) || locations.length === 0) {
       return {
-        zones: [],
+        zones: {},
+        distribution: {}
+      };
+    }
+
+    const validLocations = locations.filter(loc => {
+      if (!loc || !loc.coords) return false;
+      const lat = parseFloat(loc.coords.latitude);
+      const lng = parseFloat(loc.coords.longitude);
+      return isFinite(lat) && isFinite(lng) && 
+             lat >= -90 && lat <= 90 && 
+             lng >= -180 && lng <= 180 &&
+             loc.timestamp && typeof loc.timestamp === 'number' && loc.timestamp > 0;
+    });
+
+    if (validLocations.length < 2) {
+      return {
+        zones: {},
         distribution: {}
       };
     }
@@ -147,11 +190,11 @@ class LocationAnalyticsService {
       veryFast: 0
     };
 
-    for (let i = 1; i < locations.length; i++) {
-      const prev = locations[i - 1];
-      const curr = locations[i];
+    for (let i = 1; i < validLocations.length; i++) {
+      const prev = validLocations[i - 1];
+      const curr = validLocations[i];
       
-      if (!prev.coords || !curr.coords || !prev.timestamp || !curr.timestamp) continue;
+      if (!prev || !prev.coords || !curr || !curr.coords || !prev.timestamp || !curr.timestamp) continue;
       
       const distance = locationService.haversineDistance(
         prev.coords.latitude,
@@ -172,15 +215,16 @@ class LocationAnalyticsService {
       else zones.veryFast++;
     }
 
+    const total = zones.stopped + zones.slow + zones.normal + zones.fast + zones.veryFast;
     return {
       zones,
-      distribution: {
-        stopped: (zones.stopped / (locations.length - 1)) * 100,
-        slow: (zones.slow / (locations.length - 1)) * 100,
-        normal: (zones.normal / (locations.length - 1)) * 100,
-        fast: (zones.fast / (locations.length - 1)) * 100,
-        veryFast: (zones.veryFast / (locations.length - 1)) * 100
-      }
+      distribution: total > 0 ? {
+        stopped: (zones.stopped / total) * 100,
+        slow: (zones.slow / total) * 100,
+        normal: (zones.normal / total) * 100,
+        fast: (zones.fast / total) * 100,
+        veryFast: (zones.veryFast / total) * 100
+      } : {}
     };
   }
 
@@ -190,9 +234,22 @@ class LocationAnalyticsService {
       return [];
     }
 
+    const validLocations = locations.filter(loc => {
+      if (!loc || !loc.coords) return false;
+      const lat = parseFloat(loc.coords.latitude);
+      const lng = parseFloat(loc.coords.longitude);
+      return isFinite(lat) && isFinite(lng) && 
+             lat >= -90 && lat <= 90 && 
+             lng >= -180 && lng <= 180;
+    });
+
+    if (validLocations.length === 0) {
+      return [];
+    }
+
     const grid = new Map();
 
-    for (const location of locations) {
+    for (const location of validLocations) {
       const gridLat = Math.floor(location.coords.latitude / gridSize) * gridSize;
       const gridLng = Math.floor(location.coords.longitude / gridSize) * gridSize;
       const key = `${gridLat},${gridLng}`;
@@ -207,7 +264,7 @@ class LocationAnalyticsService {
         lat,
         lng,
         intensity: count,
-        weight: count / locations.length
+        weight: count / validLocations.length
       });
     }
 
@@ -216,13 +273,27 @@ class LocationAnalyticsService {
 
   predictNextLocation(deviceId, lookbackMinutes = 5) {
     const locations = db.getStore(deviceId);
-    if (!Array.isArray(locations) || locations.length < 3) {
+    if (!Array.isArray(locations) || locations.length === 0) {
+      return null;
+    }
+
+    const validLocations = locations.filter(loc => {
+      if (!loc || !loc.coords) return false;
+      const lat = parseFloat(loc.coords.latitude);
+      const lng = parseFloat(loc.coords.longitude);
+      return isFinite(lat) && isFinite(lng) && 
+             lat >= -90 && lat <= 90 && 
+             lng >= -180 && lng <= 180 &&
+             loc.timestamp && typeof loc.timestamp === 'number' && loc.timestamp > 0;
+    });
+
+    if (validLocations.length < 3) {
       return null;
     }
 
     const now = Date.now();
     const cutoff = now - (lookbackMinutes * 60 * 1000);
-    const recent = locations.filter(loc => loc.timestamp >= cutoff);
+    const recent = validLocations.filter(loc => loc.timestamp >= cutoff);
 
     if (recent.length < 3) return null;
 
@@ -261,11 +332,31 @@ class LocationAnalyticsService {
         accuracy: 0,
         consistency: 0,
         frequency: 0,
-        issues: []
+        issues: ['Yetersiz konum verisi']
       };
     }
 
-    const recent = locations.slice(-100);
+    const validLocations = locations.filter(loc => {
+      if (!loc || !loc.coords) return false;
+      const lat = parseFloat(loc.coords.latitude);
+      const lng = parseFloat(loc.coords.longitude);
+      return isFinite(lat) && isFinite(lng) && 
+             lat >= -90 && lat <= 90 && 
+             lng >= -180 && lng <= 180 &&
+             loc.timestamp && typeof loc.timestamp === 'number' && loc.timestamp > 0;
+    });
+
+    if (validLocations.length === 0) {
+      return {
+        score: 0,
+        accuracy: 0,
+        consistency: 0,
+        frequency: 0,
+        issues: ['Geçerli konum verisi yok']
+      };
+    }
+
+    const recent = validLocations.slice(-100);
     let totalAccuracy = 0;
     let accuracyCount = 0;
     let gaps = 0;

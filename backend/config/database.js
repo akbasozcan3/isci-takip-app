@@ -1,5 +1,6 @@
 // Database Configuration
 const fs = require('fs');
+const fsPromises = require('fs').promises;
 const path = require('path');
 
 const DATA_FILE = path.join(__dirname, '../data.json');
@@ -8,6 +9,8 @@ class Database {
   constructor() {
     this.data = this.loadData();
     this.saveTimeout = null;
+    this.saving = false;
+    this.saveQueue = [];
   }
 
   getDefaultData() {
@@ -26,53 +29,105 @@ class Database {
       receipts: {},
       groups: {},
       groupMembers: {},
-      groupRequests: {}
+      groupRequests: {},
+      locationShares: {},
+      liveLocations: {},
+      familyMembers: {},
+      deliveries: {},
+      routes: {},
+      pageShares: {}
     };
   }
 
   loadData() {
     try {
       if (fs.existsSync(DATA_FILE)) {
+        const stats = fs.statSync(DATA_FILE);
+        if (stats.size > 100 * 1024 * 1024) {
+          console.warn(`[DB] Large database file detected: ${(stats.size / 1024 / 1024).toFixed(2)}MB`);
+        }
+        
         const content = fs.readFileSync(DATA_FILE, 'utf8');
+        if (!content || content.trim().length === 0) {
+          return this.getDefaultData();
+        }
+        
         const parsed = JSON.parse(content);
         const defaultData = this.getDefaultData();
         
-        if (!parsed.billingEvents) parsed.billingEvents = {};
-        if (!parsed.receipts) parsed.receipts = {};
-        if (!parsed.notifications) parsed.notifications = {};
-        if (!parsed.groups) parsed.groups = {};
-        if (!parsed.groupMembers) parsed.groupMembers = {};
-        if (!parsed.groupRequests) parsed.groupRequests = {};
-        if (!parsed.articles) parsed.articles = {};
-        if (!parsed.store) parsed.store = {};
-        if (!parsed.emailVerifications) parsed.emailVerifications = {};
-        if (!parsed.emailResets) parsed.emailResets = {};
-        if (!parsed.passwordResetTokens) parsed.passwordResetTokens = {};
-        if (!parsed.resendMeta) parsed.resendMeta = {};
+        const requiredFields = [
+          'billingEvents', 'receipts', 'notifications', 'groups', 
+          'groupMembers', 'groupRequests', 'articles', 'store',
+          'emailVerifications', 'emailResets', 'passwordResetTokens',
+          'resendMeta', 'locationShares', 'liveLocations',
+          'familyMembers', 'deliveries', 'routes', 'pageShares'
+        ];
+        
+        for (const field of requiredFields) {
+          if (!parsed[field]) {
+            parsed[field] = {};
+          }
+        }
         
         return { ...defaultData, ...parsed };
       }
     } catch (error) {
       console.error('Error loading database:', error);
+      if (fs.existsSync(DATA_FILE + '.backup')) {
+        console.log('[DB] Attempting to load from backup...');
+        try {
+          const backupContent = fs.readFileSync(DATA_FILE + '.backup', 'utf8');
+          const parsed = JSON.parse(backupContent);
+          return { ...this.getDefaultData(), ...parsed };
+        } catch (backupError) {
+          console.error('[DB] Backup load also failed:', backupError);
+        }
+      }
     }
     
     return this.getDefaultData();
   }
 
-  save() {
+  async save() {
+    if (this.saving) {
+      return Promise.resolve();
+    }
+    
+    this.saving = true;
+    const dataToSave = JSON.stringify(this.data, null, 2);
+    const tempFile = DATA_FILE + '.tmp';
+    const backupFile = DATA_FILE + '.backup';
+    
     try {
-      const tempFile = DATA_FILE + '.tmp';
-      fs.writeFileSync(tempFile, JSON.stringify(this.data, null, 2), 'utf8');
-      fs.renameSync(tempFile, DATA_FILE);
+      if (fs.existsSync(DATA_FILE)) {
+        try {
+          await fsPromises.copyFile(DATA_FILE, backupFile);
+        } catch (err) {
+          console.warn('[DB] Could not create backup:', err.message);
+        }
+      }
+      
+      await fsPromises.writeFile(tempFile, dataToSave, 'utf8');
+      await fsPromises.rename(tempFile, DATA_FILE);
       
       if (process.env.NODE_ENV === 'production') {
-        console.log(`[DB] Saved at ${new Date().toISOString()}`);
+        const stats = await fsPromises.stat(DATA_FILE);
+        console.log(`[DB] Saved at ${new Date().toISOString()} (${(stats.size / 1024).toFixed(2)}KB)`);
       }
+      
+      this.saving = false;
+      return Promise.resolve();
     } catch (error) {
-      console.error('Error saving database:', error);
-      if (fs.existsSync(DATA_FILE + '.tmp')) {
-        fs.unlinkSync(DATA_FILE + '.tmp');
+      this.saving = false;
+      console.error('[DB] Error saving database:', error);
+      try {
+        if (fs.existsSync(tempFile)) {
+          await fsPromises.unlink(tempFile);
+        }
+      } catch (unlinkErr) {
+        console.error('[DB] Error removing temp file:', unlinkErr);
       }
+      throw error;
     }
   }
 
@@ -81,7 +136,9 @@ class Database {
       clearTimeout(this.saveTimeout);
     }
     this.saveTimeout = setTimeout(() => {
-      this.save();
+      this.save().catch(err => {
+        console.error('[DB] Scheduled save error:', err);
+      });
     }, 1000);
   }
 

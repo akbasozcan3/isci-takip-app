@@ -3,7 +3,6 @@ const db = require('../config/database');
 
 let Iyzipay;
 let iyzipay;
-let stripe;
 
 try {
   Iyzipay = require('iyzipay');
@@ -30,30 +29,21 @@ try {
   iyzipay = null;
 }
 
-try {
-  const Stripe = require('stripe');
-  const stripeKey = process.env.STRIPE_SECRET_KEY || process.env.STRIPE_TEST_SECRET_KEY || 'sk_test_xxxxxxxx';
-  if (stripeKey !== 'sk_test_xxxxxxxx') {
-    stripe = new Stripe(stripeKey);
-    console.log('[PaymentGateway] Stripe SDK yüklendi');
-  } else {
-    stripe = null;
-  }
-} catch (err) {
-  console.warn('[PaymentGateway] Stripe SDK yüklenemedi:', err.message);
-  stripe = null;
-}
-
 class PaymentGatewayService {
   constructor() {
     this.activeGateway = this.detectActiveGateway();
   }
 
   detectActiveGateway() {
-    if (stripe && process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY !== 'sk_test_xxxxxxxx') {
-      return 'stripe';
-    }
-    if (iyzipay && process.env.IYZICO_API_KEY && process.env.IYZICO_API_KEY !== 'sandbox-xxxxxxxx') {
+    const iyzicoApiKey = process.env.IYZICO_API_KEY || '';
+    const iyzicoSecretKey = process.env.IYZICO_SECRET_KEY || '';
+    const hasValidIyzico = iyzipay && 
+      iyzicoApiKey !== 'sandbox-xxxxxxxx' && 
+      iyzicoApiKey !== 'YOUR_IYZICO_API_KEY_HERE' &&
+      iyzicoSecretKey !== 'sandbox-xxxxxxxx' &&
+      iyzicoSecretKey !== 'YOUR_IYZICO_SECRET_KEY_HERE';
+    
+    if (hasValidIyzico) {
       return 'iyzico';
     }
     return 'mock';
@@ -61,65 +51,10 @@ class PaymentGatewayService {
 
   async processPayment(transaction, cardData, userData) {
     switch (this.activeGateway) {
-      case 'stripe':
-        return await this.processStripe(transaction, cardData, userData);
       case 'iyzico':
         return await this.processIyzico(transaction, cardData, userData);
       default:
         return await this.processMock(transaction, cardData, userData);
-    }
-  }
-
-  async processStripe(transaction, cardData, userData) {
-    if (!stripe) {
-      throw new Error('Stripe gateway kullanılamıyor');
-    }
-
-    try {
-      const paymentMethod = await stripe.paymentMethods.create({
-        type: 'card',
-        card: {
-          number: cardData.cardNumber,
-          exp_month: parseInt(cardData.expiryMonth, 10),
-          exp_year: parseInt(cardData.expiryYear, 10),
-          cvc: cardData.cvc
-        },
-        billing_details: {
-          name: cardData.cardName,
-          email: userData.email
-        }
-      });
-
-      const amountInCents = Math.round(transaction.amount * 100);
-      
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: amountInCents,
-        currency: transaction.currency.toLowerCase(),
-        payment_method: paymentMethod.id,
-        confirm: true,
-        description: `Subscription: ${transaction.planId}`,
-        metadata: {
-          userId: transaction.userId,
-          planId: transaction.planId,
-          transactionId: transaction.id
-        }
-      });
-
-      if (paymentIntent.status === 'succeeded') {
-        return {
-          success: true,
-          paymentId: paymentIntent.id,
-          gateway: 'stripe',
-          cardLast4: paymentMethod.card.last4,
-          cardBrand: paymentMethod.card.brand,
-          gatewayTransactionId: paymentIntent.id
-        };
-      }
-
-      throw new Error(`Ödeme başarısız: ${paymentIntent.status}`);
-    } catch (error) {
-      console.error('[PaymentGateway] Stripe error:', error);
-      throw new Error(error.message || 'Stripe ödeme işlemi başarısız');
     }
   }
 
@@ -216,22 +151,26 @@ class PaymentGatewayService {
   async processMock(transaction, cardData, userData) {
     const cleanedCardNumber = cardData.cardNumber.replace(/\s/g, '');
     
-    if (cleanedCardNumber === '4000000000000002') {
-      await new Promise(resolve => setTimeout(resolve, 800));
-      throw new Error('Kart reddedildi. Lütfen farklı bir kart deneyin.');
+    const testCards = {
+      '4000000000000002': { error: 'Kart reddedildi. Lütfen farklı bir kart deneyin.', delay: 800 },
+      '4000000000009995': { error: 'Yetersiz bakiye. Lütfen farklı bir kart deneyin.', delay: 800 },
+      '4000000000000119': { error: 'Kart limiti aşıldı.', delay: 800 },
+      '4000000000000127': { error: 'Kartın son kullanma tarihi geçmiş.', delay: 800 },
+      '4000000000000069': { error: 'CVV hatalı.', delay: 800 },
+      '4000000000000259': { error: '3D Secure doğrulaması başarısız.', delay: 1200 }
+    };
+
+    const testCard = testCards[cleanedCardNumber];
+    if (testCard) {
+      await new Promise(resolve => setTimeout(resolve, testCard.delay));
+      throw new Error(testCard.error);
     }
 
-    if (cleanedCardNumber === '4000000000009995') {
-      await new Promise(resolve => setTimeout(resolve, 800));
-      throw new Error('Yetersiz bakiye. Lütfen farklı bir kart deneyin.');
+    if (cleanedCardNumber.startsWith('4242424242424242') || cleanedCardNumber.startsWith('5555555555554444')) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    } else {
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
-
-    if (cleanedCardNumber === '4000000000000119') {
-      await new Promise(resolve => setTimeout(resolve, 800));
-      throw new Error('Kart limiti aşıldı.');
-    }
-
-    await new Promise(resolve => setTimeout(resolve, 2000));
 
     const cardBrand = this.detectCardBrand(cleanedCardNumber);
     const paymentId = 'MOCK_' + crypto.randomBytes(12).toString('hex').toUpperCase();

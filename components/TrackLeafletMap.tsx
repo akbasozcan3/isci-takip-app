@@ -14,6 +14,9 @@ interface TrackLeafletMapProps {
     heading?: number | null;
     speed?: number | null;
     isOnline?: boolean;
+    activity?: string;
+    activityIcon?: string;
+    isVehicle?: boolean;
   }>;
   groupCenter?: { lat: number; lng: number } | null;
   accuracy?: number | null;
@@ -87,12 +90,34 @@ export default function TrackLeafletMap({
     <script>
       const map = L.map('map', { zoomControl: true }).setView([${defaultCenter.lat}, ${defaultCenter.lng}], ${isTurkeyCenter ? '6' : '15'});
       
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { 
-        maxZoom: 20, 
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
+        maxZoom: 19, 
         minZoom: 4,
-        subdomains: 'abcd',
-        attribution: '© OpenStreetMap contributors | © CARTO' 
+        subdomains: ['a', 'b', 'c'],
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> katkıda bulunanlar',
+        tileSize: 256,
+        zoomOffset: 0
       }).addTo(map);
+      
+      L.control.layers({
+        'Standart': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
+          maxZoom: 19, 
+          minZoom: 4,
+          subdomains: ['a', 'b', 'c'],
+          attribution: '© OpenStreetMap'
+        }),
+        'Koyu Tema': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { 
+          maxZoom: 19, 
+          minZoom: 4,
+          subdomains: 'abcd',
+          attribution: '© OpenStreetMap | © CARTO'
+        }),
+        'Uydu': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 19,
+          minZoom: 4,
+          attribution: '© Esri'
+        })
+      }, {}, { position: 'topright' }).addTo(map);
 
       if (${isTurkeyCenter ? 'true' : 'false'}) {
         map.fitBounds([[36.0, 26.0], [42.0, 45.0]], { padding: [20, 20] });
@@ -134,31 +159,54 @@ export default function TrackLeafletMap({
       const markers = ${JSON.stringify(allMarkers)};
       const markerLayers = {};
       
+      const activityIcons = {
+        'home': '🏠',
+        'stationary': '📍',
+        'walking': '🚶',
+        'cycling': '🚴',
+        'motorcycle': '🏍️',
+        'driving': '🚗'
+      };
+      
       markers.forEach(function(m) {
         const color = m.color || (m.isOnline ? '#10b981' : '#64748b');
         const heading = m.heading || null;
         const speed = m.speed || null;
+        const activityIcon = m.activityIcon || (m.activity ? activityIcons[m.activity] : null) || '📍';
+        const isUserMarker = m.id === 'user';
         
         let iconHtml = '';
         if (m.id === 'group-center') {
           iconHtml = '<div style="background: #ef4444; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.4);"><span style="color: #fff; font-size: 18px;">🏁</span></div>';
+        } else if (m.activity && (isUserMarker || m.activityIcon)) {
+          const iconToUse = m.activityIcon || activityIcon;
+          iconHtml = '<div style="background: ' + color + '; width: ' + (isUserMarker ? '42' : '36') + 'px; height: ' + (isUserMarker ? '42' : '36') + 'px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.6);' + (heading ? ' transform: rotate(' + heading + 'deg);' : '') + '" class="pulse-dot"><span style="color: #fff; font-size: ' + (isUserMarker ? '24' : '20') + 'px; font-weight: bold;">' + iconToUse + '</span></div>';
         } else if (heading !== null) {
           iconHtml = '<div style="background: ' + color + '; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.4); transform: rotate(' + heading + 'deg);"><span style="color: #fff; font-size: 20px;">🧭</span></div>';
         } else {
-          iconHtml = '<div style="background: ' + color + '; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.4);" class="pulse-dot"><span style="color: #fff; font-size: 18px;">📍</span></div>';
+          iconHtml = '<div style="background: ' + color + '; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.4);" class="pulse-dot"><span style="color: #fff; font-size: 18px;">' + activityIcon + '</span></div>';
         }
         
         const icon = L.divIcon({
-          html: iconHtml + (speed ? '<div class="speed-badge">' + Math.round(speed) + '</div>' : ''),
-          className: 'custom-marker',
-          iconSize: [40, speed ? 50 : 40],
-          iconAnchor: [20, speed ? 45 : 20]
+          html: iconHtml + (speed ? '<div class="speed-badge">' + Math.round(speed) + ' km/h</div>' : ''),
+          className: 'custom-marker' + (isUserMarker ? ' pulse-dot' : ''),
+          iconSize: isUserMarker ? [46, speed ? 56 : 46] : [40, speed ? 50 : 40],
+          iconAnchor: isUserMarker ? [23, speed ? 53 : 23] : [20, speed ? 45 : 20]
         });
         
         const marker = L.marker([m.lat, m.lng], { icon: icon });
         
         if (m.title) {
-          marker.bindTooltip('<div class="marker-title">' + m.title + '</div>', { permanent: false });
+          const activityText = m.activity ? 
+            (m.activity === 'home' ? 'Ev' :
+             m.activity === 'stationary' ? 'Duruyor' : 
+             m.activity === 'walking' ? 'Yürüyor' : 
+             m.activity === 'cycling' ? 'Bisiklet' : 
+             m.activity === 'motorcycle' ? 'Motor' : 
+             m.activity === 'driving' ? 'Araba' : m.activity) : '';
+          const popupContent = '<div class="marker-title">' + m.title + '</div>' + 
+            (activityText ? '<div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Aktivite: ' + activityText + '</div>' : '');
+          marker.bindTooltip(popupContent, { permanent: false });
         }
         
         marker.addTo(map);

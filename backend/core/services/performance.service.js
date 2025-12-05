@@ -6,7 +6,9 @@ class PerformanceService {
     this.metrics = {
       cpu: {
         usage: 0,
-        loadAverage: [0, 0, 0]
+        loadAverage: [0, 0, 0],
+        user: 0,
+        system: 0
       },
       memory: {
         heapUsed: 0,
@@ -15,22 +17,34 @@ class PerformanceService {
         rss: 0,
         available: 0,
         total: 0,
-        usagePercent: 0
+        usagePercent: 0,
+        heapLimit: 0
       },
       eventLoop: {
         delay: 0,
-        utilization: 0
+        utilization: 0,
+        lag: 0
       },
       gc: {
         count: 0,
-        duration: 0
+        duration: 0,
+        major: 0,
+        minor: 0
       },
       requests: {
         active: 0,
-        queued: 0
+        queued: 0,
+        total: 0,
+        errors: 0
+      },
+      sockets: {
+        connected: 0,
+        rooms: 0
       }
     };
     
+    this.requestHistory = [];
+    this.maxHistorySize = 1000;
     this.startMonitoring();
   }
 
@@ -44,6 +58,7 @@ class PerformanceService {
     const memUsage = process.memoryUsage();
     const totalMem = os.totalmem();
     const freeMem = os.freemem();
+    const cpuUsage = process.cpuUsage();
     
     this.metrics.memory = {
       heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
@@ -52,12 +67,15 @@ class PerformanceService {
       rss: Math.round(memUsage.rss / 1024 / 1024),
       available: Math.round(freeMem / 1024 / 1024),
       total: Math.round(totalMem / 1024 / 1024),
-      usagePercent: Math.round(((totalMem - freeMem) / totalMem) * 100)
+      usagePercent: Math.round(((totalMem - freeMem) / totalMem) * 100),
+      heapLimit: v8.getHeapStatistics ? Math.round(v8.getHeapStatistics().heap_size_limit / 1024 / 1024) : 0
     };
 
     this.metrics.cpu = {
-      usage: process.cpuUsage(),
-      loadAverage: os.loadavg()
+      usage: cpuUsage,
+      loadAverage: os.loadavg(),
+      user: Math.round(cpuUsage.user / 1000),
+      system: Math.round(cpuUsage.system / 1000)
     };
   }
 
@@ -66,8 +84,14 @@ class PerformanceService {
       const heapStats = v8.getHeapStatistics();
       this.metrics.gc = {
         count: heapStats.number_of_native_contexts || 0,
-        duration: 0
+        duration: 0,
+        major: 0,
+        minor: 0
       };
+    }
+    
+    if (process.setMaxListeners) {
+      process.setMaxListeners(0);
     }
   }
 
@@ -126,12 +150,30 @@ class PerformanceService {
 
   recordRequestStart() {
     this.metrics.requests.active++;
+    this.metrics.requests.total++;
   }
 
-  recordRequestEnd() {
+  recordRequestEnd(success = true) {
     if (this.metrics.requests.active > 0) {
       this.metrics.requests.active--;
     }
+    if (!success) {
+      this.metrics.requests.errors++;
+    }
+  }
+
+  recordSocketConnection() {
+    this.metrics.sockets.connected++;
+  }
+
+  recordSocketDisconnection() {
+    if (this.metrics.sockets.connected > 0) {
+      this.metrics.sockets.connected--;
+    }
+  }
+
+  setSocketRooms(count) {
+    this.metrics.sockets.rooms = count;
   }
 }
 

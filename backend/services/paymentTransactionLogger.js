@@ -41,12 +41,14 @@ class PaymentTransactionLogger {
     this.log('info', transactionId, `Transaction ${event}`, data);
   }
 
-  logPaymentStart(transactionId, userId, planId, amount) {
+  logPaymentStart(status, userId, planId, amount) {
+    const transactionId = typeof status === 'string' && status !== 'pending' ? status : 'pending';
     this.logTransaction(transactionId, 'started', {
       userId,
       planId,
       amount,
-      event: 'payment_started'
+      event: 'payment_started',
+      status: typeof status === 'string' ? status : 'pending'
     });
   }
 

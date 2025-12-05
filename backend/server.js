@@ -27,7 +27,12 @@ class ServerApp {
       cors: {
         origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*',
         methods: ['GET', 'POST']
-      }
+      },
+      transports: ['websocket', 'polling'],
+      pingTimeout: 60000,
+      pingInterval: 25000,
+      maxHttpBufferSize: 1e6,
+      allowEIO3: true
     });
     
     this.port = process.env.PORT || 4000;
@@ -39,8 +44,8 @@ class ServerApp {
     this.setupMiddleware();
     this.setupRoutes();
     this.setupSocketIO();
-    this.setupErrorHandling();
     this.setupBackgroundJobs();
+    this.setupErrorHandling();
   }
 
   setupMiddleware() {
@@ -84,6 +89,18 @@ class ServerApp {
       next();
     });
 
+    const compression = require('compression');
+    this.app.use(compression({
+      level: 6,
+      threshold: 1024,
+      filter: (req, res) => {
+        if (req.headers['x-no-compression']) {
+          return false;
+        }
+        return compression.filter(req, res);
+      }
+    }));
+
     const requestLogger = require('./core/middleware/requestLogger');
     this.app.use(requestLogger);
 
@@ -118,45 +135,128 @@ class ServerApp {
   }
 
   setupSocketIO() {
+    // Socket.IO authentication middleware
+    this.io.use((socket, next) => {
+      const token = socket.handshake.auth?.token || 
+                    socket.handshake.headers?.authorization?.replace('Bearer ', '') ||
+                    socket.handshake.query?.token;
+      
+      if (!token) {
+        console.warn(`[Socket.IO] Unauthenticated connection attempt from ${socket.handshake.address}`);
+        // Allow connection but mark as unauthenticated - we'll check on sensitive operations
+        socket.data.authenticated = false;
+        return next();
+      }
+
+      // Verify token
+      const TokenModel = require('./core/database/models/token.model');
+      const UserModel = require('./core/database/models/user.model');
+      const tokenData = TokenModel.get(token);
+      
+      if (!tokenData) {
+        console.warn(`[Socket.IO] Invalid token from ${socket.handshake.address}`);
+        socket.data.authenticated = false;
+        return next();
+      }
+
+      const user = UserModel.findById(tokenData.userId);
+      if (!user) {
+        console.warn(`[Socket.IO] User not found for token from ${socket.handshake.address}`);
+        socket.data.authenticated = false;
+        return next();
+      }
+
+      socket.data.authenticated = true;
+      socket.data.userId = user.id;
+      socket.data.user = user;
+      console.log(`[Socket.IO] Authenticated connection: ${socket.id} (User: ${user.email || user.id})`);
+      next();
+    });
+
+    const performanceService = require('./core/services/performance.service');
+    
     this.io.on('connection', (socket) => {
-      console.log(`Client connected: ${socket.id}`);
+      performanceService.recordSocketConnection();
+      
+      if (!socket.data.authenticated) {
+        console.log(`[Socket.IO] Unauthenticated client connected: ${socket.id}`);
+      } else {
+        console.log(`[Socket.IO] Authenticated client connected: ${socket.id} (User: ${socket.data.userId})`);
+      }
+      
+      socket.on('disconnect', () => {
+        performanceService.recordSocketDisconnection();
+        console.log(`Client disconnected: ${socket.id}`);
+      });
       
       socket.on('join-device', (deviceId) => {
+        if (!socket.data.authenticated) {
+          console.warn(`[Socket.IO] Unauthenticated join-device attempt from ${socket.id}`);
+          return;
+        }
         socket.join(`device-${deviceId}`);
         console.log(`Socket ${socket.id} joined device room: ${deviceId}`);
       });
 
       socket.on('join_group', (groupId) => {
+        if (!socket.data.authenticated) {
+          console.warn(`[Socket.IO] Unauthenticated join_group attempt from ${socket.id}`);
+          return;
+        }
         socket.join(`group-${groupId}`);
         console.log(`Socket ${socket.id} joined group: ${groupId}`);
       });
       
       socket.on('location-update', (data) => {
-        const { deviceId, coords, timestamp, workerId } = data;
-        const finalDeviceId = deviceId || workerId;
+        if (!socket.data.authenticated) {
+          return;
+        }
         
-        if (finalDeviceId && coords && coords.latitude !== undefined && coords.longitude !== undefined) {
-          const lat = parseFloat(coords.latitude);
-          const lng = parseFloat(coords.longitude);
+        const { deviceId, coords, timestamp, workerId } = data;
+        const finalDeviceId = deviceId || workerId || socket.data.userId;
+        
+        if (!finalDeviceId || !coords || coords.latitude === undefined || coords.longitude === undefined) {
+          return;
+        }
+        
+        const lat = parseFloat(coords.latitude);
+        const lng = parseFloat(coords.longitude);
 
-          if (!Number.isFinite(lat) || !Number.isFinite(lng) || 
-              lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-            return;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || 
+            lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+          return;
+        }
+
+        const locationBatchService = require('./services/locationBatchService');
+        locationBatchService.addToBatch(finalDeviceId, {
+          timestamp: timestamp || Date.now(),
+          coords: {
+            latitude: lat,
+            longitude: lng,
+            accuracy: coords.accuracy ? parseFloat(coords.accuracy) : null,
+            heading: coords.heading ? parseFloat(coords.heading) : null,
+            speed: coords.speed ? parseFloat(coords.speed) : null
           }
+        });
 
-          const locationBatchService = require('./services/locationBatchService');
-          locationBatchService.addToBatch(finalDeviceId, {
-            timestamp: timestamp || Date.now(),
-            coords: {
-              latitude: lat,
-              longitude: lng,
-              accuracy: coords.accuracy ? parseFloat(coords.accuracy) : null,
-              heading: coords.heading ? parseFloat(coords.heading) : null,
-              speed: coords.speed ? parseFloat(coords.speed) : null
+        setImmediate(() => {
+          try {
+            const db = require('./config/database');
+            const groupDistanceService = require('./services/groupDistanceService');
+            const userGroups = db.getUserGroups(finalDeviceId);
+            
+            for (const group of userGroups) {
+              groupDistanceService.checkMemberDistance(group.id, finalDeviceId, lat, lng)
+                .catch(() => {});
             }
-          });
+          } catch (error) {
+            console.error('[Socket.IO] Failed to check group distances:', error);
+          }
+        });
 
-          socket.to(`device-${finalDeviceId}`).emit('location-updated', {
+        const room = `device-${finalDeviceId}`;
+        if (this.io.sockets.adapter.rooms.has(room)) {
+          socket.to(room).emit('location-updated', {
             deviceId: finalDeviceId,
             coords: {
               latitude: lat,
@@ -170,32 +270,48 @@ class ServerApp {
         }
       });
       socket.on('group_location_update', (data) => {
-        const { userId, groupId, lat, lng, heading, accuracy, timestamp } = data;
+        if (!socket.data.authenticated) {
+          return;
+        }
         
-        if (userId && groupId && lat !== undefined && lng !== undefined) {
-          const latitude = parseFloat(lat);
-          const longitude = parseFloat(lng);
+        const { userId, groupId, lat, lng, heading, accuracy, timestamp } = data;
+        const finalUserId = userId || socket.data.userId;
+        
+        if (!groupId || lat === undefined || lng === undefined) {
+          return;
+        }
+        
+        const latitude = parseFloat(lat);
+        const longitude = parseFloat(lng);
 
-          if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || 
-              latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-            return;
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || 
+            latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+          return;
+        }
+
+        const locationBatchService = require('./services/locationBatchService');
+        locationBatchService.addToBatch(finalUserId, {
+          timestamp: timestamp || Date.now(),
+          coords: {
+            latitude,
+            longitude,
+            accuracy: accuracy ? parseFloat(accuracy) : null,
+            heading: heading ? parseFloat(heading) : null,
+            speed: null
           }
+        });
 
-          const locationBatchService = require('./services/locationBatchService');
-          locationBatchService.addToBatch(userId, {
-            timestamp: timestamp || Date.now(),
-            coords: {
-              latitude,
-              longitude,
-              accuracy: accuracy ? parseFloat(accuracy) : null,
-              heading: heading ? parseFloat(heading) : null,
-              speed: null
-            }
-          });
+        setImmediate(() => {
+          const groupDistanceService = require('./services/groupDistanceService');
+          groupDistanceService.checkMemberDistance(groupId, finalUserId, latitude, longitude)
+            .catch(() => {});
+        });
 
-          this.io.to(`group-${groupId}`).emit('location_update', {
+        const room = `group-${groupId}`;
+        if (this.io.sockets.adapter.rooms.has(room)) {
+          this.io.to(room).emit('location_update', {
             groupId,
-            userId,
+            userId: finalUserId,
             lat: latitude,
             lng: longitude,
             heading: heading ? parseFloat(heading) : null,
@@ -203,10 +319,6 @@ class ServerApp {
             timestamp: timestamp || Date.now()
           });
         }
-      });
-      
-      socket.on('disconnect', () => {
-        console.log(`Client disconnected: ${socket.id}`);
       });
     });
   }
@@ -243,6 +355,11 @@ class ServerApp {
 
         console.log('[SHUTDOWN] Closing Socket.IO server...');
         this.io.close();
+        
+        const locationBatchService = require('./services/locationBatchService');
+        if (locationBatchService.destroy) {
+          await locationBatchService.destroy();
+        }
 
         console.log('[SHUTDOWN] Running shutdown handlers...');
         for (const handler of this.shutdownHandlers) {
@@ -256,7 +373,7 @@ class ServerApp {
         console.log('[SHUTDOWN] Saving database...');
         const db = require('./config/database');
         if (db.save && typeof db.save === 'function') {
-          db.save();
+          await db.save();
         }
 
         clearTimeout(shutdownTimeout);
@@ -285,6 +402,15 @@ class ServerApp {
   }
 
   setupBackgroundJobs() {
+    const scheduledTasksService = require('./services/scheduledTasksService');
+    scheduledTasksService.start();
+    
+    const groupDistanceService = require('./services/groupDistanceService');
+    groupDistanceService.setSocketIO(this.io);
+    
+    this.addShutdownHandler(async () => {
+      scheduledTasksService.stop();
+    });
   }
 
   addShutdownHandler(handler) {
@@ -314,6 +440,32 @@ class ServerApp {
         console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
         console.log(`⚡ Cache: Active`);
         console.log(`📈 Metrics: Active`);
+        
+        const onesignalService = require('./services/onesignalService');
+        const hasAppId = onesignalService.appId && onesignalService.appId !== 'YOUR_ONESIGNAL_APP_ID';
+        const hasApiKey = onesignalService.apiKey && onesignalService.apiKey !== 'YOUR_ONESIGNAL_REST_API_KEY';
+        if (hasAppId && hasApiKey) {
+          console.log(`🔔 OneSignal: Active (App ID: ${onesignalService.appId.substring(0, 8)}...)`);
+        } else {
+          console.log(`⚠️  OneSignal: Configuration incomplete`);
+        }
+        
+        const paymentGateway = require('./services/paymentGateway.service');
+        const hasIyzico = process.env.IYZICO_API_KEY && 
+                          process.env.IYZICO_API_KEY !== 'sandbox-xxxxxxxx' &&
+                          process.env.IYZICO_API_KEY !== 'YOUR_IYZICO_API_KEY_HERE' &&
+                          process.env.IYZICO_SECRET_KEY &&
+                          process.env.IYZICO_SECRET_KEY !== 'sandbox-xxxxxxxx' &&
+                          process.env.IYZICO_SECRET_KEY !== 'YOUR_IYZICO_SECRET_KEY_HERE';
+        
+        if (hasIyzico) {
+          const isProduction = process.env.IYZICO_BASE_URL && process.env.IYZICO_BASE_URL.includes('api.iyzipay.com');
+          console.log(`💳 Ödeme Sistemi: Aktif (iyzico ${isProduction ? 'Production' : 'Sandbox'})`);
+        } else {
+          console.log(`💳 Ödeme Sistemi: Mock Mod (Test için aktif)`);
+          console.log(`   ⚠️  Production için IYZICO_API_KEY ve IYZICO_SECRET_KEY ayarlayın`);
+        }
+        
         console.log(`⏱️  Startup Time: ${Date.now() - startTime}ms`);
         
         if (process.env.NODE_ENV === 'production') {
@@ -324,6 +476,9 @@ class ServerApp {
 
         const metricsInterval = setInterval(() => {
           metricsService.updateMemory();
+          const performanceService = require('./core/services/performance.service');
+          const socketRooms = this.io.sockets.adapter.rooms.size;
+          performanceService.setSocketRooms(socketRooms);
         }, 30000);
 
         this.addShutdownHandler(async () => {
@@ -382,6 +537,21 @@ class ServerApp {
     if (missing.length > 0) {
       console.warn(`⚠️  WARNING: Missing environment variables: ${missing.join(', ')}`);
       console.warn(`   Using fallback values. Set these in production!\n`);
+    }
+
+    const paymentService = require('./services/paymentService');
+    const paymentGateway = require('./services/paymentGateway.service');
+    
+    const hasIyzico = process.env.IYZICO_API_KEY && 
+                      process.env.IYZICO_API_KEY !== 'sandbox-xxxxxxxx' &&
+                      process.env.IYZICO_SECRET_KEY &&
+                      process.env.IYZICO_SECRET_KEY !== 'sandbox-xxxxxxxx';
+    
+    if (hasIyzico) {
+      console.log(`💳 Ödeme Sistemi: Aktif (iyzico ${paymentGateway.activeGateway === 'iyzico' ? 'Production' : 'Sandbox'})`);
+    } else {
+      console.log(`💳 Ödeme Sistemi: Mock Mod (Test için aktif - Gerçek ödeme yapılmaz)`);
+      console.log(`   ⚠️  Production için IYZICO_API_KEY ve IYZICO_SECRET_KEY ayarlayın`);
     }
 
     return true;

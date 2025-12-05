@@ -60,14 +60,6 @@ Bavaxe platformu çoklu dil ve teknoloji kullanan profesyonel bir microservices 
   - Payment validation
   - Transaction tracking
 
-### 7. C# ASP.NET Core Service (Port 6000)
-- **Teknoloji**: C# .NET 8.0 + ASP.NET Core
-- **Görev**: Report generation and management
-- **Özellikler**:
-  - Dynamic report generation
-  - Report listing and management
-  - Multiple format support (JSON, CSV, PDF)
-  - Report download handling
 
 ## API Gateway
 
@@ -122,12 +114,6 @@ mvn clean install
 mvn spring-boot:run
 ```
 
-### C# Service
-```bash
-cd backend/csharp_service
-dotnet restore
-dotnet run
-```
 
 ## Environment Variables
 
@@ -138,7 +124,6 @@ PYTHON_SERVICE_URL=http://localhost:8000
 GO_SERVICE_URL=http://localhost:8080
 PHP_SERVICE_URL=http://localhost:9000
 JAVA_SERVICE_URL=http://localhost:7000
-CSHARP_SERVICE_URL=http://localhost:6000
 SERVICE_TOKEN=your-service-token
 ```
 
@@ -182,12 +167,10 @@ Body: { user_id: "userId", plan: "plan", amount: 100 }
 GET /api/microservices/billing/history/:userId
 ```
 
-### Reports (via Gateway - C#)
+### Reports (via Gateway - Python)
 ```
-POST /api/microservices/reports/generate
-Body: { user_id: "userId", report_type: "daily", date_range: "7d", format: "json" }
-
-GET /api/microservices/reports/list/:userId
+POST /api/microservices/reports/:userId
+Body: { reportType: "daily" }
 ```
 
 ## Architecture Benefits
@@ -202,12 +185,10 @@ GET /api/microservices/reports/list/:userId
 
 Tüm servisler health check endpoint'lerine sahiptir:
 - Node.js: `/api/health`
-- Ruby: `/health`
 - Python: `/health`
 - Go: `/health`
 - PHP: `/health`
 - Java: `/api/health`
-- C#: `/api/health`
 
 ## Development
 

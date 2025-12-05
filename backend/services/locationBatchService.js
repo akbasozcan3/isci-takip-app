@@ -16,7 +16,9 @@ class LocationBatchService {
       clearInterval(this.flushTimer);
     }
     this.flushTimer = setInterval(() => {
-      this.flushAll();
+      this.flushAll().catch(err => {
+        console.error('[LocationBatch] Flush all error:', err);
+      });
     }, this.flushInterval);
   }
 
@@ -60,32 +62,37 @@ class LocationBatchService {
     queue.length = 0;
 
     try {
-      const retryService = require('../core/services/retry.service');
-      await retryService.execute(
-        async () => {
-          locations.forEach(loc => {
-            db.addToStore(deviceId, loc);
-          });
-        },
-        {
-          maxRetries: 2,
-          delay: 500,
-          backoff: 'exponential'
+      const batchSize = 50;
+      for (let i = 0; i < locations.length; i += batchSize) {
+        const batch = locations.slice(i, i + batchSize);
+        batch.forEach(loc => {
+          db.addToStore(deviceId, loc);
+        });
+        if (i + batchSize < locations.length) {
+          await new Promise(resolve => setImmediate(resolve));
         }
-      );
+      }
     } catch (error) {
       console.error(`[LocationBatch] Error flushing device ${deviceId}:`, error);
-      if (queue.length < this.maxQueueSize) {
-        queue.unshift(...locations);
+      const currentQueue = this.batchQueue.get(deviceId) || [];
+      if (currentQueue.length < this.maxQueueSize) {
+        currentQueue.unshift(...locations);
+        this.batchQueue.set(deviceId, currentQueue);
       }
     }
   }
 
-  flushAll() {
+  async flushAll() {
     const deviceIds = Array.from(this.batchQueue.keys());
-    deviceIds.forEach(deviceId => {
-      this.flushDevice(deviceId);
-    });
+    const flushPromises = [];
+    
+    for (const deviceId of deviceIds) {
+      flushPromises.push(this.flushDevice(deviceId).catch(err => {
+        console.error(`[LocationBatch] Error flushing device ${deviceId}:`, err);
+      }));
+    }
+    
+    await Promise.allSettled(flushPromises);
   }
 
   getQueueSize(deviceId) {
@@ -97,12 +104,12 @@ class LocationBatchService {
     this.batchQueue.delete(deviceId);
   }
 
-  destroy() {
+  async destroy() {
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
     }
-    this.flushAll();
+    await this.flushAll();
     this.batchQueue.clear();
   }
 }

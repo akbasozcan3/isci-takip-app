@@ -74,8 +74,12 @@ public class ApiController : ControllerBase
 
         try
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient("default");
             client.Timeout = TimeSpan.FromSeconds(5);
+            if (!client.DefaultRequestHeaders.Contains("Connection"))
+            {
+                client.DefaultRequestHeaders.Add("Connection", "keep-alive");
+            }
             
             var response = await client.GetAsync($"{_nodejsServiceUrl}/api/analytics/{user_id}");
             

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
@@ -17,12 +18,13 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
   UIManager,
-  View,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { io, Socket } from 'socket.io-client';
@@ -135,6 +137,7 @@ interface GroupMember {
   displayName: string;
   location: { lat: number; lng: number; timestamp: number } | null;
   isOnline: boolean;
+  activity?: { type: string; icon: string; name: string } | null;
 }
 
 export default function TrackScreen(): React.JSX.Element {
@@ -183,6 +186,38 @@ export default function TrackScreen(): React.JSX.Element {
   const [groupMembers, setGroupMembers] = React.useState<GroupMember[]>([]);
   const [showGroupSelector, setShowGroupSelector] = React.useState(false);
   const [showTrackInfo, setShowTrackInfo] = React.useState(false);
+  
+  // Araba takip özellikleri
+  const [vehicleStatus, setVehicleStatus] = React.useState<{
+    isInVehicle: boolean;
+    confidence: number;
+    speed: number;
+    status: string;
+    reason?: string;
+  } | null>(null);
+  const [vehicleMode, setVehicleMode] = React.useState(false);
+  const [groupVehicles, setGroupVehicles] = React.useState<Array<{
+    userId: string;
+    name: string;
+    isInVehicle: boolean;
+    speed: number;
+    status: string;
+    location: { lat: number; lng: number; timestamp: number };
+  }>>([]);
+  const [loadingVehicle, setLoadingVehicle] = React.useState(false);
+  
+  // Aktivite durumu
+  const [activityStatus, setActivityStatus] = React.useState<{
+    activity: string;
+    confidence: number;
+    speed: number;
+    reason: string;
+    icon: string;
+    color: string;
+    location?: { lat: number; lng: number; timestamp: number };
+  } | null>(null);
+  const [loadingActivity, setLoadingActivity] = React.useState(false);
+  
   const socketRef = React.useRef<Socket | null>(null);
 
   const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
@@ -371,6 +406,95 @@ export default function TrackScreen(): React.JSX.Element {
   }, [workerId, selectedGroup]);
 
   // Grup üyelerini yükle
+  const checkActivityStatus = React.useCallback(async () => {
+    if (!workerId) return;
+    
+    try {
+      setLoadingActivity(true);
+      const params = new URLSearchParams({ deviceId: workerId });
+      if (selectedGroup) {
+        params.append('groupId', selectedGroup.id);
+      }
+      
+      const res = await authFetch(`/api/location/activity/status?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.data) {
+          setActivityStatus(data.data);
+          
+          const prevActivity = activityStatus?.activity;
+          const newActivity = data.data.activity;
+          
+          if (prevActivity && prevActivity !== newActivity) {
+            const activityNames: Record<string, string> = {
+              'home': '🏠 Ev',
+              'stationary': '📍 Duruyor',
+              'walking': '🚶 Yürüyor',
+              'cycling': '🚴 Bisiklet',
+              'motorcycle': '🏍️ Motor',
+              'driving': '🚗 Araba'
+            };
+            showInfo(`${data.data.icon} ${activityNames[newActivity] || newActivity} - ${data.data.speed.toFixed(1)} km/h`);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('[Track] Activity status check error:', error);
+    } finally {
+      setLoadingActivity(false);
+    }
+  }, [workerId, selectedGroup, activityStatus, showInfo]);
+
+  const checkVehicleStatus = React.useCallback(async () => {
+    if (!workerId) return;
+    
+    try {
+      setLoadingVehicle(true);
+      const params = new URLSearchParams({ deviceId: workerId });
+      if (selectedGroup) {
+        params.append('groupId', selectedGroup.id);
+      }
+      
+      const res = await authFetch(`/api/location/vehicle/status?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.data) {
+          setVehicleStatus(data.data);
+          
+          if (data.data.isInVehicle && data.data.confidence > 70) {
+            if (!vehicleMode) {
+              setVehicleMode(true);
+              showInfo(`🚗 Araç kullanımı tespit edildi! Hız: ${data.data.speed.toFixed(1)} km/h`);
+            }
+          } else if (vehicleMode && data.data.confidence < 50) {
+            setVehicleMode(false);
+            showInfo('🚶 Yürüme moduna geçildi');
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('[Track] Vehicle status check error:', error);
+    } finally {
+      setLoadingVehicle(false);
+    }
+  }, [workerId, selectedGroup, vehicleMode, showInfo]);
+
+  const loadGroupVehicles = React.useCallback(async (groupId: string) => {
+    if (!groupId || !vehicleMode) return;
+    
+    try {
+      const res = await authFetch(`/api/location/vehicle/group?groupId=${groupId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.data && data.data.vehicles) {
+          setGroupVehicles(data.data.vehicles);
+        }
+      }
+    } catch (error: any) {
+      console.error('[Track] Load group vehicles error:', error);
+    }
+  }, [vehicleMode]);
+
   const loadGroupMembers = React.useCallback(async (groupId: string) => {
     if (!groupId) {
       console.warn('[Track] Cannot load members, no groupId');
@@ -412,7 +536,8 @@ export default function TrackScreen(): React.JSX.Element {
             lng: Number(m.location.lng) || 0,
             timestamp: m.location.timestamp || Date.now()
           } : null,
-          isOnline: Boolean(m.isOnline)
+          isOnline: Boolean(m.isOnline),
+          activity: m.activity || null
         }));
       
       setGroupMembers(validMembers);
@@ -480,93 +605,119 @@ export default function TrackScreen(): React.JSX.Element {
     console.log('[Track] Setting up socket for group:', selectedGroup.id);
     
     const setupSocket = async () => {
-      try {
-        // Mevcut socket'i temizle
-        if (socketRef.current) {
-          console.log('[Track] Disconnecting existing socket');
-          try {
-            socketRef.current.disconnect();
-          } catch (e) {
-            console.warn('[Track] Socket disconnect error:', e);
-          }
+    try {
+      // Mevcut socket'i temizle
+      if (socketRef.current) {
+        console.log('[Track] Disconnecting existing socket');
+        try {
+          socketRef.current.disconnect();
+        } catch (e) {
+          console.warn('[Track] Socket disconnect error:', e);
         }
-        
+      }
+      
         // Yeni socket oluştur - authentication token ile
         const token = await SecureStore.getItemAsync('token');
-        const socket = io(API_BASE, { 
-          transports: ['websocket'],
-          reconnection: true,
-          reconnectionDelay: 1000,
-          reconnectionDelayMax: 5000,
+      const socket = io(API_BASE, { 
+        transports: ['websocket'],
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
           reconnectionAttempts: 5,
           auth: token ? { token } : undefined,
           extraHeaders: token ? { Authorization: `Bearer ${token}` } : undefined
-        });
-        
-        socketRef.current = socket;
+      });
+      
+      socketRef.current = socket;
         const currentGroupId = selectedGroup.id;
-        
-        socket.on('connect', () => {
+      
+      socket.on('connect', () => {
           console.log('[Track] Socket connected, joining group:', currentGroupId);
-          try {
+        try {
             socket.emit('join_group', currentGroupId);
           } catch (e: any) {
-            console.error('[Track] Join group emit error:', e);
-          }
-        });
-        
-        socket.on('location_update', (data: { groupId: string; userId: string; lat: number; lng: number; timestamp: number }) => {
-          try {
-            console.log('[Track] Location update received:', data);
+          console.error('[Track] Join group emit error:', e);
+        }
+      });
+      
+      socket.on('location_update', (data: { groupId: string; userId: string; lat: number; lng: number; timestamp: number }) => {
+        try {
+          console.log('[Track] Location update received:', data);
             if (data.groupId === currentGroupId) {
-              console.log('[Track] Reloading group members after location update');
+            console.log('[Track] Reloading group members after location update');
               loadGroupMembers(currentGroupId).catch((e: any) => console.error('[Track] Load members error:', e));
-            }
-          } catch (e: any) {
-            console.error('[Track] Location update handler error:', e);
           }
-        });
-        
-        // If current group gets deleted elsewhere, stop tracking and clear selection
-        socket.on('group_deleted', async (ev: { groupId: string }) => {
-          try {
+          } catch (e: any) {
+          console.error('[Track] Location update handler error:', e);
+        }
+      });
+
+      // 30 km mesafe bildirimi dinle
+      socket.on('member_distance_alert', (data: { 
+        groupId: string; 
+        userId: string; 
+        userName: string; 
+        distance: number; 
+        threshold: number;
+        message: string;
+        timestamp: number;
+      }) => {
+        try {
+          console.log('[Track] Member distance alert received:', data);
+          if (data.groupId === currentGroupId) {
+            // Bildirim göster
+            showWarning(`${data.userName} 30 km'yi geçti!`);
+            
+            // Grup üyelerini yeniden yükle (mesafe değişikliği için)
+            loadGroupMembers(currentGroupId).catch((e: any) => 
+              console.error('[Track] Load members error after distance alert:', e)
+            );
+          }
+        } catch (e: any) {
+          console.error('[Track] Member distance alert handler error:', e);
+        }
+      });
+      
+      // If current group gets deleted elsewhere, stop tracking and clear selection
+      socket.on('group_deleted', async (ev: { groupId: string }) => {
+        try {
             if (!ev || !ev.groupId || ev.groupId !== currentGroupId) return;
-            await stopBackgroundTracking();
-            setSelectedGroup(null);
-            setGroupMembers([]);
-            setGroupAddress('');
-            setGroupCoord(null);
-            setShowGroupSelector(false);
-            showWarning('Seçili grup silindi. Takip durduruldu.');
+          await stopBackgroundTracking();
+          setSelectedGroup(null);
+          setGroupMembers([]);
+          setGroupAddress('');
+          setGroupCoord(null);
+          setShowGroupSelector(false);
+          showWarning('Seçili grup silindi. Takip durduruldu.');
           } catch (e: any) {
-            console.warn('[Track] group_deleted handling failed', e);
-          }
-        });
-        
-        socket.on('disconnect', (reason: string) => {
-          console.log('[Track] Socket disconnected, reason:', reason);
-        });
-        
-        socket.on('error', (error: any) => {
-          console.error('[Track] Socket error:', error);
-        });
-        
-        socket.on('connect_error', (error: any) => {
-          console.error('[Track] Socket connect error:', error);
-        });
-        
-        socket.on('reconnect', (attemptNumber: number) => {
-          console.log('[Track] Socket reconnected after', attemptNumber, 'attempts');
-        });
+          console.warn('[Track] group_deleted handling failed', e);
+        }
+      });
+      
+      socket.on('disconnect', (reason: string) => {
+        console.log('[Track] Socket disconnected, reason:', reason);
+      });
+      
+      socket.on('error', (error: any) => {
+        console.error('[Track] Socket error:', error);
+      });
+      
+      socket.on('connect_error', (error: any) => {
+        console.error('[Track] Socket connect error:', error);
+      });
+      
+      socket.on('reconnect', (attemptNumber: number) => {
+        console.log('[Track] Socket reconnected after', attemptNumber, 'attempts');
+      });
       } catch (error: any) {
         console.error('[Track] Socket setup error:', error);
       }
     };
     
     setupSocket();
-    
-    return () => {
-      console.log('[Track] Cleaning up socket');
+      
+      return () => {
+        console.log('[Track] Cleaning up socket');
       if (socketRef.current) {
         try {
           socketRef.current.off();
@@ -575,7 +726,7 @@ export default function TrackScreen(): React.JSX.Element {
           console.warn('[Track] Socket cleanup error:', e);
         }
         socketRef.current = null;
-      }
+    }
     };
   }, [selectedGroup, loadGroupMembers]);
 
@@ -697,6 +848,43 @@ export default function TrackScreen(): React.JSX.Element {
     }
   }, [selectedGroup, workerId]);
 
+  const shareLocationLink = React.useCallback(async () => {
+    if (!coords) {
+      showWarning('Konum bilgisi bulunamadı');
+      return;
+    }
+
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      showInfo('Paylaşım linki oluşturuluyor...');
+      
+      const lat = coords.latitude;
+      const lng = coords.longitude;
+      const name = displayName || profileName || 'Konumum';
+      
+      const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+      const appleMapsUrl = `https://maps.apple.com/?ll=${lat},${lng}&q=${encodeURIComponent(name)}`;
+      const shareUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+      
+      const shareMessage = `📍 ${name}\n\nKonum: ${lat.toFixed(6)}, ${lng.toFixed(6)}\n\nGoogle Maps: ${googleMapsUrl}\n\nApple Maps: ${appleMapsUrl}`;
+
+      const result = await Share.share({
+        message: shareMessage,
+        url: shareUrl,
+        title: `${name} - Konum Paylaş`
+      });
+
+      if (result.action === Share.sharedAction) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showSuccess('Konum başarıyla paylaşıldı!');
+      }
+    } catch (error: any) {
+      console.error('Share location link error:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showError(error.message || 'Paylaşım başarısız oldu');
+    }
+  }, [coords, displayName, profileName, showInfo, showSuccess, showError, showWarning]);
+
   // --- location watch & tracking functions (kept intact) ---
   const startForegroundWatch = React.useCallback(
     async () => {
@@ -720,13 +908,13 @@ export default function TrackScreen(): React.JSX.Element {
       let distanceInterval = 5;
       
       try {
-        const subRes = await authFetch('/api/me/subscription');
+        const subRes = await authFetch('/me/subscription');
         if (subRes.ok) {
           const subData = await subRes.json();
           const planId = subData.subscription?.planId || 'free';
           
           try {
-            const recRes = await authFetch(`/api/location/${workerId}/recommendations`);
+            const recRes = await authFetch(`/location/${workerId}/recommendations`);
             if (recRes.ok) {
               const recData = await recRes.json();
               timeInterval = recData.recommendedInterval || timeInterval;
@@ -766,7 +954,19 @@ export default function TrackScreen(): React.JSX.Element {
             const last = prev[prev.length - 1];
             const dist = haversineMeters(last, next);
             setTotalDistance((d) => d + dist);
-            return [...prev, next].slice(-5000);
+            const newPath = [...prev, next].slice(-5000);
+            
+            // Aktivite durumunu kontrol et (her 3 konum güncellemesinde bir)
+            if (newPath.length % 3 === 0) {
+              setTimeout(() => checkActivityStatus(), 100);
+            }
+            
+            // Araba durumunu kontrol et (her 5 konum güncellemesinde bir)
+            if (newPath.length % 5 === 0) {
+              setTimeout(() => checkVehicleStatus(), 100);
+            }
+            
+            return newPath;
           });
 
           if (follow && mapRef.current) {
@@ -1069,54 +1269,75 @@ export default function TrackScreen(): React.JSX.Element {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      {/* Gradient header (no negative margins) */}
       <LinearGradient colors={["#06b6d4", "#0ea5a4"]} style={styles.headerWrap} start={[0, 0]} end={[1, 1]}>
         <View style={styles.headerRow}>
-            <View style={styles.brandRow}>
+          <View style={styles.brandRow}>
             <View style={styles.headerAvatar}>
-              <Ionicons name="navigate-circle" size={27} color="#06b6d4" />
+              <Ionicons name="navigate-circle" size={24} color="#fff" />
             </View>
-            <View style={{ marginLeft: 12 }}>
-              <Text style={styles.title}>GPS Canlı Takip</Text>
-              <Text style={styles.subtitle}>
-                {hasPermission === null
-                  ? 'İzin soruluyor…'
-                  : hasPermission
-                  ? isTracking ? '📍 Konum paylaşılıyor' : '✅ GPS Hazır'
-                  : '⚠️ İzin reddedildi'}
-              </Text>
+            <View style={{ marginLeft: 10, flex: 1, minWidth: 0 }}>
+              <Text style={styles.title} numberOfLines={1}>GPS Canlı Takip</Text>
+              <View style={styles.headerStats}>
+                <Text style={styles.statText} numberOfLines={1}>
+                  {speedKmh ? `${speedKmh.toFixed(1)} km/s` : '0.0 km/s'}
+                </Text>
+                <Text style={styles.statText} numberOfLines={1}>
+                  {accuracyMeters ? `${Math.round(accuracyMeters)} m` : '5 m'}
+                </Text>
+                <Text style={styles.statText} numberOfLines={1}>
+                  {formatDistance(totalDistance)}
+                </Text>
+              </View>
             </View>
           </View>
 
           <View style={styles.headerActions}>
-            {/* Grup seçici */}
             <Pressable 
-              style={[styles.iconBtn, selectedGroup && { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]} 
+              style={[styles.iconBtn, selectedGroup && { backgroundColor: 'rgba(16, 185, 129, 0.3)' }]} 
               onPress={() => setShowGroupSelector(true)} 
               accessibilityLabel="Grup seç"
             >
-              <Ionicons name="people" size={20} color={selectedGroup ? "#10b981" : "#042f35"} />
+              <Ionicons name="people" size={16} color={selectedGroup ? "#10b981" : "#fff"} />
               {selectedGroup && groupMembers.length > 0 && (
                 <View style={styles.badge}><Text style={styles.badgeText}>{Math.min(groupMembers.length, 99)}</Text></View>
               )}
             </Pressable>
             
-            {/* Tüm kullanıcıları göster toggle */}
             <Pressable 
-              style={[styles.iconBtn, { marginLeft: 8 }, showAllUsers && { backgroundColor: 'rgba(239, 68, 68, 0.2)' }]} 
+              style={[styles.iconBtn, showAllUsers && { backgroundColor: 'rgba(239, 68, 68, 0.3)' }]} 
               onPress={() => { setShowAllUsers(!showAllUsers); }} 
               accessibilityLabel="Tüm kullanıcıları göster"
             >
-              <Ionicons name="globe" size={20} color={showAllUsers ? "#ef4444" : "#042f35"} />
+              <Ionicons name="globe" size={16} color={showAllUsers ? "#ef4444" : "#fff"} />
             </Pressable>
             
-            <Pressable style={[styles.iconBtn, { marginLeft: 8 }]} onPress={() => setMapType((t) => (t === 'standard' ? 'hybrid' : 'standard'))} accessibilityLabel="Harita türü">
-              <Ionicons name={mapType === 'standard' ? 'map-outline' : 'map'} size={20} color="#042f35" />
+            <Pressable 
+              style={styles.iconBtn} 
+              onPress={() => setMapType((t) => (t === 'standard' ? 'hybrid' : 'standard'))} 
+              accessibilityLabel="Harita türü"
+            >
+              <Ionicons name={mapType === 'standard' ? 'map-outline' : 'map'} size={16} color="#fff" />
             </Pressable>
-            <Pressable style={[styles.iconBtn, { marginLeft: 8 }]} onPress={() => { setSearchModalVisible(true); searchActiveDevices(searchQuery); }} accessibilityLabel="Aktif cihazları ara">
-              <Ionicons name="search" size={20} color="#042f35" />
+            
+            <Pressable 
+              style={[styles.iconBtn, !coords && { opacity: 0.5 }]} 
+              onPress={shareLocationLink} 
+              accessibilityLabel="Konum paylaş"
+              disabled={!coords}
+            >
+              <Ionicons name="share-social" size={16} color={coords ? "#fff" : "#94a3b8"} />
             </Pressable>
           </View>
+        </View>
+        
+        <View style={styles.headerStatusRow}>
+          <Text style={styles.subtitle}>
+            {hasPermission === null
+              ? 'İzin soruluyor…'
+              : hasPermission
+              ? isTracking ? '📍 Konum paylaşılıyor' : '✅ GPS Hazır'
+              : '⚠️ İzin reddedildi'}
+          </Text>
         </View>
 
         {selectedGroup && (
@@ -1151,6 +1372,43 @@ export default function TrackScreen(): React.JSX.Element {
           <Text style={styles.statText}>{formatDistance(distanceToGroup)}</Text>
         </View>
       </LinearGradient>
+
+      {/* Araba Durumu Kartı */}
+      {vehicleStatus && vehicleStatus.isInVehicle && vehicleStatus.confidence > 60 && (
+        <View style={styles.vehicleStatusCard}>
+          <LinearGradient
+            colors={vehicleStatus.status === 'driving_fast' 
+              ? ['rgba(239,68,68,0.2)', 'rgba(239,68,68,0.1)']
+              : vehicleStatus.status === 'driving'
+              ? ['rgba(245,158,11,0.2)', 'rgba(245,158,11,0.1)']
+              : ['rgba(16,185,129,0.2)', 'rgba(16,185,129,0.1)']}
+            start={[0, 0]}
+            end={[1, 0]}
+            style={styles.vehicleStatusGradient}
+          >
+            <View style={styles.vehicleStatusContent}>
+              <Ionicons 
+                name="car" 
+                size={24} 
+                color={vehicleStatus.status === 'driving_fast' ? '#ef4444' : vehicleStatus.status === 'driving' ? '#f59e0b' : '#10b981'} 
+              />
+              <View style={styles.vehicleStatusInfo}>
+                <Text style={styles.vehicleStatusTitle}>
+                  {vehicleStatus.status === 'driving_fast' ? '🚗 Hızlı Sürüş' 
+                   : vehicleStatus.status === 'driving' ? '🚗 Sürüş' 
+                   : '🚗 Yavaş Sürüş'}
+                </Text>
+                <Text style={styles.vehicleStatusSubtitle}>
+                  Hız: {vehicleStatus.speed.toFixed(1)} km/h • Güven: %{vehicleStatus.confidence}
+                </Text>
+              </View>
+              {loadingVehicle && (
+                <ActivityIndicator size="small" color="#fff" style={{ marginLeft: 8 }} />
+              )}
+            </View>
+          </LinearGradient>
+        </View>
+      )}
 
       <ScrollView contentContainerStyle={{ paddingBottom: 140 }}>
         {hasPermission === false && (
@@ -1194,12 +1452,18 @@ export default function TrackScreen(): React.JSX.Element {
                   id: 'user',
                   lat: coords.latitude,
                   lng: coords.longitude,
-                  title: displayName || 'Konumunuz',
-                  color: speedKmh && speedKmh > 10 ? '#10b981' : '#06b6d4',
+                  title: activityStatus 
+                    ? `${activityStatus.icon} ${displayName || 'Konumunuz'} - ${activityStatus.reason}`
+                    : displayName || 'Konumunuz',
+                  color: activityStatus?.color || (speedKmh && speedKmh > 10 ? '#10b981' : '#06b6d4'),
                   heading: heading,
                   speed: speedKmh,
-                  isOnline: isTracking
-                }] : []),
+                  isOnline: isTracking,
+                  ...(activityStatus ? {
+                    activity: activityStatus.activity,
+                    activityIcon: activityStatus.icon
+                  } : {})
+                } as any] : []),
                 ...groupMembers
                   .filter(m => m.location && m.userId !== workerId)
                   .map(m => ({
@@ -1208,8 +1472,21 @@ export default function TrackScreen(): React.JSX.Element {
                     lng: m.location!.lng,
                     title: m.displayName || 'Üye',
                     color: m.isOnline ? '#10b981' : '#64748b',
-                    isOnline: m.isOnline
+                    isOnline: m.isOnline,
+                    activity: m.activity?.type || null,
+                    activityIcon: m.activity?.icon || null
                   })),
+                ...(vehicleMode && groupVehicles.length > 0 ? groupVehicles
+                  .filter(v => v.isInVehicle && v.userId !== workerId)
+                  .map(v => ({
+                    id: `vehicle_${v.userId}`,
+                    lat: v.location.lat,
+                    lng: v.location.lng,
+                    title: `🚗 ${v.name}`,
+                    color: v.status === 'driving_fast' ? '#ef4444' : v.status === 'driving' ? '#f59e0b' : '#10b981',
+                    speed: v.speed,
+                    isVehicle: true
+                  })) : []),
                 ...(showAllUsers ? allUsers
                   .filter(u => isFinite(u.latitude) && isFinite(u.longitude))
                   .map(u => ({
@@ -1243,33 +1520,33 @@ export default function TrackScreen(): React.JSX.Element {
               <Text style={{ color: '#64748b', marginTop: 4, fontSize: 12 }}>{mapError.message}</Text>
             </View>
           ) : (
-            <MapView ref={(r: typeof MapView | null) => { 
-              console.log('[Track] MapView ref set:', !!r);
-              mapRef.current = r; 
-            }} 
-            style={styles.map} 
-            initialRegion={coords ? followRegion : TURKEY_REGION}
-            onMapReady={() => {
-              console.log('[Track] Map is ready');
+          <MapView ref={(r: typeof MapView | null) => { 
+            console.log('[Track] MapView ref set:', !!r);
+            mapRef.current = r; 
+          }} 
+          style={styles.map} 
+          initialRegion={coords ? followRegion : TURKEY_REGION}
+          onMapReady={() => {
+            console.log('[Track] Map is ready');
               setMapError(null);
-              if (mapRef.current) {
-                setTimeout(() => {
-                  mapRef.current?.animateToRegion(animatedRegion, 900);
-                  setCurrentRegion(animatedRegion);
-                }, 450);
-              }
-            }}
+            if (mapRef.current) {
+              setTimeout(() => {
+                mapRef.current?.animateToRegion(animatedRegion, 900);
+                setCurrentRegion(animatedRegion);
+              }, 450);
+            }
+          }}
             onError={(error: any) => {
               console.error('[Track] MapView error:', error);
               setMapError(new Error(error?.message || 'Harita yüklenemedi'));
             }}
-            onRegionChangeComplete={(region: any) => {
-              setCurrentRegion(region);
-              if (!follow) {
-                console.log('[Track] Map region changed by user');
-              }
-            }}
-            zoomControlEnabled={false}
+          onRegionChangeComplete={(region: any) => {
+            setCurrentRegion(region);
+            if (!follow) {
+              console.log('[Track] Map region changed by user');
+            }
+          }}
+          zoomControlEnabled={false}
           zoomEnabled={true}
           scrollEnabled={true}
           rotateEnabled={true}
@@ -1343,15 +1620,21 @@ export default function TrackScreen(): React.JSX.Element {
                   {/* Ana Marker */}
                   <View style={[
                     styles.professionalMarkerMain,
-                    { backgroundColor: speedKmh && speedKmh > 10 ? mapTheme.colors.gps.active : mapTheme.colors.gps.marker }
+                    { backgroundColor: activityStatus?.color || (speedKmh && speedKmh > 10 ? mapTheme.colors.gps.active : mapTheme.colors.gps.marker) }
                   ]}>
-                    {/* Yön İkonu */}
-                    <Ionicons 
-                      name={heading != null ? "navigate" : "location"} 
-                      size={heading != null ? 28 : 24} 
-                      color="#fff" 
-                      style={heading != null ? { transform: [{ rotate: `${heading}deg` }] } : undefined}
-                    />
+                    {/* Aktivite İkonu */}
+                    {activityStatus?.icon ? (
+                      <Text style={{ fontSize: 28, color: '#fff' }}>
+                        {activityStatus.icon}
+                      </Text>
+                    ) : (
+                      <Ionicons 
+                        name={heading != null ? "navigate" : "location"} 
+                        size={heading != null ? 28 : 24} 
+                        color="#fff" 
+                        style={heading != null ? { transform: [{ rotate: `${heading}deg` }] } : undefined}
+                      />
+                    )}
                   </View>
                   
                   {/* Hız Badge - Marker dışında */}
@@ -1433,11 +1716,17 @@ export default function TrackScreen(): React.JSX.Element {
                         styles.memberMarkerMain,
                         { backgroundColor: member.isOnline ? '#10b981' : '#64748b' }
                       ]}>
-                        <Ionicons 
-                          name={member.isOnline ? "person-circle" : "person-circle-outline"} 
-                          size={28} 
-                          color="#fff" 
-                        />
+                        {member.activity?.icon ? (
+                          <Text style={{ fontSize: 24, color: '#fff' }}>
+                            {member.activity.icon}
+                          </Text>
+                        ) : (
+                          <Ionicons 
+                            name={member.isOnline ? "person-circle" : "person-circle-outline"} 
+                            size={28} 
+                            color="#fff" 
+                          />
+                        )}
                       </View>
                       {member.isOnline && (
                         <View style={styles.memberOnlineDot} />
@@ -1536,53 +1825,6 @@ export default function TrackScreen(): React.JSX.Element {
           </MapView>
           )}
 
-          {/* Floating Actions - Profesyonel GPS Kontrolleri */}
-          <View style={styles.fabGroup} pointerEvents="box-none">
-            <Animated.View style={{ transform: [{ scale: fabScale }] }}>
-              <Pressable 
-                onPress={() => { 
-                  if (mapRef.current) { 
-                    mapRef.current.animateToRegion(animatedRegion, 500);
-                    setCurrentRegion(animatedRegion);
-                    setFollow(true); 
-                    showInfo('Konumunuza odaklanıldı');
-                  } else {
-                    showWarning('Konum bilgisi alınamadı');
-                  }
-                }} 
-                style={[styles.fab, follow && { backgroundColor: '#10b981' }]} 
-                accessibilityLabel="Konuma odakla"
-              >
-                <Ionicons name={follow ? 'locate' : 'locate-outline'} size={18} color={follow ? "#fff" : "#083344"} />
-              </Pressable>
-            </Animated.View>
-
-            <Animated.View style={{ transform: [{ scale: fabScale }] }}>
-              <Pressable 
-                onPress={fitToTurkey} 
-                style={[styles.fab, { backgroundColor: '#fff', marginTop: 8 }]} 
-                accessibilityLabel="Türkiye haritasını göster"
-              >
-                <Ionicons name="globe-outline" size={18} color="#ef4444" />
-              </Pressable>
-            </Animated.View>
-            
-            {/* Zoom kontrolleri */}
-            <View style={styles.zoomControls}>
-              <Pressable 
-                onPress={() => zoomMap('in')}
-                style={styles.zoomBtn}
-              >
-                <Ionicons name="add" size={16} color="#083344" />
-              </Pressable>
-              <Pressable 
-                onPress={() => zoomMap('out')}
-                style={[styles.zoomBtn, { borderTopWidth: 1, borderTopColor: '#e6eef0' }]}
-              >
-                <Ionicons name="remove" size={16} color="#083344" />
-              </Pressable>
-            </View>
-          </View>
         </View>
 
         <View style={styles.controlPanel}>
@@ -1835,15 +2077,15 @@ export default function TrackScreen(): React.JSX.Element {
                   <View style={styles.trackInfoHeaderText}>
                     <Text style={styles.trackInfoTitle}>GPS Canlı Takip</Text>
                     <Text style={styles.trackInfoSubtitle}>Profesyonel konum takip sistemi</Text>
-                  </View>
+                </View>
                   <Pressable 
                     onPress={() => setShowTrackInfo(false)}
                     style={styles.trackInfoClose}
                   >
                     <Ionicons name="close" size={22} color="#94a3b8" />
                   </Pressable>
-                </View>
-
+              </View>
+              
                 {/* Content */}
                 <ScrollView 
                   style={styles.trackInfoContent}
@@ -1872,9 +2114,9 @@ export default function TrackScreen(): React.JSX.Element {
                           <Text style={styles.trackInfoStepFeatureText}>Adres bazlı merkez nokta</Text>
                         </View>
                       </View>
-                    </View>
                   </View>
-
+                </View>
+                
                   {/* Step 2 */}
                   <View style={styles.trackInfoStep}>
                     <View style={styles.trackInfoStepHeader}>
@@ -1898,9 +2140,9 @@ export default function TrackScreen(): React.JSX.Element {
                           <Text style={styles.trackInfoStepFeatureText}>Otomatik konum paylaşımı</Text>
                         </View>
                       </View>
-                    </View>
                   </View>
-
+                </View>
+                
                   {/* Step 3 */}
                   <View style={styles.trackInfoStep}>
                     <View style={styles.trackInfoStepHeader}>
@@ -1928,9 +2170,9 @@ export default function TrackScreen(): React.JSX.Element {
                           <Text style={styles.trackInfoStepFeatureText}>Mesafe hesaplama</Text>
                         </View>
                       </View>
-                    </View>
                   </View>
-
+                </View>
+                
                   {/* Advanced Features */}
                   <View style={styles.trackInfoAdvanced}>
                     <View style={styles.trackInfoAdvancedHeader}>
@@ -1941,7 +2183,7 @@ export default function TrackScreen(): React.JSX.Element {
                         <Ionicons name="flash" size={24} color="#fff" />
                       </LinearGradient>
                       <Text style={styles.trackInfoAdvancedTitle}>Akıllı Optimizasyon</Text>
-                    </View>
+                  </View>
                     <Text style={styles.trackInfoAdvancedDescription}>
                       Sistem hızınıza, hareket durumunuza ve planınıza göre otomatik olarak güncelleme sıklığını ayarlar. Daha az batarya tüketimi, daha fazla verimlilik.
                     </Text>
@@ -1962,9 +2204,9 @@ export default function TrackScreen(): React.JSX.Element {
                         <Ionicons name="shield-checkmark" size={20} color="#f59e0b" />
                         <Text style={styles.trackInfoAdvancedItemLabel}>Güvenli</Text>
                       </View>
-                    </View>
-                  </View>
-
+                </View>
+              </View>
+              
                   {/* Plan Benefits */}
                   <View style={styles.trackInfoPlans}>
                     <Text style={styles.trackInfoPlansTitle}>Plan Özellikleri</Text>
@@ -1997,13 +2239,13 @@ export default function TrackScreen(): React.JSX.Element {
 
                 {/* Footer Button */}
                 <View style={styles.trackInfoFooter}>
-                  <Pressable 
-                    onPress={async () => {
-                      try {
-                        await SecureStore.setItemAsync('trackInfoSeen', 'true');
-                      } catch {}
-                      setShowTrackInfo(false);
-                    }} 
+              <Pressable 
+                onPress={async () => {
+                  try {
+                    await SecureStore.setItemAsync('trackInfoSeen', 'true');
+                  } catch {}
+                  setShowTrackInfo(false);
+                }} 
                     style={styles.trackInfoButton}
                     android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
                   >
@@ -2012,11 +2254,11 @@ export default function TrackScreen(): React.JSX.Element {
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                       style={styles.trackInfoButtonGradient}
-                    >
+              >
                       <Ionicons name="checkmark-circle" size={20} color="#fff" style={{ marginRight: 8 }} />
                       <Text style={styles.trackInfoButtonText}>Anladım, Başlayalım</Text>
                     </LinearGradient>
-                  </Pressable>
+              </Pressable>
                 </View>
               </LinearGradient>
             </Pressable>
@@ -2044,19 +2286,20 @@ function haversineMeters(a: Coord, b: Coord) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0f172a' },
-  headerWrap: { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 18 : 18, paddingHorizontal: 14, paddingBottom: 12, borderBottomLeftRadius: 14, borderBottomRightRadius: 14 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  brandRow: { flexDirection: 'row', alignItems: 'center' },
-  headerAvatar: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.9)' },
-  headerAvatarText: { color: '#042f35', fontWeight: '800', fontFamily: 'Poppins-ExtraBold' },
-  title: { color: '#042f35', fontSize: 16, fontWeight: '800', fontFamily: 'Poppins-ExtraBold' },
-  subtitle: { color: 'rgba(4,47,53,0.9)', fontSize: 12, fontFamily: 'Poppins-Regular' },
-  headerActions: { flexDirection: 'row', alignItems: 'center' },
-  iconBtn: { width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.9)', alignItems: 'center', justifyContent: 'center' },
+  headerWrap: { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 18 : 18, paddingHorizontal: 12, paddingBottom: 10, borderBottomLeftRadius: 14, borderBottomRightRadius: 14 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minWidth: 0, width: '100%' },
+  brandRow: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0, marginRight: 8 },
+  headerAvatar: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.2)' },
+  headerAvatarText: { color: '#fff', fontWeight: '800', fontFamily: 'Poppins-ExtraBold' },
+  title: { color: '#fff', fontSize: 16, fontWeight: '800', fontFamily: 'Poppins-ExtraBold' },
+  subtitle: { color: 'rgba(255,255,255,0.95)', fontSize: 11, fontFamily: 'Poppins-Medium' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', flexShrink: 0, gap: 4 },
+  iconBtn: { width: 34, height: 34, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
   badge: { position: 'absolute', top: -6, right: -6, backgroundColor: '#ef4444', minWidth: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 2, borderColor: '#06b6d4' },
   badgeText: { color: '#fff', fontSize: 10, fontWeight: '900', fontFamily: 'Poppins-Bold' },
-  headerStats: { marginTop: 10, flexDirection: 'row', gap: 12, justifyContent: 'flex-start' },
-  statText: { color: 'rgba(4,47,53,0.9)', fontWeight: '700', marginRight: 18, fontFamily: 'Poppins-Bold' },
+  headerStats: { marginTop: 4, flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  statText: { color: 'rgba(255,255,255,0.95)', fontWeight: '700', fontSize: 11, fontFamily: 'Poppins-Bold' },
+  headerStatusRow: { paddingTop: 4, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.15)' },
 
   mapCard: { height: 420, marginHorizontal: 14, borderRadius: 18, overflow: 'hidden', backgroundColor: '#1e293b', marginTop: 12, marginBottom: 12, borderWidth: 1, borderColor: '#334155', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
   map: { width: '100%', height: '100%' },
@@ -2454,10 +2697,6 @@ const styles = StyleSheet.create({
   calloutCard: { backgroundColor: '#fff', padding: 8, borderRadius: 8 },
   calloutSub: { fontSize: 12, color: '#64748b', fontFamily: 'Poppins-Regular' },
 
-  fabGroup: { position: 'absolute', top: 14, right: 14, gap: 8, alignItems: 'flex-end' },
-  fab: { height: 46, width: 46, borderRadius: 12, backgroundColor: '#e6f5f4', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(6,182,212,0.2)', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
-  zoomControls: { marginTop: 8, backgroundColor: '#fff', borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#e6eef0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
-  zoomBtn: { width: 46, height: 38, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
 
   controlPanel: { marginHorizontal: 14, gap: 12, marginBottom: 40, marginTop: 6 },
   inputRow: { flexDirection: 'row' },
@@ -2867,5 +3106,39 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
     fontFamily: 'Poppins-Bold',
+  },
+  vehicleStatusCard: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 8,
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  vehicleStatusGradient: {
+    padding: 12,
+    borderRadius: 12,
+  },
+  vehicleStatusContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  vehicleStatusInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  vehicleStatusTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 2,
+  },
+  vehicleStatusSubtitle: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.8)',
   },
 });
