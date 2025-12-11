@@ -35,6 +35,19 @@ OneSignal API key 403 hatası veriyor - "Access denied"
   - ✅ Key'i olduğu gibi yapıştırın
 
 ### 5. Doğrulayın
+
+**Option A: Otomatik Düzeltme (Önerilen)**
+```bash
+cd backend
+npm run fix-onesignal
+```
+Bu script:
+- .env dosyasını otomatik bulur
+- Mevcut key'i gösterir
+- Yeni key'i güvenli şekilde günceller
+- Format hatalarını düzeltir
+
+**Option B: Manuel Doğrulama**
 ```bash
 cd backend
 npm run verify-onesignal
