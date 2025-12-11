@@ -19,6 +19,7 @@ import {
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
 import { Toast, useToast } from '../../components/Toast';
 import { getApiBase } from '../../utils/api';
 import { authFetch, clearToken } from '../../utils/auth';
@@ -447,6 +448,9 @@ export default function SettingsScreen() {
               <Text style={styles.subtitle}>Hesap ve uygulama ayarları</Text>
             </View>
           </View>
+          <View style={styles.headerRight}>
+            <NetworkStatusIcon size={20} />
+          </View>
         </View>
       </LinearGradient>
 
@@ -812,6 +816,7 @@ const styles = StyleSheet.create({
   },
   headerInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   brandTitle: { color: 'rgba(255,255,255,0.9)', fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', fontFamily: 'Poppins-SemiBold' },
   title: { color: '#fff', fontSize: 24, fontWeight: '900', letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
   subtitle: { color: 'rgba(255,255,255,0.9)', marginTop: 3, fontSize: 14, fontWeight: '600', fontFamily: 'Poppins-SemiBold' },

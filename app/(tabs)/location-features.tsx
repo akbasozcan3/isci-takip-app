@@ -20,6 +20,7 @@ import {
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
 import { useToast } from '../../components/Toast';
 import { getApiBase } from '../../utils/api';
 import { authFetch } from '../../utils/auth';
@@ -611,6 +612,9 @@ export default function LocationFeaturesScreen() {
               <Text style={styles.headerTitle}>Konum Özellikleri</Text>
               <Text style={styles.headerSubtitle}>Aile • Kurye • Numaradan Bulma • Yol Takip</Text>
             </View>
+          </View>
+          <View style={styles.headerActions}>
+            <NetworkStatusIcon size={20} />
           </View>
         </View>
       </LinearGradient>
@@ -1814,6 +1818,12 @@ const styles = StyleSheet.create({
   },
   headerTextBlock: {
     flex: 1
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginLeft: 12
   },
   brandLabel: {
     fontSize: 11,

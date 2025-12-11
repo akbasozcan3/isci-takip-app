@@ -144,15 +144,18 @@ export default function NotificationsScreen() {
               {unreadCount > 0 ? `${unreadCount} okunmamış bildirim` : 'Tüm bildirimler okundu'}
             </Text>
           </View>
-          {unreadCount > 0 && (
-            <Pressable 
-              onPress={markAllAsRead}
-              style={styles.markAllButton}
-              android_ripple={{ color: 'rgba(255,255,255,0.3)', borderless: true, radius: 20 }}
-            >
-              <Ionicons name="checkmark-done" size={22} color="#fff" />
-            </Pressable>
-          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <NetworkStatusIcon size={20} />
+            {unreadCount > 0 && (
+              <Pressable 
+                onPress={markAllAsRead}
+                style={styles.markAllButton}
+                android_ripple={{ color: 'rgba(255,255,255,0.3)', borderless: true, radius: 20 }}
+              >
+                <Ionicons name="checkmark-done" size={22} color="#fff" />
+              </Pressable>
+            )}
+          </View>
         </View>
       </LinearGradient>
 

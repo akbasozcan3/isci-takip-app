@@ -6,18 +6,19 @@ import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import React from 'react';
 import {
-    Animated,
-    Dimensions,
-    Platform,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    View
+  Animated,
+  Dimensions,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
 import { useToast } from '../../components/Toast';
 import { authFetch } from '../../utils/auth';
 
@@ -261,6 +262,9 @@ export default function AnalyticsScreen() {
               <Text style={styles.brandLabel}>BAVAXE PLATFORMU</Text>
               <Text style={styles.headerTitle}>Gelişmiş Analitik</Text>
               <Text style={styles.headerSubtitle}>Hoş Geldin, {userName}</Text>
+            </View>
+            <View style={styles.headerActions}>
+              <NetworkStatusIcon size={20} />
             </View>
           </View>
 

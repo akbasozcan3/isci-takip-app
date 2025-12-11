@@ -18,6 +18,7 @@ import {
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
 import { getApiBase } from '../../utils/api';
 
 
@@ -443,6 +444,9 @@ export default function BlogScreen(): React.JSX.Element {
           <View style={styles.headerTextContainer}>
             <Text style={styles.headerTitle}>Bavaxe Makaleleri</Text>
             <Text style={styles.headerSubtitle}>Bavaxe bilgi merkezinde {filteredArticles.length} içerik</Text>
+          </View>
+          <View style={{ marginLeft: 12 }}>
+            <NetworkStatusIcon size={20} />
           </View>
         </View>
 
