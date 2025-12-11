@@ -3,7 +3,17 @@
  * Handles application startup and initialization
  */
 
-const { logger } = require('../utils/logger');
+let logger;
+try {
+  const loggerModule = require('../utils/logger');
+  logger = loggerModule.logger || loggerModule;
+} catch (err) {
+  logger = {
+    info: (...args) => console.log('[StartupService]', ...args),
+    warn: (...args) => console.warn('[StartupService]', ...args),
+    error: (...args) => console.error('[StartupService]', ...args),
+  };
+}
 
 class StartupService {
   constructor() {
