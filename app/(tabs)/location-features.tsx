@@ -90,14 +90,14 @@ export default function LocationFeaturesScreen() {
   const [userId, setUserId] = React.useState('');
   const [activeGroups, setActiveGroups] = React.useState<ActiveGroup[]>([]);
   const [selectedGroup, setSelectedGroup] = React.useState<ActiveGroup | null>(null);
-  const [userPlan, setUserPlan] = React.useState<{ planId: string; limits: any } | null>(null);
+  const [, setUserPlan] = React.useState<{ planId: string; limits: any } | null>(null);
   
   // Aile Paylaşımı
   const [familyMembers, setFamilyMembers] = React.useState<FamilyMember[]>([]);
   const [addFamilyModal, setAddFamilyModal] = React.useState(false);
   const [familyIdentifier, setFamilyIdentifier] = React.useState('');
   const [familyName, setFamilyName] = React.useState('');
-  const [familyRelation, setFamilyRelation] = React.useState('family');
+  const [familyRelation] = React.useState('family');
   
   // Numaradan Bulma
   const [phoneSearch, setPhoneSearch] = React.useState('');
@@ -115,7 +115,6 @@ export default function LocationFeaturesScreen() {
   
   // Yol Takip
   const [routes, setRoutes] = React.useState<any[]>([]);
-  const [currentRoute, setCurrentRoute] = React.useState<any>(null);
 
   const lastLoadTime = React.useRef<Record<string, number>>({});
   const LOAD_CACHE_TIME = 5000;
@@ -176,7 +175,6 @@ export default function LocationFeaturesScreen() {
         const data = await res.json();
         setFamilyMembers(data.data?.members || []);
       } else {
-        const errorData = await res.json().catch(() => ({}));
         if (res.status === 429) {
           showWarning('Çok fazla istek. Lütfen birkaç saniye bekleyin.');
         }
