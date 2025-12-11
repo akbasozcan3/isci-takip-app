@@ -133,6 +133,31 @@ See `.env.example` for all available environment variables.
 - `POST /auth/register` - Register new user
 - `POST /auth/login` - User login
 - `POST /auth/verify-email` - Verify email address
+
+## 🚀 Deployment
+
+### Quick Start
+See [PRODUCTION.md](./PRODUCTION.md) for quick deployment guide.
+
+### Full Guide
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete deployment documentation.
+
+### Environment Setup
+Copy `env.example` to `.env` and configure:
+```bash
+cp env.example .env
+# Edit .env with your values
+```
+
+### Production Checklist
+- [ ] Set `NODE_ENV=production`
+- [ ] Configure `JWT_SECRET` (min 32 chars)
+- [ ] Set `ALLOWED_ORIGINS` (not `*`)
+- [ ] Configure OneSignal keys
+- [ ] Configure SMTP credentials
+- [ ] Enable SSL/TLS (HTTPS)
+- [ ] Configure firewall
+- [ ] Set up monitoring
 - `POST /auth/reset-password` - Reset password
 
 ### Location Tracking

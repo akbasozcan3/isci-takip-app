@@ -23,6 +23,7 @@
   "author": "Ozcan Akbas",
   "license": "MIT",
   "dependencies": {
+    "@react-native-community/netinfo": "^11.4.1",
     "bcryptjs": "^2.4.3",
     "body-parser": "^2.2.0",
     "compression": "^1.7.4",

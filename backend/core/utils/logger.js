@@ -67,37 +67,66 @@ class Logger {
 
   /**
    * Log info message
+   * Supports: info(message), info(message, data)
    */
   info(message, data = {}) {
     if (this.shouldLog('info')) {
-      const logEntry = this.formatLog('info', message, data);
+      // Handle string-only calls
+      const logMessage = typeof message === 'string' ? message : String(message);
+      const logData = (typeof data === 'object' && data !== null && !Array.isArray(data)) ? data : {};
+      const logEntry = this.formatLog('info', logMessage, logData);
       console.log(JSON.stringify(logEntry));
     }
   }
 
   /**
    * Log warning message
+   * Supports: warn(message), warn(message, data)
    */
   warn(message, data = {}) {
     if (this.shouldLog('warn')) {
-      const logEntry = this.formatLog('warn', message, data);
+      // Handle string-only calls
+      const logMessage = typeof message === 'string' ? message : String(message);
+      const logData = (typeof data === 'object' && data !== null && !Array.isArray(data)) ? data : {};
+      const logEntry = this.formatLog('warn', logMessage, logData);
       console.warn(JSON.stringify(logEntry));
     }
   }
 
   /**
    * Log error message
+   * Supports: error(message), error(message, error), error(message, data)
    */
-  error(message, error = null, data = {}) {
+  error(message, errorOrData = null, data = {}) {
     if (this.shouldLog('error')) {
-      const logEntry = this.formatLog('error', message, {
-        ...data,
-        ...(error && {
+      // Handle string-only calls
+      const logMessage = typeof message === 'string' ? message : String(message);
+      let errorObj = null;
+      let logData = {};
+      
+      // Handle second parameter
+      if (errorOrData) {
+        if (errorOrData instanceof Error || (typeof errorOrData === 'object' && errorOrData.message && errorOrData.stack)) {
+          // Second param is an Error object
+          errorObj = errorOrData;
+          logData = (typeof data === 'object' && data !== null && !Array.isArray(data)) ? data : {};
+        } else if (typeof errorOrData === 'object' && errorOrData !== null && !Array.isArray(errorOrData)) {
+          // Second param is data object
+          logData = errorOrData;
+        } else if (typeof errorOrData === 'string') {
+          // Second param is a string (concatenate with message)
+          logData = { additionalInfo: errorOrData };
+        }
+      }
+      
+      const logEntry = this.formatLog('error', logMessage, {
+        ...logData,
+        ...(errorObj && {
           error: {
-            message: error.message,
-            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
-            name: error.name,
-            code: error.code
+            message: errorObj.message,
+            stack: process.env.NODE_ENV === 'development' ? errorObj.stack : undefined,
+            name: errorObj.name,
+            code: errorObj.code
           }
         })
       });
@@ -171,7 +200,11 @@ function getLogger(context = 'App') {
   return context === 'App' ? defaultLogger : defaultLogger.child(context);
 }
 
+// Create default logger instance for backward compatibility
+const logger = getLogger('App');
+
 module.exports = {
   Logger,
-  getLogger
+  getLogger,
+  logger // Export default logger instance for backward compatibility
 };

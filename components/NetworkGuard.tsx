@@ -3,60 +3,26 @@
  * Blocks app access when internet is not available
  */
 
-import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { checkNetworkStatus } from '../utils/network';
+import { useNetwork } from '../hooks/useNetwork';
+import NoInternetScreen from './NoInternetScreen';
 
 interface NetworkGuardProps {
   children: React.ReactNode;
 }
 
 export function NetworkGuard({ children }: NetworkGuardProps) {
-  const [isChecking, setIsChecking] = React.useState(true);
-  const [isConnected, setIsConnected] = React.useState(false);
+  // Use professional network hook for real-time monitoring
+  const network = useNetwork();
   const [isRetrying, setIsRetrying] = React.useState(false);
-
-  React.useEffect(() => {
-    checkConnection();
-    
-    // Only check once on mount, then let NetworkStatusIcon handle periodic checks
-    // This prevents infinite refresh loop
-  }, []);
-
-  const checkConnection = async () => {
-    try {
-      setIsChecking(true);
-      const status = await checkNetworkStatus(true);
-      
-      setIsConnected(status.isConnected);
-      setIsChecking(false);
-      
-      // In development, allow app to work even if backend is unreachable
-      // Only block if there's no internet at all
-      if (!status.isConnected) {
-        console.warn('[NetworkGuard] No internet connection');
-      } else if (!status.isBackendReachable) {
-        // Backend unreachable but internet exists - allow app to continue in dev mode
-        // Status will be shown in header via NetworkStatusIcon
-      }
-    } catch (error: any) {
-      // Silently handle timeout errors
-      if (error?.name !== 'AbortError' && error?.message && !error.message.includes('Aborted')) {
-        console.error('[NetworkGuard] Connection check error:', error);
-      }
-      // In development, allow app to continue even on errors
-      setIsConnected(true); // Assume connected to allow app usage
-      setIsChecking(false);
-    }
-  };
 
   const handleRetry = async () => {
     setIsRetrying(true);
     try {
-      await checkConnection();
+      await network.refresh();
     } catch (error) {
       console.error('[NetworkGuard] Retry error:', error);
     } finally {
@@ -65,7 +31,7 @@ export function NetworkGuard({ children }: NetworkGuardProps) {
   };
 
   // Show loading only on initial check
-  if (isChecking) {
+  if (network.isChecking && !network.hasConnection) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <LinearGradient colors={['#0f172a', '#1e293b']} style={styles.gradient}>
@@ -78,51 +44,26 @@ export function NetworkGuard({ children }: NetworkGuardProps) {
     );
   }
 
-  // In development, allow app to work even if backend is unreachable
-  // Only block if there's absolutely no internet connection
-  // Backend status will be shown in header via NetworkStatusIcon
-  if (!isConnected && __DEV__ === false) {
-    // Only block in production if no internet
+  // Show offline screen if no internet connection
+  if (!network.hasConnection) {
     return (
-      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-        <LinearGradient colors={['#0f172a', '#1e293b']} style={styles.gradient}>
-          <View style={styles.content}>
-            <View style={styles.iconContainer}>
-              <Ionicons name="cloud-offline" size={80} color="#ef4444" />
-            </View>
-            <Text style={styles.title}>İnternet Bağlantısı Gerekli</Text>
-            <Text style={styles.description}>
-              Bu uygulamayı kullanmak için aktif bir internet bağlantısı gereklidir.
-            </Text>
-            <Text style={styles.subDescription}>
-              Lütfen Wi-Fi veya mobil veri bağlantınızı kontrol edin ve tekrar deneyin.
-            </Text>
-            
-            <Pressable
-              onPress={handleRetry}
-              disabled={isRetrying}
-              style={({ pressed }) => [
-                styles.retryButton,
-                (pressed || isRetrying) && styles.retryButtonPressed,
-              ]}
-            >
-              <LinearGradient
-                colors={['#06b6d4', '#0ea5a4']}
-                style={styles.retryButtonGradient}
-              >
-                {isRetrying ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="refresh" size={20} color="#fff" />
-                    <Text style={styles.retryButtonText}>Tekrar Dene</Text>
-                  </>
-                )}
-              </LinearGradient>
-            </Pressable>
-          </View>
-        </LinearGradient>
-      </SafeAreaView>
+      <NoInternetScreen
+        onRetry={handleRetry}
+        isRetrying={isRetrying}
+        message="İnternet bağlantınızı kontrol edin ve tekrar deneyin."
+      />
+    );
+  }
+
+  // Show backend error screen if internet exists but backend is unreachable
+  if (network.hasConnection && !network.isBackendReachable) {
+    return (
+      <NoInternetScreen
+        onRetry={handleRetry}
+        isRetrying={isRetrying}
+        showBackendError={true}
+        message="Sunucuya bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin ve tekrar deneyin."
+      />
     );
   }
 

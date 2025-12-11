@@ -5,14 +5,26 @@
 
 let logger;
 try {
-  const loggerModule = require('../utils/logger');
-  logger = loggerModule.logger || loggerModule;
+  const { getLogger } = require('../utils/logger');
+  logger = getLogger('StartupService');
 } catch (err) {
+  // Fallback logger if getLogger fails
   logger = {
     info: (...args) => console.log('[StartupService]', ...args),
     warn: (...args) => console.warn('[StartupService]', ...args),
     error: (...args) => console.error('[StartupService]', ...args),
   };
+}
+
+// Ensure logger has all required methods
+if (!logger.info || typeof logger.info !== 'function') {
+  logger.info = (...args) => console.log('[StartupService]', ...args);
+}
+if (!logger.warn || typeof logger.warn !== 'function') {
+  logger.warn = (...args) => console.warn('[StartupService]', ...args);
+}
+if (!logger.error || typeof logger.error !== 'function') {
+  logger.error = (...args) => console.error('[StartupService]', ...args);
 }
 
 class StartupService {
@@ -67,9 +79,9 @@ class StartupService {
         // In development, don't fail completely on service errors
         const isDevelopment = process.env.NODE_ENV !== 'production';
         if (isDevelopment) {
-          logger.warn(`⚠️  Service ${service.name} failed but continuing (dev mode):`, error.message);
+          logger.warn(`⚠️  Service ${service.name} failed but continuing (dev mode): ${error.message || error}`);
         } else {
-          logger.error(`❌ Failed to initialize service ${service.name}:`, error);
+          logger.error(`❌ Failed to initialize service ${service.name}: ${error.message || error}`);
         }
       }
     });

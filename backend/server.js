@@ -878,16 +878,38 @@ class ServerApp {
   }
 
   validateEnvironment() {
+    const isProduction = process.env.NODE_ENV === 'production';
     const required = ['JWT_SECRET'];
-    const missing = required.filter(key => !process.env[key]);
+    const recommended = ['ONESIGNAL_APP_ID', 'ONESIGNAL_REST_API_KEY', 'SMTP_HOST', 'SMTP_USER', 'SMTP_PASS'];
     
-    if (missing.length > 0 && process.env.NODE_ENV === 'production') {
+    const missing = required.filter(key => !process.env[key]);
+    const missingRecommended = recommended.filter(key => !process.env[key]);
+    
+    if (missing.length > 0 && isProduction) {
       throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
     }
     
     if (missing.length > 0) {
-      console.warn(`⚠️  WARNING: Missing environment variables: ${missing.join(', ')}`);
+      console.warn(`⚠️  WARNING: Missing required environment variables: ${missing.join(', ')}`);
       console.warn(`   Using fallback values. Set these in production!\n`);
+    }
+    
+    if (missingRecommended.length > 0 && isProduction) {
+      console.warn(`⚠️  WARNING: Missing recommended environment variables: ${missingRecommended.join(', ')}`);
+      console.warn(`   Some features may not work correctly in production!\n`);
+    }
+    
+    // Production security checks
+    if (isProduction) {
+      if (!process.env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIGINS === '*') {
+        console.warn(`⚠️  SECURITY WARNING: ALLOWED_ORIGINS is not set or set to '*'`);
+        console.warn(`   This allows requests from any origin. Set specific origins in production!\n`);
+      }
+      
+      if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
+        console.warn(`⚠️  SECURITY WARNING: JWT_SECRET is too short (minimum 32 characters)`);
+        console.warn(`   Generate a stronger secret: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"\n`);
+      }
     }
 
     const paymentService = require('./services/paymentService');

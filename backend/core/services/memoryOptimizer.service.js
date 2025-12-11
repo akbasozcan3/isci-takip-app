@@ -49,18 +49,10 @@ class MemoryOptimizer {
     const usagePercent = heapUsed / heapTotal;
 
     if (usagePercent >= this.criticalThreshold) {
-      logger.error('Critical memory usage detected', {
-        heapUsed: `${(heapUsed / 1024 / 1024).toFixed(2)}MB`,
-        heapTotal: `${(heapTotal / 1024 / 1024).toFixed(2)}MB`,
-        usagePercent: `${(usagePercent * 100).toFixed(2)}%`,
-      });
+      logger.error(`Critical memory usage detected - heapUsed: ${(heapUsed / 1024 / 1024).toFixed(2)}MB, heapTotal: ${(heapTotal / 1024 / 1024).toFixed(2)}MB, usagePercent: ${(usagePercent * 100).toFixed(2)}%`);
       this.forceGC();
     } else if (usagePercent >= this.warningThreshold) {
-      logger.warn('High memory usage detected', {
-        heapUsed: `${(heapUsed / 1024 / 1024).toFixed(2)}MB`,
-        heapTotal: `${(heapTotal / 1024 / 1024).toFixed(2)}MB`,
-        usagePercent: `${(usagePercent * 100).toFixed(2)}%`,
-      });
+      logger.warn(`High memory usage detected - heapUsed: ${(heapUsed / 1024 / 1024).toFixed(2)}MB, heapTotal: ${(heapTotal / 1024 / 1024).toFixed(2)}MB, usagePercent: ${(usagePercent * 100).toFixed(2)}%`);
       
       // Trigger GC if enough time has passed
       if (Date.now() - this.lastGC > this.gcInterval) {
@@ -79,7 +71,7 @@ class MemoryOptimizer {
         this.lastGC = Date.now();
         logger.info('Garbage collection triggered');
       } catch (error) {
-        logger.warn('Failed to trigger GC', { error: error.message });
+        logger.warn(`Failed to trigger GC: ${error.message || error}`);
       }
     }
   }

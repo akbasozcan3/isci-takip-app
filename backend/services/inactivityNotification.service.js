@@ -108,7 +108,7 @@ class InactivityNotificationService {
 
       this.lastCheckTime = now;
     } catch (error) {
-      logger.error('Error checking inactive devices:', error);
+      logger.error(`Error checking inactive devices: ${error.message || error}`);
     }
   }
 
@@ -157,10 +157,10 @@ class InactivityNotificationService {
             this.notifiedDevices.delete(notificationKey);
           }, 60 * 60 * 1000);
         } else {
-          logger.warn(`Failed to send inactivity notification to user ${userId}:`, notificationResult.error);
+          logger.warn(`Failed to send inactivity notification to user ${userId}: ${notificationResult.error || 'Unknown error'}`);
         }
       } catch (error) {
-        logger.error(`Error sending inactivity notification to user ${userId}:`, error);
+        logger.error(`Error sending inactivity notification to user ${userId}: ${error.message || error}`);
       }
     }
   }

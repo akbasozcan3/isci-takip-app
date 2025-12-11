@@ -48,14 +48,11 @@ class RealtimeService {
       this.setupMiddleware();
       this.setupEventHandlers();
       
-      logger.info('Real-time service initialized', {
-        transports: this.io.opts.transports,
-        pingTimeout: this.io.opts.pingTimeout,
-      });
+      logger.info(`Real-time service initialized - transports: ${this.io.opts.transports.join(', ')}, pingTimeout: ${this.io.opts.pingTimeout}ms`);
 
       return this.io;
     } catch (error) {
-      logger.error('Failed to initialize realtime service', error);
+      logger.error(`Failed to initialize realtime service: ${error.message || error}`);
       return null;
     }
   }
@@ -307,7 +304,7 @@ class RealtimeService {
     this.socketUsers.delete(socketId);
     this.connectionStats.activeConnections--;
 
-    logger.info('Socket disconnected', { userId, socketId, activeConnections: this.connectionStats.activeConnections });
+    logger.info(`Socket disconnected - userId: ${userId}, socketId: ${socketId}, activeConnections: ${this.connectionStats.activeConnections}`);
   }
 
   /**

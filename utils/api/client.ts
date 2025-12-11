@@ -1,9 +1,12 @@
 import * as SecureStore from 'expo-secure-store';
 import { getApiBase } from '../api';
+import { getNetworkErrorMessage, isNetworkError } from '../network';
+import { safeRequest, type SafeRequestResult } from './safeRequest';
 
 interface RequestOptions extends RequestInit {
   skipAuth?: boolean;
   timeout?: number;
+  useSafeRequest?: boolean; // Use safe request with network checks
 }
 
 class ApiClient {
@@ -23,7 +26,12 @@ class ApiClient {
     endpoint: string,
     options: RequestOptions = {}
   ): Promise<T> {
-    const { skipAuth = false, timeout = 60000, ...fetchOptions } = options;
+    const { 
+      skipAuth = false, 
+      timeout = 60000, 
+      useSafeRequest = true, // Default to safe request
+      ...fetchOptions 
+    } = options;
 
     // Ensure endpoint starts with /api if it doesn't already
     let normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
@@ -41,11 +49,33 @@ class ApiClient {
       Object.assign(headers, authHeaders);
     }
 
+    const url = `${this.baseUrl}${normalizedEndpoint}`;
+
+    // Use safe request if enabled (default)
+    if (useSafeRequest) {
+      const result: SafeRequestResult<T> = await safeRequest<T>(url, {
+        ...fetchOptions,
+        headers,
+        timeout,
+        skipNetworkCheck: false, // Always check network
+      });
+
+      if (!result.success) {
+        const error = new Error(result.error || 'Request failed');
+        (error as any).isNetworkError = result.isNetworkError;
+        (error as any).statusCode = result.statusCode;
+        throw error;
+      }
+
+      return result.data as T;
+    }
+
+    // Fallback to original request method
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const response = await fetch(`${this.baseUrl}${normalizedEndpoint}`, {
+      const response = await fetch(url, {
         ...fetchOptions,
         headers,
         signal: controller.signal,
@@ -63,8 +93,18 @@ class ApiClient {
     } catch (error: any) {
       clearTimeout(timeoutId);
       if (error.name === 'AbortError' || error.message?.includes('timeout')) {
-        throw new Error('Request timeout. Please check your connection and try again.');
+        const networkError = new Error('Request timeout. Please check your connection and try again.');
+        (networkError as any).isNetworkError = true;
+        throw networkError;
       }
+      
+      // Check if it's a network error
+      if (isNetworkError(error)) {
+        const networkError = new Error(getNetworkErrorMessage(error));
+        (networkError as any).isNetworkError = true;
+        throw networkError;
+      }
+      
       throw error;
     }
   }

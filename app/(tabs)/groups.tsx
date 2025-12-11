@@ -726,30 +726,38 @@ export default function GroupsScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      <LinearGradient colors={["#06b6d4", "#0ea5a4"]} style={styles.header}>
+      <LinearGradient 
+        colors={["#06b6d4", "#0ea5a4"]} 
+        style={styles.header}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
         <View style={styles.headerContent}>
-          <View>
+          <View style={styles.headerTextContainer}>
             <Text style={styles.title}>Gruplarım</Text>
             <Text style={styles.subtitle}>Konum paylaşım gruplarını yönetin</Text>
           </View>
           <View style={styles.headerButtons}>
-            <NetworkStatusIcon size={22} />
+            <View style={styles.headerIconContainer}>
+              <NetworkStatusIcon size={20} />
+            </View>
             <Pressable 
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 router.push('/(tabs)/profile');
               }}
               style={({ pressed }) => [
+                styles.headerIconContainer,
                 styles.profileButton,
                 pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }
               ]}
               android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true }}
             >
               {profileName ? (
-                <ProfileBadge name={profileName} size={48} />
+                <ProfileBadge name={profileName} size={40} />
               ) : (
-                <View style={[styles.profileButtonFallback, { width: 48, height: 48, borderRadius: 24 }]}>
-                  <Ionicons name="person" size={24} color="#fff" />
+                <View style={[styles.profileButtonFallback, { width: 40, height: 40, borderRadius: 20 }]}>
+                  <Ionicons name="person" size={20} color="#fff" />
                 </View>
               )}
             </Pressable>
@@ -758,18 +766,28 @@ export default function GroupsScreen() {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setShowJoinModal(true);
               }} 
-              style={[styles.headerButton, styles.headerJoinButton]}
+              style={({ pressed }) => [
+                styles.headerIconContainer,
+                styles.headerJoinButton,
+                pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }
+              ]}
+              android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true }}
             >
-              <Ionicons name="person-add" size={20} color="#fff" />
+              <Ionicons name="person-add" size={18} color="#fff" />
             </Pressable>
             <Pressable 
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setShowCreateModal(true);
               }} 
-              style={[styles.headerButton, styles.headerCreateButton]}
+              style={({ pressed }) => [
+                styles.headerIconContainer,
+                styles.headerCreateButton,
+                pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }
+              ]}
+              android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true }}
             >
-              <Ionicons name="add" size={24} color="#fff" />
+              <Ionicons name="add" size={20} color="#fff" />
             </Pressable>
           </View>
         </View>
@@ -837,10 +855,43 @@ export default function GroupsScreen() {
 /* ---------- Styles (kept polished) ---------- */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
-  header: { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 14 : 14, paddingHorizontal: 16, paddingBottom: 14, borderBottomLeftRadius: 20, borderBottomRightRadius: 20 },
-  headerContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  title: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
-  subtitle: { fontSize: 12, color: 'rgba(255,255,255,0.9)', marginTop: 2, fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
+  header: { 
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 8 : 8, 
+    paddingHorizontal: 20, 
+    paddingBottom: 20, 
+    borderBottomLeftRadius: 24, 
+    borderBottomRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  headerContent: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between',
+    minHeight: 60,
+  },
+  headerTextContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
+  title: { 
+    fontSize: 28, 
+    fontWeight: '900', 
+    color: '#fff', 
+    letterSpacing: 0.3, 
+    fontFamily: 'Poppins-Bold',
+    marginBottom: 4,
+  },
+  subtitle: { 
+    fontSize: 13, 
+    color: 'rgba(255,255,255,0.95)', 
+    fontWeight: '600', 
+    fontFamily: 'Poppins-SemiBold',
+    letterSpacing: 0.2,
+  },
 
   messageBar: { 
     position: 'absolute', 
@@ -892,7 +943,22 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(37, 99, 235, 0.5)',
   },
 
-  headerButtons: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  headerButtons: { 
+    flexDirection: 'row', 
+    gap: 10, 
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  headerIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
   profileButton: {
     borderRadius: 24,
     overflow: 'hidden',
@@ -907,14 +973,22 @@ const styles = StyleSheet.create({
   profileBadge: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
   profileBadgeText: { color: '#fff', fontWeight: '900', fontSize: 14, fontFamily: 'Poppins-Bold' },
   headerButton: { 
-    width: 50, 
-    height: 50, 
-    borderRadius: 25, 
+    width: 44, 
+    height: 44, 
+    borderRadius: 22, 
     alignItems: 'center', 
     justifyContent: 'center',
   },
-  headerCreateButton: { backgroundColor: 'rgba(255,255,255,0.2)' }, 
-  headerJoinButton: { backgroundColor: 'rgba(255,255,255,0.15)' },
+  headerCreateButton: { 
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  }, 
+  headerJoinButton: { 
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
 
   content: { flex: 1, padding: 12, backgroundColor: '#0f172a' },
 
