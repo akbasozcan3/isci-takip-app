@@ -47,11 +47,39 @@ export default function LeafletMap({ centerLat, centerLng, onSelect, height = 20
       <script>
         // Türkiye merkezli harita - Profesyonel GPS takip
         const map = L.map('map').setView([${defaultLat}, ${defaultLng}], ${defaultLat === TURKEY_CENTER.lat && defaultLng === TURKEY_CENTER.lng ? '6' : '16'});
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { 
-          maxZoom: 19, 
-          minZoom: 4,
-          subdomains: 'abcd',
-          attribution: '© OpenStreetMap contributors | © CARTO' 
+        const baseLayers = {
+          'OpenStreetMap': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            minZoom: 4,
+            subdomains: ['a', 'b', 'c'],
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            tileSize: 256,
+            zoomOffset: 0
+          }),
+          'Koyu Tema': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            maxZoom: 19,
+            minZoom: 4,
+            subdomains: 'abcd',
+            attribution: '© OpenStreetMap contributors | © CARTO'
+          }),
+          'Uydu': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19,
+            minZoom: 4,
+            attribution: '© Esri'
+          }),
+          'Topografik': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+            maxZoom: 17,
+            minZoom: 4,
+            subdomains: ['a', 'b', 'c'],
+            attribution: '© <a href="https://opentopomap.org">OpenTopoMap</a> contributors'
+          })
+        };
+        
+        baseLayers['OpenStreetMap'].addTo(map);
+        
+        L.control.layers(baseLayers, {}, {
+          position: 'topright',
+          collapsed: true
         }).addTo(map);
         
         // Türkiye sınırlarına odaklan (eğer merkez Türkiye ise)
@@ -113,9 +141,16 @@ export default function LeafletMap({ centerLat, centerLng, onSelect, height = 20
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 8,
+    borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: '#e9eef3',
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });
 

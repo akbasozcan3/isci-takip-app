@@ -1,6 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
-import theme from './theme';
+import { StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { useTheme } from './theme/ThemeContext';
 
 interface Props {
   title: string;
@@ -8,12 +8,15 @@ interface Props {
   style?: ViewStyle;
 }
 
-export const SectionHeader: React.FC<Props> = ({ title, right, style }) => (
-  <View style={[styles.row, style]}>
-    <Text style={styles.title}>{title}</Text>
-    {right ? <View>{right}</View> : null}
-  </View>
-);
+export const SectionHeader: React.FC<Props> = ({ title, right, style }) => {
+  const theme = useTheme();
+  return (
+    <View style={[styles.row, style]}>
+      <Text style={[styles.title, { color: theme.colors.text.primary }]}>{title}</Text>
+      {right ? <View>{right}</View> : null}
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
   row: {
@@ -23,7 +26,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   title: {
-    color: theme.colors.text,
     fontSize: 18,
     fontWeight: '900',
   },

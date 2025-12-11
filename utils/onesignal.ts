@@ -1,13 +1,21 @@
 import Constants from 'expo-constants';
+import * as Linking from 'expo-linking';
 import type { NotificationClickEvent, NotificationWillDisplayEvent } from 'react-native-onesignal';
 import { OneSignal } from 'react-native-onesignal';
 
 const ONESIGNAL_APP_ID = Constants.expoConfig?.extra?.oneSignalAppId || process.env.EXPO_PUBLIC_ONESIGNAL_APP_ID;
 
 let isInitialized = false;
+let initializationAttempts = 0;
+const MAX_INIT_ATTEMPTS = 3;
 
-export const initializeOneSignal = () => {
+export const initializeOneSignal = async (): Promise<void> => {
   if (isInitialized) {
+    return;
+  }
+
+  if (initializationAttempts >= MAX_INIT_ATTEMPTS) {
+    console.error('[OneSignal] Max initialization attempts reached');
     return;
   }
 
@@ -17,16 +25,20 @@ export const initializeOneSignal = () => {
   }
 
   try {
+    initializationAttempts++;
+    
     OneSignal.initialize(ONESIGNAL_APP_ID);
     isInitialized = true;
 
     OneSignal.Notifications.addEventListener('foregroundWillDisplay', (event: NotificationWillDisplayEvent) => {
       const notification = event.getNotification();
+      console.log('[OneSignal] Foreground notification received:', notification.title);
       notification.display();
     });
 
     OneSignal.Notifications.addEventListener('click', (event: NotificationClickEvent) => {
       const notification = event.notification;
+      console.log('[OneSignal] Notification clicked:', notification.title);
       
       if (notification.additionalData) {
         const additionalData = notification.additionalData as Record<string, any>;
@@ -39,25 +51,36 @@ export const initializeOneSignal = () => {
       }
     });
 
-    OneSignal.Notifications.requestPermission(true).then((response) => {
-      if (response) {
-        OneSignal.User.pushSubscription.getIdAsync().then((userId) => {
-          if (userId) {
-            console.log('[OneSignal] Active - Subscription ID:', userId);
-          }
-        }).catch(() => {});
+    const permissionResponse = await OneSignal.Notifications.requestPermission(true);
+    console.log('[OneSignal] Permission response:', permissionResponse);
+    
+    if (permissionResponse) {
+      try {
+        const userId = await OneSignal.User.pushSubscription.getIdAsync();
+        if (userId) {
+          console.log('[OneSignal] Active - Subscription ID:', userId);
+        } else {
+          console.warn('[OneSignal] Subscription ID not available yet');
+        }
+      } catch (error) {
+        console.error('[OneSignal] Error getting subscription ID:', error);
       }
-    }).catch(() => {});
+    } else {
+      console.warn('[OneSignal] Notification permission denied');
+    }
 
-    console.log('[OneSignal] Active and ready');
+    console.log('[OneSignal] Initialized and ready');
   } catch (error) {
     console.error('[OneSignal] Initialization failed:', error);
     isInitialized = false;
-    setTimeout(() => {
-      if (!isInitialized) {
-        initializeOneSignal();
-      }
-    }, 5000);
+    
+    if (initializationAttempts < MAX_INIT_ATTEMPTS) {
+      setTimeout(() => {
+        if (!isInitialized) {
+          initializeOneSignal();
+        }
+      }, 3000);
+    }
   }
 };
 
@@ -71,29 +94,41 @@ export const getOneSignalUserId = async (): Promise<string | null> => {
   }
 };
 
-export const setOneSignalExternalUserId = (userId: string): void => {
+export const setOneSignalExternalUserId = async (userId: string): Promise<void> => {
   try {
     if (!isInitialized) {
-      initializeOneSignal();
-      setTimeout(() => {
-        if (isInitialized) {
-          OneSignal.login(userId);
-        }
-      }, 1000);
-      return;
+      await initializeOneSignal();
+      await new Promise(resolve => setTimeout(resolve, 1500));
     }
-    OneSignal.login(userId);
+    
+    if (isInitialized && userId) {
+      OneSignal.login(userId);
+      console.log('[OneSignal] External user ID set:', userId);
+    } else {
+      console.warn('[OneSignal] Cannot set external user ID - not initialized or userId missing');
+      setTimeout(async () => {
+        if (isInitialized && userId) {
+          try {
+            OneSignal.login(userId);
+            console.log('[OneSignal] External user ID set (retry):', userId);
+          } catch (retryError) {
+            console.error('[OneSignal] Retry failed:', retryError);
+          }
+        }
+      }, 2000);
+    }
   } catch (error) {
     console.error('[OneSignal] Error setting external user ID:', error);
-    setTimeout(() => {
-      try {
-        if (isInitialized) {
+    setTimeout(async () => {
+      if (isInitialized && userId) {
+        try {
           OneSignal.login(userId);
+          console.log('[OneSignal] External user ID set (error retry):', userId);
+        } catch (retryError) {
+          console.error('[OneSignal] Error retry failed:', retryError);
         }
-      } catch (retryError) {
-        console.error('[OneSignal] Retry failed:', retryError);
       }
-    }, 2000);
+    }, 3000);
   }
 };
 
@@ -124,12 +159,20 @@ export const sendTags = (tags: Record<string, string>): void => {
   }
 };
 
-// Deep linking handler - will be handled by app/_layout.tsx
-const handleDeepLink = (url: string) => {
+const handleDeepLink = async (url: string) => {
   try {
     console.log('[OneSignal] Deep link received:', url);
-    // Deep linking is handled in app/_layout.tsx via Linking API
-    // This function is kept for compatibility but actual routing happens in _layout
+    if (url && typeof url === 'string') {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+      } else {
+        const parsed = Linking.parse(url);
+        if (parsed.scheme === 'bavaxe' || url.includes('bavaxe')) {
+          console.log('[OneSignal] Handling bavaxe deep link:', parsed);
+        }
+      }
+    }
   } catch (error) {
     console.error('[OneSignal] Error handling deep link:', error);
   }

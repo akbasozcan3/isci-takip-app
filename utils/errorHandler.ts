@@ -9,8 +9,11 @@ if (typeof global !== 'undefined') {
         if (
           errorMessage.includes('ExpoFontLoader.loadAsync') ||
           errorMessage.includes('ionicons') ||
-          (errorMessage.includes('Call to function') && 
-           (errorMessage.includes('ExpoFontLoader') || errorMessage.includes('ionicons')))
+          (errorMessage.includes('Call to function') &&
+           (errorMessage.includes('ExpoFontLoader') || errorMessage.includes('ionicons'))) ||
+          errorMessage.includes('keep awake') ||
+          errorMessage.includes('KeepAwake') ||
+          errorMessage.includes('Unable to activate keep awake')
         ) {
           return;
         }
@@ -32,10 +35,13 @@ console.error = (...args: unknown[]) => {
   if (
     message.includes('ExpoFontLoader.loadAsync') ||
     message.includes('ionicons') ||
-    (message.includes('Call to function') && 
+    (message.includes('Call to function') &&
      (message.includes('ExpoFontLoader') || message.includes('ionicons'))) ||
-    (message.includes('Uncaught (in promise') && 
-     (message.includes('ExpoFontLoader') || message.includes('ionicons')))
+    (message.includes('Uncaught (in promise') &&
+     (message.includes('ExpoFontLoader') || message.includes('ionicons'))) ||
+    message.includes('keep awake') ||
+    message.includes('KeepAwake') ||
+    message.includes('Unable to activate keep awake')
   ) {
     return;
   }

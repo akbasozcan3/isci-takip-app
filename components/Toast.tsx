@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -45,7 +45,8 @@ export function Toast({ message, type, visible, onHide, duration = 3000 }: Toast
 
       return () => clearTimeout(timer);
     }
-  }, [visible]);
+    return undefined;
+  }, [visible, duration]);
 
   const hideToast = () => {
     Animated.parallel([
@@ -114,6 +115,7 @@ export function Toast({ message, type, visible, onHide, duration = 3000 }: Toast
           shadowColor: config.shadowColor,
         },
       ]}
+      pointerEvents="box-none"
     >
       <View style={styles.content}>
         <View style={styles.iconContainer}>
@@ -131,23 +133,24 @@ export function Toast({ message, type, visible, onHide, duration = 3000 }: Toast
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: '50%',
-    left: '8%',
-    right: '8%',
+    top: Platform.OS === 'ios' ? 60 : 50,
+    left: 20,
+    right: 20,
     zIndex: 9999,
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 18,
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
     alignSelf: 'center',
     maxWidth: 400,
-    marginTop: -40,
+    width: '90%',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
   },
   content: {
     flexDirection: 'row',

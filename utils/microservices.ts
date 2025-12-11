@@ -94,7 +94,19 @@ class MicroservicesClient {
           },
         }
       );
-      return data.data || data;
+      const result = data.data || data;
+      return {
+        summary: {
+          total_locations: result.summary?.total_locations ?? 0,
+          total_distance: result.summary?.total_distance ?? 0,
+          active_days: result.summary?.active_days ?? 0,
+          average_daily_distance: result.summary?.average_daily_distance ?? 0,
+        },
+        trends: result.trends || { locations_per_day: [], distance_per_day: [] },
+        predictions: result.predictions || {},
+        insights: Array.isArray(result.insights) ? result.insights : [],
+        anomalies: Array.isArray(result.anomalies) ? result.anomalies : [],
+      };
     } catch (error: any) {
       return {
         summary: {
@@ -107,6 +119,9 @@ class MicroservicesClient {
           locations_per_day: [],
           distance_per_day: [],
         },
+        predictions: {},
+        insights: [],
+        anomalies: [],
       };
     }
   }

@@ -250,7 +250,7 @@ export default function VerifyEmailScreen() {
             ]}
           >
             <View style={styles.logoWrapper}>
-              <BrandLogo size={70} withSoftContainer={false} variant="default" />
+              <BrandLogo size={250} withSoftContainer={false} variant="default" />
             </View>
 
             <Animated.View 
@@ -383,11 +383,13 @@ export default function VerifyEmailScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => router.push('/auth/login')}
+              onPress={() => {
+                router.back();
+              }}
               style={styles.backButton}
             >
               <Ionicons name="arrow-back" size={16} color="#94a3b8" />
-              <Text style={styles.backText}>Giriş sayfasına dön</Text>
+              <Text style={styles.backText}>Geri</Text>
             </TouchableOpacity>
           </Animated.View>
         </View>
@@ -439,22 +441,24 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    justifyContent: 'center',
-    padding: 20
+    justifyContent: 'flex-start',
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingHorizontal: 24,
+    paddingBottom: 24
   },
   header: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 16,
     width: '100%',
   },
   logoWrapper: {
-    marginBottom: 16,
+    marginBottom: 8,
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
   },
   iconContainer: {
-    marginBottom: 24,
+    marginBottom: 12,
   },
   iconGradient: {
     width: 100,
@@ -462,31 +466,27 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 12,
   },
   titleContainer: {
     alignItems: 'center',
     width: '100%',
+    marginBottom: 8,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '900',
     color: '#ffffff',
-    marginBottom: 12,
+    marginBottom: 4,
     letterSpacing: 0.5,
     textAlign: 'center',
     fontFamily: 'Poppins-Bold',
   },
   subtitle: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#94a3b8',
     textAlign: 'center',
-    lineHeight: 22,
-    paddingHorizontal: 24,
+    lineHeight: 20,
+    paddingHorizontal: 20,
     fontWeight: '500',
     fontFamily: 'Poppins-Regular',
   },
@@ -555,11 +555,6 @@ const styles = StyleSheet.create({
   codeDigitFocused: {
     borderColor: '#06b6d4',
     backgroundColor: 'rgba(6, 182, 212, 0.15)',
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
   },
   codeDigitFilled: {
     borderColor: '#10b981',
@@ -569,7 +564,7 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.95 }],
   },
   codeDigitText: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '900',
     color: '#fff',
     fontFamily: 'Poppins-Bold',

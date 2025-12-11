@@ -11,7 +11,6 @@ import React from 'react';
 import {
     ActivityIndicator,
     Animated,
-    Dimensions,
     Modal,
     Platform,
     Pressable,
@@ -26,6 +25,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { io, Socket } from 'socket.io-client';
 import { Toast, useToast } from '../components/Toast';
 import { getApiBase } from '../utils/api';
+import { getMapFeatures, getMapLayers, type MapFeatures } from '../utils/mapFeatures';
 // Avoid importing native-only maps module on web to prevent bundling errors
 const Maps: any = Platform.OS === 'web' ? null : require('react-native-maps');
 const MapView: any = Platform.OS === 'web' ? View : Maps.default;
@@ -33,7 +33,6 @@ const Marker: any = Platform.OS === 'web' ? View : Maps.Marker;
 const Circle: any = Platform.OS === 'web' ? View : Maps.Circle;
 // Google Maps provider kullanmıyoruz
 
-const { width, height } = Dimensions.get('window');
 const API_BASE = getApiBase();
 const BACKGROUND_LOCATION_TASK = 'GROUP_BACKGROUND_LOCATION_TASK';
 
@@ -44,6 +43,13 @@ interface GroupLocation {
     heading: number | null;
     accuracy: number | null;
     timestamp: number;
+    geocode?: {
+        city: string;
+        province: string;
+        district?: string;
+        fullAddress?: string;
+        country?: string;
+    } | null;
 }
 
 interface MemberWithLocation {
@@ -167,15 +173,15 @@ export default function GroupMapScreen() {
     const [showMemberModal, setShowMemberModal] = React.useState(false);
     const [refreshing, setRefreshing] = React.useState(false);
     const [myLocation, setMyLocation] = React.useState<Location.LocationObject | null>(null);
-    const [hasPermission, setHasPermission] = React.useState<boolean | null>(null);
 
     const [isSharing, setIsSharing] = React.useState(false);
     const [sharingLoading, setSharingLoading] = React.useState(false);
     const [persistShare, setPersistShare] = React.useState(false);
 
-    const [loading, setLoading] = React.useState(false);
     const [userId, setUserId] = React.useState('');
     const [mapType, setMapType] = React.useState<'standard' | 'hybrid'>('standard');
+    const [mapFeatures, setMapFeatures] = React.useState<MapFeatures | null>(null);
+    const [availableLayers, setAvailableLayers] = React.useState<Record<string, any>>({});
     
     // Animasyonlar
     const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -198,7 +204,6 @@ export default function GroupMapScreen() {
         longitudeDelta: 20.0 
     };
     
-    const [mapRegion, setMapRegion] = React.useState(TURKEY_REGION);
 
     // --- initial load: workerId + persisted preference ---
     React.useEffect(() => {
@@ -219,18 +224,74 @@ export default function GroupMapScreen() {
 
     const loadMembersWithLocations = React.useCallback(async () => {
         try {
-            const res = await fetch(`${API_BASE}/api/groups/${groupId}/members-with-locations`);
+            const res = await fetch(`${API_BASE}/api/groups/${groupId}/members-with-locations`, {
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
             if (res.ok) {
-                const data = await res.json();
-                setMembersWithLocations(data);
-                await AsyncStorage.setItem(`group_members_${groupId}`, JSON.stringify(data));
+                const responseData = await res.json();
+                const data = responseData.data || responseData;
+                if (Array.isArray(data)) {
+                    setMembersWithLocations(data);
+                    await AsyncStorage.setItem(`group_members_${groupId}`, JSON.stringify(data));
+                }
             }
         } catch (e) { 
             console.warn('Load members error:', e);
             try {
                 const cached = await AsyncStorage.getItem(`group_members_${groupId}`);
-                if (cached) setMembersWithLocations(JSON.parse(cached));
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    if (Array.isArray(parsed)) {
+                        setMembersWithLocations(parsed);
+                    }
+                }
             } catch {}
+        }
+    }, [groupId]);
+
+    interface GroupLocationPayload {
+        userId: string;
+        groupId: string;
+        lat: number;
+        lng: number;
+        heading: number | null;
+        accuracy: number | null;
+        timestamp: number;
+    }
+
+    const safeSendLocation = React.useCallback(async (payload: GroupLocationPayload) => {
+        lastPayloadRef.current = payload;
+        console.log('[GroupMap] 🚀 Sending location:', {
+            userId: payload.userId,
+            groupId: payload.groupId,
+            lat: payload.lat,
+            lng: payload.lng
+        });
+        
+        try {
+            const s = socketRef.current;
+            if (s && (s as any).connected) {
+                console.log('[GroupMap] ✅ Sending via Socket.IO');
+                s.emit('group_location_update', payload);
+                return;
+            } else {
+                console.log('[GroupMap] ⚠️ Socket not connected, using HTTP fallback');
+            }
+        } catch (e) {
+            console.warn('[GroupMap] ❌ Socket emit failed', e);
+        }
+        
+        try {
+            const response = await fetch(`${API_BASE}/api/groups/${groupId}/locations`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            console.log('[GroupMap] 📡 HTTP fallback response:', response.status);
+        } catch (err) {
+            console.warn('[GroupMap] ❌ Fallback POST failed', err);
         }
     }, [groupId]);
 
@@ -359,30 +420,70 @@ export default function GroupMapScreen() {
             }
             socketRef.current = null;
         };
-    }, [groupId, stopLocationSharing, showWarning, router, loadMembersWithLocations]);
+    }, [groupId, stopLocationSharing, showWarning, router, loadMembersWithLocations, isSharing, safeSendLocation]);
 
     // --- load initial backend data ---
     const loadGroupInfo = React.useCallback(async () => {
         try {
-            setLoading(true);
-            const response = await fetch(`${API_BASE}/api/groups/${groupCode}/info`);
+            const response = await fetch(`${API_BASE}/api/groups/${groupCode}/info`, {
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
             if (response.ok) {
-                const info = await response.json();
-                // Apply default work radius if not provided by backend
-                const withRadius: GroupInfo = { ...info, workRadius: info.workRadius ?? 150 };
-                setGroupInfo(withRadius);
-                if (info.lat && info.lng) setMapRegion({ latitude: info.lat, longitude: info.lng, latitudeDelta: 0.01, longitudeDelta: 0.01 });
+                const responseData = await response.json();
+                const info = responseData.data || responseData;
+                if (info && typeof info === 'object') {
+                    const withRadius: GroupInfo = { 
+                        id: info.id || '',
+                        code: info.code || groupCode,
+                        name: info.name || 'Grup',
+                        address: info.address || '',
+                        lat: typeof info.lat === 'number' ? info.lat : null,
+                        lng: typeof info.lng === 'number' ? info.lng : null,
+                        memberCount: typeof info.memberCount === 'number' ? info.memberCount : 0,
+                        workRadius: typeof info.workRadius === 'number' ? info.workRadius : 150
+                    };
+                    setGroupInfo(withRadius);
+                }
             }
-        } catch (e) { console.warn(e); }
-        finally { setLoading(false); }
+        } catch (e) { 
+            console.warn('Load group info error:', e); 
+        }
     }, [groupCode]);
 
 
     const loadLocations = React.useCallback(async () => {
         try {
-            const res = await fetch(`${API_BASE}/api/groups/${groupId}/locations`);
-            if (res.ok) setLocations(await res.json());
-        } catch (e) { console.warn(e); }
+            const res = await fetch(`${API_BASE}/api/groups/${groupId}/locations`, {
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            if (res.ok) {
+                const responseData = await res.json();
+                const data = responseData.data || responseData;
+                if (data.locations && typeof data.locations === 'object') {
+                    const locationsMap: Record<string, GroupLocation> = {};
+                    if (Array.isArray(data.locations)) {
+                        data.locations.forEach((loc: any) => {
+                            if (loc.userId && loc.location) {
+                                locationsMap[loc.userId] = loc.location;
+                            }
+                        });
+                    } else {
+                        Object.entries(data.locations).forEach(([userId, loc]: [string, any]) => {
+                            if (loc && typeof loc === 'object' && loc.lat && loc.lng) {
+                                locationsMap[userId] = loc as GroupLocation;
+                            }
+                        });
+                    }
+                    setLocations(locationsMap);
+                }
+            }
+        } catch (e) { 
+            console.warn('Load locations error:', e); 
+        }
     }, [groupId]);
 
     React.useEffect(() => {
@@ -390,6 +491,17 @@ export default function GroupMapScreen() {
         loadGroupInfo();
         loadMembersWithLocations();
         loadLocations();
+        
+        (async () => {
+            try {
+                const features = await getMapFeatures();
+                const layers = await getMapLayers();
+                setMapFeatures(features);
+                setAvailableLayers(layers);
+            } catch (e) {
+                console.warn('[GroupMap] Map features load error:', e);
+            }
+        })();
         
         // Giriş animasyonu
         Animated.parallel([
@@ -504,7 +616,6 @@ export default function GroupMapScreen() {
             try {
                 const { status } = await Location.requestForegroundPermissionsAsync();
                 if (!mounted) return;
-                setHasPermission(status === 'granted');
                 if (status === 'granted') {
                     const last = await Location.getLastKnownPositionAsync();
                     if (last) setMyLocation(last);
@@ -513,51 +624,6 @@ export default function GroupMapScreen() {
         })();
         return () => { mounted = false; };
     }, []);
-
-    interface GroupLocationPayload {
-        userId: string;
-        groupId: string;
-        lat: number;
-        lng: number;
-        heading: number | null;
-        accuracy: number | null;
-        timestamp: number;
-    }
-
-    async function safeSendLocation(payload: GroupLocationPayload) {
-        lastPayloadRef.current = payload;
-        console.log('[GroupMap] 🚀 Sending location:', {
-            userId: payload.userId,
-            groupId: payload.groupId,
-            lat: payload.lat,
-            lng: payload.lng
-        });
-        
-        try {
-            const s = socketRef.current;
-            if (s && (s as any).connected) {
-                console.log('[GroupMap] ✅ Sending via Socket.IO');
-                s.emit('group_location_update', payload);
-                return;
-            } else {
-                console.log('[GroupMap] ⚠️ Socket not connected, using HTTP fallback');
-            }
-        } catch (e) {
-            console.warn('[GroupMap] ❌ Socket emit failed', e);
-        }
-        
-        // fallback
-        try {
-            const response = await fetch(`${API_BASE}/api/groups/${groupId}/locations`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            console.log('[GroupMap] 📡 HTTP fallback response:', response.status);
-        } catch (err) {
-            console.warn('[GroupMap] ❌ Fallback POST failed', err);
-        }
-    }
 
     // --- start sharing (robust) ---
     const startLocationSharing = React.useCallback(async () => {
@@ -734,7 +800,9 @@ export default function GroupMapScreen() {
             <LinearGradient colors={["#06b6d4", "#0ea5a4"]} style={styles.header} start={[0, 0]} end={[1, 1]}>
                 <View style={styles.headerContent}>
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Pressable onPress={() => router.push({ pathname: '/groups', params: { name: 'nameside' } })} style={styles.backBtn} accessibilityLabel="Geri dön">
+                        <Pressable onPress={() => {
+                            router.back();
+                        }} style={styles.backBtn} accessibilityLabel="Geri dön">
                             <Ionicons name="chevron-back" size={22} color="#042f35" />
                         </Pressable>
                         <View style={{ marginLeft: 8 }}>
@@ -760,14 +828,33 @@ export default function GroupMapScreen() {
                             <Ionicons name="scan-outline" size={20} color="#042f35" />
                         </Pressable>
                         
-                        {/* Harita türü: standard / hybrid */}
-                        <Pressable
-                            onPress={() => setMapType((t) => (t === 'standard' ? 'hybrid' : 'standard'))}
-                            style={[styles.actionButton]}
-                            accessibilityLabel="Harita türü"
-                        >
-                            <Ionicons name={mapType === 'standard' ? 'map-outline' : 'map'} size={18} color="#042f35" />
-                        </Pressable>
+                        {mapFeatures?.satelliteView && (
+                            <Pressable
+                                onPress={() => setMapType((t) => (t === 'standard' ? 'hybrid' : 'standard'))}
+                                style={[styles.actionButton]}
+                                accessibilityLabel="Harita türü"
+                            >
+                                <Ionicons name={mapType === 'standard' ? 'map-outline' : 'map'} size={18} color="#042f35" />
+                            </Pressable>
+                        )}
+                        
+                        {mapFeatures?.exportMap && (
+                            <Pressable
+                                onPress={async () => {
+                                    try {
+                                        const { exportMap } = await import('../utils/mapFeatures');
+                                        await exportMap(null, 'png', [], []);
+                                        showSuccess('Harita export ediliyor...');
+                                    } catch (e) {
+                                        showError('Harita export edilemedi');
+                                    }
+                                }}
+                                style={[styles.actionButton]}
+                                accessibilityLabel="Harita export"
+                            >
+                                <Ionicons name="download-outline" size={18} color="#042f35" />
+                            </Pressable>
+                        )}
 
                         {/* persistent toggle (press to toggle persist) */}
                         <Pressable
@@ -809,7 +896,6 @@ export default function GroupMapScreen() {
                     initialRegion={groupInfo?.lat && groupInfo?.lng 
                         ? { latitude: groupInfo.lat, longitude: groupInfo.lng, latitudeDelta: 0.01, longitudeDelta: 0.01 }
                         : TURKEY_REGION}
-                    onRegionChangeComplete={setMapRegion}
                     mapType={mapType}
                     showsUserLocation={false}
                     showsMyLocationButton={true}
@@ -897,12 +983,20 @@ export default function GroupMapScreen() {
                             inWork = distance <= radius;
                         }
                         
+                        const geocodeInfo = loc.geocode;
+                        const cityProvince = geocodeInfo 
+                            ? `${geocodeInfo.city || ''}${geocodeInfo.province ? `, ${geocodeInfo.province}` : ''}`.trim()
+                            : '';
+                        const locationDesc = cityProvince 
+                            ? `${cityProvince} • Mesafe: ${fmtMeters(distance)} • ${new Date(loc.timestamp).toLocaleTimeString('tr-TR')}`
+                            : `Mesafe: ${fmtMeters(distance)} • Zaman: ${new Date(loc.timestamp).toLocaleTimeString('tr-TR')}`;
+                        
                         return (
                             <Marker 
                                 key={uid} 
                                 coordinate={{ latitude: loc.lat, longitude: loc.lng }} 
                                 title={`${isAdmin ? '👑 ' : ''}${memberName}${inWork ? ' • 🟢 İşte' : ' • 🔴 Dışarıda'}`}
-                                description={`Mesafe: ${fmtMeters(distance)} • Zaman: ${new Date(loc.timestamp).toLocaleTimeString('tr-TR')}`}
+                                description={locationDesc}
                             >
                                 <View style={[styles.memberMarker, isAdmin && styles.adminMarker, inWork ? undefined : { backgroundColor: '#ef4444' }]}>
                                     <Ionicons name={isAdmin ? "shield-checkmark" : "person"} size={16} color="#fff" />
@@ -1006,9 +1100,17 @@ export default function GroupMapScreen() {
                             <Text style={styles.memberName} numberOfLines={1}>{member.displayName}</Text>
                             <Text style={styles.memberRole}>{member.role === 'admin' ? '👑 Admin' : '👤 Üye'}</Text>
                             {member.location && (
-                                <Text style={styles.memberLocation}>
-                                    {new Date(member.location.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-                                </Text>
+                                <>
+                                    {member.location.geocode && (
+                                        <Text style={[styles.memberLocation, { color: '#06b6d4', fontWeight: '700' }]}>
+                                            {member.location.geocode.city || ''}
+                                            {member.location.geocode.province ? `, ${member.location.geocode.province}` : ''}
+                                        </Text>
+                                    )}
+                                    <Text style={styles.memberLocation}>
+                                        {new Date(member.location.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                                    </Text>
+                                </>
                             )}
                             {!member.isOnline && member.lastSeen && (
                                 <Text style={styles.memberOffline}>
@@ -1075,14 +1177,49 @@ export default function GroupMapScreen() {
 
                                     {selectedMember.location && (
                                         <>
+                                            {selectedMember.location.geocode && (
+                                                <>
+                                                    <View style={styles.infoRow}>
+                                                        <Ionicons name="business" size={20} color="#06b6d4" />
+                                                        <Text style={styles.infoLabel}>Şehir:</Text>
+                                                        <Text style={styles.infoValue}>
+                                                            {selectedMember.location.geocode.city || 'Bilinmiyor'}
+                                                        </Text>
+                                                    </View>
+                                                    <View style={styles.infoRow}>
+                                                        <Ionicons name="map" size={20} color="#06b6d4" />
+                                                        <Text style={styles.infoLabel}>İl:</Text>
+                                                        <Text style={styles.infoValue}>
+                                                            {selectedMember.location.geocode.province || 'Bilinmiyor'}
+                                                        </Text>
+                                                    </View>
+                                                    {selectedMember.location.geocode.district && (
+                                                        <View style={styles.infoRow}>
+                                                            <Ionicons name="location" size={20} color="#64748b" />
+                                                            <Text style={styles.infoLabel}>İlçe:</Text>
+                                                            <Text style={styles.infoValue}>
+                                                                {selectedMember.location.geocode.district}
+                                                            </Text>
+                                                        </View>
+                                                    )}
+                                                </>
+                                            )}
                                             <View style={styles.infoRow}>
                                                 <Ionicons name="location" size={20} color="#06b6d4" />
-                                                <Text style={styles.infoLabel}>Konum:</Text>
+                                                <Text style={styles.infoLabel}>Koordinat:</Text>
                                                 <Text style={styles.infoValue}>
                                                     {selectedMember.location.lat.toFixed(6)}, {selectedMember.location.lng.toFixed(6)}
                                                 </Text>
                                             </View>
-
+                                            {selectedMember.location.geocode?.fullAddress && (
+                                                <View style={styles.infoRow}>
+                                                    <Ionicons name="map-outline" size={20} color="#64748b" />
+                                                    <Text style={styles.infoLabel}>Adres:</Text>
+                                                    <Text style={[styles.infoValue, { fontSize: 12 }]}>
+                                                        {selectedMember.location.geocode.fullAddress}
+                                                    </Text>
+                                                </View>
+                                            )}
                                             {selectedMember.location.accuracy && (
                                                 <View style={styles.infoRow}>
                                                     <Ionicons name="radio" size={20} color="#7c3aed" />
@@ -1092,7 +1229,6 @@ export default function GroupMapScreen() {
                                                     </Text>
                                                 </View>
                                             )}
-
                                             <View style={styles.infoRow}>
                                                 <Ionicons name="time" size={20} color="#64748b" />
                                                 <Text style={styles.infoLabel}>Son Güncelleme:</Text>
@@ -1156,18 +1292,30 @@ const styles = StyleSheet.create({
     actionButton: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.9)', alignItems: 'center', justifyContent: 'center' },
     actionButtonActive: { backgroundColor: '#042f35' },
 
-    mapContainer: { flex: 1, position: 'relative' },
+    mapContainer: { 
+      flex: 1, 
+      position: 'relative',
+      borderRadius: 20,
+      overflow: 'hidden',
+      margin: 14,
+      marginTop: 8,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.5,
+      shadowRadius: 16,
+      elevation: 16,
+    },
     map: { flex: 1 },
     centerMarker: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#ef4444', alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff' },
 
     myMarkerWrap: { alignItems: 'center', justifyContent: 'center' },
-    myMarkerDot: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#06b6d4', alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff', shadowColor: '#06b6d4', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 8, elevation: 8 },
+    myMarkerDot: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#06b6d4', alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff' },
 
-    memberMarker: { padding: 8, borderRadius: 12, backgroundColor: '#10b981', borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 5 },
+    memberMarker: { padding: 8, borderRadius: 12, backgroundColor: '#10b981', borderWidth: 2, borderColor: '#fff' },
     adminMarker: { backgroundColor: '#f59e0b' },
     highlightMarker: { borderColor: '#f59e0b' },
 
-    statusBar: { position: 'absolute', top: 16, left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.95)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, elevation: 3 },
+    statusBar: { position: 'absolute', top: 16, left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.95)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
     statusItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     statusText: { fontSize: 12, color: '#666', fontWeight: '600' },
     statusTextActive: { color: '#10b981' },

@@ -90,34 +90,40 @@ export default function TrackLeafletMap({
     <script>
       const map = L.map('map', { zoomControl: true }).setView([${defaultCenter.lat}, ${defaultCenter.lng}], ${isTurkeyCenter ? '6' : '15'});
       
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
-        maxZoom: 19, 
-        minZoom: 4,
-        subdomains: ['a', 'b', 'c'],
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> katkıda bulunanlar',
-        tileSize: 256,
-        zoomOffset: 0
-      }).addTo(map);
-      
-      L.control.layers({
-        'Standart': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
-          maxZoom: 19, 
+      const baseLayers = {
+        'OpenStreetMap': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
           minZoom: 4,
           subdomains: ['a', 'b', 'c'],
-          attribution: '© OpenStreetMap'
+          attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          tileSize: 256,
+          zoomOffset: 0
         }),
-        'Koyu Tema': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { 
-          maxZoom: 19, 
+        'Koyu Tema': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+          maxZoom: 19,
           minZoom: 4,
           subdomains: 'abcd',
-          attribution: '© OpenStreetMap | © CARTO'
+          attribution: '© OpenStreetMap contributors | © CARTO'
         }),
         'Uydu': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
           maxZoom: 19,
           minZoom: 4,
           attribution: '© Esri'
+        }),
+        'Topografik': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+          maxZoom: 17,
+          minZoom: 4,
+          subdomains: ['a', 'b', 'c'],
+          attribution: '© <a href="https://opentopomap.org">OpenTopoMap</a> contributors'
         })
-      }, {}, { position: 'topright' }).addTo(map);
+      };
+      
+      baseLayers['OpenStreetMap'].addTo(map);
+      
+      L.control.layers(baseLayers, {}, {
+        position: 'topright',
+        collapsed: true
+      }).addTo(map);
 
       if (${isTurkeyCenter ? 'true' : 'false'}) {
         map.fitBounds([[36.0, 26.0], [42.0, 45.0]], { padding: [20, 20] });
@@ -315,11 +321,16 @@ export default function TrackLeafletMap({
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 18,
+    borderRadius: 20,
     overflow: 'hidden',
-    backgroundColor: '#1e293b',
+    backgroundColor: '#0f172a',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#1e293b',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 12,
   },
 });
 

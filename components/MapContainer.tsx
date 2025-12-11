@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { Platform, StyleSheet, View, ViewStyle } from 'react-native';
-import theme from './ui/theme';
+import { useTheme } from './ui/theme/ThemeContext';
 
 const Maps: any = Platform.OS === 'web' ? null : require('react-native-maps');
 const MapView: any = Platform.OS === 'web' ? View : Maps?.default;
@@ -19,6 +19,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   showGradient = true,
   variant = 'gps',
 }) => {
+  const theme = useTheme();
   const gradientColors: [string, string] =
     variant === 'gps'
       ? (theme.colors.gradient.gps as [string, string])
@@ -27,7 +28,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       : (theme.colors.gradient.primary as [string, string]);
 
   return (
-    <View style={[styles.container, style]}>
+    <View style={[styles.container, { backgroundColor: theme.colors.bg.primary }, style]}>
       {showGradient && (
         <LinearGradient
           colors={gradientColors}
@@ -45,7 +46,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     position: 'relative',
-    backgroundColor: theme.colors.bg,
   },
   content: {
     flex: 1,

@@ -47,12 +47,12 @@ function resolveBaseUrl(): string {
     return resolvedBase;
   }
 
-  if (Platform.OS === 'android') {
-    resolvedBase = 'http://10.0.2.2:4000';
-  } else if (Platform.OS === 'ios') {
-    resolvedBase = 'http://localhost:4000';
+  if (__DEV__) {
+    resolvedBase = Platform.OS === 'android' 
+      ? 'http://10.0.2.2:4000'
+      : 'http://localhost:4000';
   } else {
-    resolvedBase = 'http://127.0.0.1:4000';
+    resolvedBase = 'https://isci-takip-app-production-0f9e.up.railway.app';
   }
   return resolvedBase;
 }

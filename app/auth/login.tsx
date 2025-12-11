@@ -7,13 +7,15 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View
 } from 'react-native';
-import { BrandLogo } from '../../components/BrandLogo';
+import { AnimatedBubbles } from '../../components/AnimatedBubbles';
+import { AuthHeader } from '../../components/AuthHeader';
 import { Toast, useToast } from '../../components/Toast';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -119,12 +121,24 @@ export default function LoginScreen() {
         try {
           if (data.user.id) {
             await SecureStore.setItemAsync('workerId', String(data.user.id));
-            setOneSignalExternalUserId(String(data.user.id));
+            await setOneSignalExternalUserId(String(data.user.id));
             setUserId(String(data.user.id));
             logEvent(AnalyticsEvents.LOGIN, {
               method: 'email',
               user_id: data.user.id,
             });
+            
+            // Sync OneSignal Player ID with backend
+            try {
+              const { getPlayerId, sendPlayerIdToBackend } = await import('../../utils/onesignalHelpers');
+              const playerId = await getPlayerId();
+              if (playerId) {
+                await sendPlayerIdToBackend(playerId, String(data.user.id));
+                console.log('[Login] OneSignal Player ID synced:', playerId);
+              }
+            } catch (onesignalError) {
+              console.warn('[Login] OneSignal Player ID sync error:', onesignalError);
+            }
             
             // Set OneSignal segments
             const { updateUserSegments } = await import('../../utils/onesignal');
@@ -182,30 +196,25 @@ export default function LoginScreen() {
         style={styles.gradient}
       >
         <StatusBar barStyle="light-content" />
+        <AnimatedBubbles />
         <View style={styles.decorativeCircle1} />
         <View style={styles.decorativeCircle2} />
         <View style={styles.decorativeCircle3} />
 
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
         <View style={styles.content}>
-          <Animated.View 
-            style={[
-              styles.header,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              }
-            ]}
-          >
-            <View style={styles.logoWrapper}>
-              <BrandLogo size={250} withSoftContainer={false} variant="default" />
-            </View>
-            <View style={styles.titleContainer}>
-              <Text style={styles.title}>Hoş Geldiniz</Text>
-              <Text style={styles.subtitle}>
-                Bavaxe sistemine giriş yapın
-              </Text>
-            </View>
-          </Animated.View>
+            <AuthHeader
+              activeTab="login"
+              onTabChange={(tab) => {
+                if (tab === 'register') {
+                  router.push('/auth/register' as any);
+                }
+              }}
+            />
           <Animated.View 
             style={[
               styles.form,
@@ -265,20 +274,19 @@ export default function LoginScreen() {
               style={styles.loginButton}
             />
 
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>Hesabınız yok Mu? </Text>
-              <TouchableOpacity onPress={() => router.push('/auth/register')}>
-                <Text style={styles.footerLink}>Kayıt Olun</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={[styles.footer, { marginTop: 8 }]}> 
-              <TouchableOpacity onPress={() => router.push('/auth/reset-password' as any)}>
-                <Text style={[styles.footerLink, { color: '#f59e0b' }]}>Şifremi Unuttum</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity 
+              onPress={() => router.push('/auth/reset-password' as any)}
+              style={styles.forgotPasswordButton}
+              activeOpacity={0.7}
+            >
+              <View style={styles.forgotPasswordContent}>
+                <Ionicons name="lock-open-outline" size={16} color="#f59e0b" />
+                <Text style={styles.forgotPasswordText}>Şifremi Unuttum</Text>
+              </View>
+            </TouchableOpacity>
           </Animated.View>
         </View>
+        </ScrollView>
         <Toast
           message={toast.message}
           type={toast.type}
@@ -325,28 +333,35 @@ const styles = StyleSheet.create({
     top: '40%',
     right: -30,
   },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 24,
+  },
   content: {
     flex: 1,
-    justifyContent: 'center',
-    padding: 20
+    justifyContent: 'flex-start',
+    paddingTop: Platform.OS === 'ios' ? 8 : 4,
+    paddingHorizontal: 24,
+    paddingBottom: 24
   },
   header: {
     alignItems: 'center',
-    marginBottom: 0,
+    marginBottom: 8,
     width: '100%',
   },
   logoWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
-    marginBottom: 0
+    marginBottom: 4
   },
   titleContainer: {
     alignItems: 'center',
     width: '100%',
+    marginBottom: 4,
   },
   title: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '900',
     color: '#ffffff',
     marginBottom: 4,
@@ -355,22 +370,23 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-Bold',
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#94a3b8',
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 20,
     paddingHorizontal: 20,
     fontWeight: '500',
     fontFamily: 'Poppins-Regular',
   },
   form: {
     width: '100%',
+    marginTop: 8,
   },
   input: {
-    marginBottom: 10,
+    marginBottom: 16,
   },
   loginButton: {
-    marginTop: 4,
+    marginTop: 8,
     marginBottom: 0,
   },
   iconCircle: {
@@ -385,7 +401,9 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 12,
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 8,
     flexWrap: 'wrap',
     width: '100%',
   },
@@ -395,9 +413,66 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     fontFamily: 'Poppins-Regular',
   },
-  footerLink: {
+  registerButton: {
+    marginTop: 8,
+    marginBottom: 0,
+    borderRadius: 14,
+    borderWidth: 2.5,
+    borderColor: 'rgba(96, 165, 250, 0.6)',
+    alignSelf: 'center',
+    width: '100%',
+    overflow: 'hidden',
+    shadowColor: '#60a5fa',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  registerButtonGradient: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 14,
+  },
+  registerButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  registerButtonText: {
     color: '#60a5fa',
+    fontSize: 17,
+    fontWeight: '800',
+    fontFamily: 'Poppins-Bold',
+    letterSpacing: 0.5,
+    textShadowColor: 'rgba(96, 165, 250, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  forgotPasswordButton: {
+    marginTop: 12,
+    marginBottom: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    alignSelf: 'center',
+    width: '100%',
+  },
+  forgotPasswordContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  forgotPasswordText: {
+    color: '#f59e0b',
+    fontSize: 14,
+    fontWeight: '700',
     fontFamily: 'Poppins-SemiBold',
+    letterSpacing: 0.3,
   },
 });
 

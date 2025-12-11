@@ -2,9 +2,12 @@ import * as Linking from 'expo-linking';
 import { Slot, SplashScreen, usePathname, useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import React from 'react';
+import AppFlow from '../components/AppFlow';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { MessageProvider } from '../components/MessageProvider';
+import { NetworkGuard } from '../components/NetworkGuard';
 import SubscriptionModal, { useSubscriptionModal } from '../components/SubscriptionModal';
+import { ThemeProvider } from '../components/ui/theme/ThemeProvider';
 import '../utils/errorHandler';
 import { initializeOneSignal } from '../utils/onesignal';
 
@@ -15,17 +18,40 @@ export default function RootLayout(): React.JSX.Element {
   const subscriptionModal = useSubscriptionModal();
 
   React.useEffect(() => {
-    SplashScreen.hideAsync();
-    initializeOneSignal();
+    const originalError = console.error;
+    console.error = (...args: any[]) => {
+      const errorMessage = args[0]?.toString() || '';
+      if (errorMessage.includes('keep awake') || errorMessage.includes('KeepAwake') || errorMessage.includes('Unable to activate keep awake')) {
+        return;
+      }
+      originalError.apply(console, args);
+    };
     
-    const handleInitialURL = async () => {
-      const initialUrl = await Linking.getInitialURL();
-      if (initialUrl) {
-        handleDeepLink(initialUrl);
+    return () => {
+      console.error = originalError;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    const init = async () => {
+      try {
+        await SplashScreen.hideAsync();
+        await initializeOneSignal();
+        
+        const initialUrl = await Linking.getInitialURL();
+        if (initialUrl) {
+          handleDeepLink(initialUrl);
+        }
+      } catch (error: any) {
+        if (error?.message?.includes('keep awake') || error?.message?.includes('KeepAwake')) {
+          console.warn('[RootLayout] Keep awake not available on this platform, ignoring...');
+        } else {
+          console.error('[RootLayout] Initialization error:', error);
+        }
       }
     };
     
-    handleInitialURL();
+    init();
     
     const subscription = Linking.addEventListener('url', (event) => {
       handleDeepLink(event.url);
@@ -58,7 +84,7 @@ export default function RootLayout(): React.JSX.Element {
         } else if (path.includes('notifications')) {
           router.push('/notifications');
         } else if (path.includes('profile') || path.includes('settings')) {
-          router.push('/(tabs)/settings');
+          router.push('/(tabs)/profile');
         } else if (path.includes('blog') || path.includes('article')) {
           const articleId = params.id || params.articleId;
           if (articleId) {
@@ -67,7 +93,7 @@ export default function RootLayout(): React.JSX.Element {
             router.push('/blog');
           }
         } else if (path.includes('payment') || path.includes('subscription')) {
-          router.push('/(tabs)/settings');
+          router.push('/(tabs)/profile');
         } else {
           router.push('/(tabs)');
         }
@@ -98,8 +124,23 @@ export default function RootLayout(): React.JSX.Element {
             if (workerId) {
               const { setOneSignalExternalUserId } = await import('../utils/onesignal');
               const { markUserActive } = await import('../utils/onesignalSegments');
-              setOneSignalExternalUserId(workerId);
+              await setOneSignalExternalUserId(workerId);
               markUserActive();
+              
+              // Sync OneSignal Player ID with backend (throttled in helper)
+              // Only sync once per session to prevent rate limiting
+              setTimeout(async () => {
+                try {
+                  const { getPlayerId, sendPlayerIdToBackend } = await import('../utils/onesignalHelpers');
+                  const playerId = await getPlayerId();
+                  if (playerId) {
+                    await sendPlayerIdToBackend(playerId, workerId);
+                    console.log('[RootLayout] OneSignal Player ID synced:', playerId);
+                  }
+                } catch (onesignalError) {
+                  console.warn('[RootLayout] OneSignal Player ID sync error:', onesignalError);
+                }
+              }, 2000);
             }
           } else if (token) {
             setIsAuthenticated(true);
@@ -107,8 +148,23 @@ export default function RootLayout(): React.JSX.Element {
             if (workerId) {
               const { setOneSignalExternalUserId } = await import('../utils/onesignal');
               const { markUserActive } = await import('../utils/onesignalSegments');
-              setOneSignalExternalUserId(workerId);
+              await setOneSignalExternalUserId(workerId);
               markUserActive();
+              
+              // Sync OneSignal Player ID with backend (throttled in helper)
+              // Only sync once per session to prevent rate limiting
+              setTimeout(async () => {
+                try {
+                  const { getPlayerId, sendPlayerIdToBackend } = await import('../utils/onesignalHelpers');
+                  const playerId = await getPlayerId();
+                  if (playerId) {
+                    await sendPlayerIdToBackend(playerId, workerId);
+                    console.log('[RootLayout] OneSignal Player ID synced:', playerId);
+                  }
+                } catch (onesignalError) {
+                  console.warn('[RootLayout] OneSignal Player ID sync error:', onesignalError);
+                }
+              }, 2000);
             }
           }
         }
@@ -129,18 +185,25 @@ export default function RootLayout(): React.JSX.Element {
       }, 1000);
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, [isAuthenticated, pathname, subscriptionModal]);
   
   return (
     <ErrorBoundary>
-      <MessageProvider>
-        <Slot />
-        <SubscriptionModal
-          visible={subscriptionModal.visible}
-          onClose={subscriptionModal.hide}
-          onSubscriptionChange={subscriptionModal.setSubscription}
-        />
-      </MessageProvider>
+      <ThemeProvider>
+        <NetworkGuard>
+          <AppFlow>
+            <MessageProvider>
+              <Slot />
+              <SubscriptionModal
+                visible={subscriptionModal.visible}
+                onClose={subscriptionModal.hide}
+                onSubscriptionChange={subscriptionModal.setSubscription}
+              />
+            </MessageProvider>
+          </AppFlow>
+        </NetworkGuard>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

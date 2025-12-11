@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { authFetch } from '../utils/auth';
@@ -17,7 +18,8 @@ function initialsFromName(name?: string | null): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-export const ProfileBadge: React.FC<Props> = ({ name, size = 40, style, onPress }) => {
+export const ProfileBadge: React.FC<Props> = ({ name, size = 40, style, onPress: customOnPress }) => {
+  const router = useRouter();
   const [initials, setInitials] = React.useState<string>('');
 
   React.useEffect(() => {
@@ -52,28 +54,35 @@ export const ProfileBadge: React.FC<Props> = ({ name, size = 40, style, onPress 
     </View>
   );
 
-  if (onPress) {
-    return (
-      <Pressable onPress={onPress} android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true }}>
-        {content}
-      </Pressable>
-    );
-  }
-  return content;
+  // If custom onPress provided, use it; otherwise default to profile navigation
+  const handlePress = customOnPress || (() => {
+    router.push('/(tabs)/profile');
+  });
+
+  return (
+    <Pressable 
+      onPress={handlePress} 
+      android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true }}
+      style={({ pressed }) => pressed && { opacity: 0.8 }}
+    >
+      {content}
+    </Pressable>
+  );
 };
 
 const styles = StyleSheet.create({
   badge: {
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   text: {
     color: '#fff',
     fontWeight: '900',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
+    fontFamily: 'Poppins-ExtraBold',
   },
 });
 

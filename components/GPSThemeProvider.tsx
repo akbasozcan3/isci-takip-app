@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import theme from './ui/theme';
+import { useTheme } from './ui/theme/ThemeContext';
 
 interface GPSThemeProviderProps {
   children: React.ReactNode;
@@ -9,6 +9,7 @@ interface GPSThemeProviderProps {
 }
 
 export const GPSThemeProvider: React.FC<GPSThemeProviderProps> = ({ children, variant = 'default' }) => {
+  const theme = useTheme();
   const gradientColors: [string, string] = 
     variant === 'gps' ? theme.colors.gradient.gps as [string, string] :
     variant === 'success' ? theme.colors.gradient.success as [string, string] :

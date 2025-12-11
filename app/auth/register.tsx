@@ -6,13 +6,15 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { BrandLogo } from '../../components/BrandLogo';
+import { AnimatedBubbles } from '../../components/AnimatedBubbles';
+import { AuthHeader } from '../../components/AuthHeader';
 import { Toast, useToast } from '../../components/Toast';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -240,14 +242,6 @@ export default function RegisterScreen() {
     }
   };
 
-  const getStepNumber = () => {
-    switch (step) {
-      case 'email': return 1;
-      case 'verify': return 2;
-      case 'register': return 3;
-      default: return 1;
-    }
-  };
 
   return (
     <KeyboardAvoidingView
@@ -259,64 +253,35 @@ export default function RegisterScreen() {
         style={styles.gradient}
       >
         <StatusBar barStyle="light-content" />
+        <AnimatedBubbles />
         <View style={styles.decorativeCircle1} />
         <View style={styles.decorativeCircle2} />
         <View style={styles.decorativeCircle3} />
 
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
         <View style={styles.content}>
-          <Animated.View 
-            style={[
-              styles.header,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
+            <AuthHeader
+              activeTab="register"
+              onTabChange={(tab: 'login' | 'register') => {
+                if (tab === 'login') {
+                  router.push('/auth/login');
+                }
+              }}
+              title={
+                step === 'email' ? 'Kayıt Ol' :
+                step === 'verify' ? 'E-posta Doğrula' :
+                'Hesap Bilgileri'
               }
-            ]}
-          >
-            <View style={styles.logoWrapper}>
-              <BrandLogo size={250} withSoftContainer={false} variant="default" />
-            </View>
-            <View style={styles.titleContainer}>
-              <Text style={styles.title}>
-                {step === 'email' && 'Kayıt Ol'}
-                {step === 'verify' && 'E-posta Doğrula'}
-                {step === 'register' && 'Hesap Bilgileri'}
-              </Text>
-              <Text style={styles.subtitle}>
-                {step === 'email' && 'Bavaxe hesabınızı oluşturmak için e-posta adresinizi girin'}
-                {step === 'verify' && 'E-posta adresinize gönderilen 6 haneli kodu girin'}
-                {step === 'register' && 'Son adım! Hesap bilgilerinizi tamamlayın'}
-              </Text>
-            </View>
-
-            {/* Progress Indicator */}
-            <View style={styles.progressContainer}>
-              {[1, 2, 3].map((num) => (
-                <View key={num} style={styles.progressStep}>
-                  <View
-                    style={[
-                      styles.progressCircle,
-                      num <= getStepNumber() && styles.progressCircleActive,
-                    ]}
-                  >
-                    {num < getStepNumber() ? (
-                      <Ionicons name="checkmark" size={16} color="#fff" />
-                    ) : (
-                      <Text style={styles.progressNumber}>{num}</Text>
-                    )}
-                  </View>
-                  {num < 3 && (
-                    <View
-                      style={[
-                        styles.progressLine,
-                        num < getStepNumber() && styles.progressLineActive,
-                      ]}
-                    />
-                  )}
-                </View>
-              ))}
-            </View>
-          </Animated.View>
+              subtitle={
+                step === 'email' ? 'Bavaxe hesabınızı oluşturmak için e-posta adresinizi girin' :
+                step === 'verify' ? 'E-posta adresinize gönderilen 6 haneli kodu girin' :
+                'Son adım! Hesap bilgilerinizi tamamlayın'
+              }
+            />
 
           <Animated.View 
             style={[
@@ -349,7 +314,7 @@ export default function RegisterScreen() {
                   title={sendingCode ? 'Gönderiliyor...' : 'Doğrulama Kodu Gönder'}
                   onPress={handleSendVerificationCode}
                   loading={sendingCode}
-                  style={styles.button}
+                  style={styles.loginButton}
                 />
               </>
             )}
@@ -381,7 +346,7 @@ export default function RegisterScreen() {
                   title="Kodu Doğrula"
                   onPress={handleVerifyCode}
                   loading={loading}
-                  style={styles.button}
+                  style={styles.loginButton}
                 />
 
                 <TouchableOpacity
@@ -390,9 +355,13 @@ export default function RegisterScreen() {
                     setVerificationCode('');
                     setCodeSent(false);
                   }}
-                  style={styles.backButton}
+                  style={styles.forgotPasswordButton}
+                  activeOpacity={0.7}
                 >
-                  <Text style={styles.backText}><Ionicons name="arrow-back" size={16} color="#94a3b8" /> E-posta değiştir</Text>
+                  <View style={styles.forgotPasswordContent}>
+                    <Ionicons name="arrow-back" size={16} color="#f59e0b" />
+                    <Text style={styles.forgotPasswordText}>E-posta Değiştir</Text>
+                  </View>
                 </TouchableOpacity>
               </>
             )}
@@ -461,30 +430,24 @@ export default function RegisterScreen() {
                   title="Kayıt Ol"
                   onPress={handleRegister}
                   loading={loading}
-                  style={styles.button}
+                  style={styles.loginButton}
                 />
 
                 <TouchableOpacity
                   onPress={() => setStep('verify')}
-                  style={styles.backButton}
+                  style={styles.forgotPasswordButton}
+                  activeOpacity={0.7}
                 >
-                  <Text style={styles.backText}><Ionicons name="arrow-back" size={16} color="#94a3b8" /> Geri</Text>
+                  <View style={styles.forgotPasswordContent}>
+                    <Ionicons name="arrow-back" size={16} color="#f59e0b" />
+                    <Text style={styles.forgotPasswordText}>Geri</Text>
+                  </View>
                 </TouchableOpacity>
               </>
             )}
-
-            <View style={styles.footer}>
-              {step === 'email' && (
-                <>
-                  <Text style={styles.footerText}>Zaten hesabınız var mı? </Text>
-                  <TouchableOpacity onPress={() => router.push('/auth/login')}>
-                    <Text style={styles.footerLink}>Giriş Yap</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
           </Animated.View>
         </View>
+        </ScrollView>
         <Toast
           message={toast.message}
           type={toast.type}
@@ -531,100 +494,36 @@ const styles = StyleSheet.create({
     top: '40%',
     right: -30,
   },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 24,
+  },
   content: {
     flex: 1,
-    justifyContent: 'center',
-    padding: 20
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 0,
-    width: '100%',
-  },
-  logoWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    marginBottom: 0
-  },
-  titleContainer: {
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 8,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: '#ffffff',
-    marginBottom: 4,
-    letterSpacing: 0.5,
-    textAlign: 'center',
-    fontFamily: 'Poppins-Bold',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#94a3b8',
-    textAlign: 'center',
-    lineHeight: 18,
-    paddingHorizontal: 20,
-    fontWeight: '500',
-    fontFamily: 'Poppins-Regular',
-  },
-  progressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    marginTop: 6,
-  },
-  progressStep: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  progressCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#334155',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#475569',
-  },
-  progressCircleActive: {
-    backgroundColor: '#06b6d4',
-    borderColor: '#06b6d4',
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  progressNumber: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-    fontFamily: 'Poppins-Bold',
-  },
-  progressLine: {
-    width: 50,
-    height: 2,
-    backgroundColor: '#334155',
-    marginHorizontal: 6,
-    borderRadius: 2,
-  },
-  progressLineActive: {
-    backgroundColor: '#06b6d4',
+    justifyContent: 'flex-start',
+    paddingTop: Platform.OS === 'ios' ? 8 : 4,
+    paddingHorizontal: 24,
+    paddingBottom: 24
   },
   form: {
     width: '100%',
+    marginTop: 8,
   },
   input: {
-    marginBottom: 10,
+    marginBottom: 16,
   },
-  button: {
-    marginTop: 4,
+  loginButton: {
+    marginTop: 8,
     marginBottom: 0,
+  },
+  iconCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(100, 116, 139, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   iconCircle2: {
     width: 30,
@@ -635,14 +534,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  iconCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(100, 116, 139, 0.2)',
+  forgotPasswordButton: {
+    marginTop: 12,
+    marginBottom: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    alignSelf: 'center',
+    width: '100%',
+  },
+  forgotPasswordContent: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    flexShrink: 0,
+    gap: 8,
+  },
+  forgotPasswordText: {
+    color: '#f59e0b',
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: 'Poppins-SemiBold',
+    letterSpacing: 0.3,
   },
   emailInfo: {
     flexDirection: 'row',
@@ -658,37 +573,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     fontFamily: 'Poppins-Medium',
-  },
-  backButton: {
-    marginTop: 8,
-    alignItems: 'center',
-    paddingVertical: 6,
-  },
-  backText: {
-    color: '#94a3b8',
-    fontSize: 14,
-    fontWeight: '500',
-    fontFamily: 'Poppins-Medium',
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 12,
-    flexWrap: 'wrap',
-    width: '100%',
-  },
-  footerText: {
-    color: '#94a3b8',
-    fontSize: 14,
-    fontWeight: '400',
-    fontFamily: 'Poppins-Regular',
-  },
-  footerLink: {
-    color: '#60a5fa',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 4,
-    textDecorationLine: 'underline',
-    fontFamily: 'Poppins-SemiBold',
   },
 });

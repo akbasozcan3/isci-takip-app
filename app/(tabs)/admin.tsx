@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { io, Socket } from 'socket.io-client';
 import { EmptyState } from '../../components/EmptyState';
+import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
 import { SkeletonList } from '../../components/SkeletonLoader';
 import { Toast, useToast } from '../../components/Toast';
 import { getApiBase } from '../../utils/api';
@@ -46,7 +47,7 @@ export default function AdminScreen() {
   const [groups, setGroups] = React.useState<Group[]>([]);
   const [selectedGroup, setSelectedGroup] = React.useState<Group | null>(null);
   const [requests, setRequests] = React.useState<GroupRequest[]>([]);
-  const [loading, setLoading] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [userId, setUserId] = React.useState('');
   const [profileName, setProfileName] = React.useState<string>('');
@@ -65,15 +66,18 @@ export default function AdminScreen() {
               if (user && (user.name || user.email)) setProfileName(user.name || user.email);
             }
           } catch {}
+        } else {
+          setLoading(false);
         }
       } catch (error) {
         console.error('Error loading user ID:', error);
+        setLoading(false);
       }
     };
     loadUserId();
   }, []);
 
-  const loadGroups = async () => {
+  const loadGroups = React.useCallback(async () => {
     if (!userId) {
       console.log('[Admin] Cannot load groups, no userId');
       setLoading(false);
@@ -83,36 +87,72 @@ export default function AdminScreen() {
     console.log('[Admin] Loading admin groups for user:', userId);
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/groups/user/${userId}/admin`);
+      // Timeout ekle (10 saniye)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      const { authFetch } = await import('../../utils/auth');
+      const response = await authFetch(`/groups/user/${userId}/admin`);
+      clearTimeout(timeoutId);
+      
       console.log('[Admin] Groups response status:', response.status);
       if (response.ok) {
         const data = await response.json();
-        console.log('[Admin] Loaded groups:', data?.length || 0);
-        setGroups(data);
+        const groupsData = data.data || data;
+        console.log('[Admin] Loaded groups:', Array.isArray(groupsData) ? groupsData.length : 0);
+        setGroups(Array.isArray(groupsData) ? groupsData : []);
       } else {
-        console.warn('[Admin] Failed to load groups');
-        setGroups([]);
+        if (response.status === 429) {
+          console.warn('[Admin] Rate limit - skipping groups load');
+          showWarning('Çok fazla istek. Lütfen birkaç saniye bekleyin.');
+          setGroups([]);
+        } else {
+          console.warn('[Admin] Failed to load groups:', response.status);
+          setGroups([]);
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[Admin] Error loading groups:', error);
       setGroups([]);
-    } finally {
       setLoading(false);
+      
+      // Network error handling
+      const { isNetworkError } = await import('../../utils/network');
+      if (isNetworkError(error)) {
+        // Don't show error toast for network errors - NetworkGuard handles it
+        console.warn('[Admin] Network error detected, handled by NetworkGuard');
+        return;
+      }
+      
+      // Other errors
+      if (error?.response?.status === 429) {
+        showWarning('Çok fazla istek. Lütfen birkaç saniye bekleyin.');
+      } else if (error?.response?.status === 401) {
+        showError('Oturum süresi doldu. Lütfen tekrar giriş yapın.');
+      } else {
+        showError('Gruplar yüklenemedi. Lütfen tekrar deneyin.');
+      }
+      return;
     }
-  };
+    setLoading(false);
+  }, [userId, showWarning]);
 
   const loadRequests = async (groupId: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/groups/${groupId}/requests`);
+      const response = await authFetch(`/groups/${groupId}/requests`);
       if (response.ok) {
         const data = await response.json();
-        setRequests(data);
+        setRequests(data.data || data);
       } else {
         setRequests([]);
       }
-    } catch (error) {
-      console.error('Error loading requests:', error);
+    } catch (error: any) {
+      console.error('[Admin] Error loading requests:', error);
       setRequests([]);
+      const { isNetworkError } = await import('../../utils/network');
+      if (!isNetworkError(error)) {
+        showError('Başvurular yüklenemedi.');
+      }
     }
   };
 
@@ -120,7 +160,7 @@ export default function AdminScreen() {
     console.log('[Admin] Approving request:', requestId, 'for group:', groupId);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     try {
-      const response = await fetch(`${API_BASE}/api/groups/${groupId}/requests/${requestId}/approve`, {
+      const response = await authFetch(`/groups/${groupId}/requests/${requestId}/approve`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -141,16 +181,21 @@ export default function AdminScreen() {
         console.error('[Admin] Approve failed:', error);
         showError(error.error || 'Onay işlemi başarısız');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[Admin] Approve request error:', error);
-      showError('Ağ hatası');
+      const { isNetworkError } = await import('../../utils/network');
+      if (isNetworkError(error)) {
+        // NetworkGuard handles network errors
+        return;
+      }
+      showError('Onay işlemi başarısız');
     }
   };
 
   const deleteGroup = async (groupId: string) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     try {
-      const response = await fetch(`${API_BASE}/api/groups/${groupId}`, {
+      const response = await authFetch(`/groups/${groupId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adminUserId: userId })
@@ -166,15 +211,18 @@ export default function AdminScreen() {
         const err = await response.json().catch(() => ({} as any));
         showError(err.error || 'Grup silinemedi');
       }
-    } catch (e) {
-      showError('Ağ hatası');
+    } catch (e: any) {
+      const { isNetworkError } = await import('../../utils/network');
+      if (!isNetworkError(e)) {
+        showError('Grup silinemedi');
+      }
     }
   };
 
   const rejectRequest = async (groupId: string, requestId: string) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     try {
-      const response = await fetch(`${API_BASE}/api/groups/${groupId}/requests/${requestId}/reject`, {
+      const response = await authFetch(`/groups/${groupId}/requests/${requestId}/reject`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -298,6 +346,44 @@ export default function AdminScreen() {
           <View>
             <Text style={styles.title}>Admin Paneli</Text>
             <Text style={styles.subtitle}>Grup başvurularını yönetin</Text>
+          </View>
+          <View style={styles.headerButtons}>
+            <NetworkStatusIcon size={22} />
+            {profileName ? (
+              <Pressable 
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push('/(tabs)/profile');
+                }}
+                style={({ pressed }) => [
+                  styles.profileButton,
+                  pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }
+                ]}
+                android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true }}
+              >
+                <View style={[styles.profileBadge, { width: 48, height: 48, borderRadius: 24 }]}>
+                  <Text style={[styles.profileBadgeText, { fontSize: 18 }]}>
+                    {profileName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                  </Text>
+                </View>
+              </Pressable>
+            ) : (
+              <Pressable 
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push('/(tabs)/profile');
+                }}
+                style={({ pressed }) => [
+                  styles.profileButton,
+                  pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }
+                ]}
+                android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true }}
+              >
+                <View style={[styles.profileButtonFallback, { width: 48, height: 48, borderRadius: 24 }]}>
+                  <Ionicons name="person" size={24} color="#fff" />
+                </View>
+              </Pressable>
+            )}
           </View>
         </View>
       </LinearGradient>
@@ -443,6 +529,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  profileButton: {
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+  profileButtonFallback: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
   title: {
     fontSize: 26,
     fontWeight: '900',
@@ -511,11 +613,6 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     padding: 22,
     marginBottom: 18,
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 12,
     borderWidth: 1.5,
     borderColor: '#334155',
   },
@@ -579,11 +676,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 22,
     marginBottom: 18,
-    shadowColor: '#7c3aed',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 10,
     borderWidth: 1.5,
     borderColor: '#334155',
   },
@@ -646,19 +738,9 @@ const styles = StyleSheet.create({
   },
   approveButton: {
     backgroundColor: '#10b981',
-    shadowColor: '#10b981',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
   },
   rejectButton: {
     backgroundColor: '#ef4444',
-    shadowColor: '#ef4444',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
   },
   actionButtonText: {
     color: '#fff',

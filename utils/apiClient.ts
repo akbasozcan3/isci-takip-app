@@ -129,23 +129,60 @@ class ApiClient {
         method,
       }, retries);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+      // Handle different response types
+      const contentType = response.headers.get('content-type') || '';
+      let data: unknown;
+
+      if (contentType.includes('application/json')) {
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          throw new Error(`Failed to parse JSON response: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
+        }
+      } else if (contentType.includes('text/')) {
+        data = await response.text();
+      } else {
+        data = await response.blob();
       }
 
-      const data = await response.json();
+      // Handle error responses
+      if (!response.ok) {
+        const errorMessage = typeof data === 'object' && data !== null && 'error' in data
+          ? String((data as { error: unknown }).error)
+          : `HTTP ${response.status}: ${response.statusText}`;
+        
+        const errorCode = typeof data === 'object' && data !== null && 'code' in data
+          ? String((data as { code: unknown }).code)
+          : undefined;
 
-      if (method === 'GET' && !options.skipCache) {
+        const error = new Error(errorMessage);
+        (error as Error & { statusCode?: number; code?: string }).statusCode = response.status;
+        (error as Error & { statusCode?: number; code?: string }).code = errorCode;
+        throw error;
+      }
+
+      // Cache successful GET requests
+      if (method === 'GET' && !options.skipCache && typeof data === 'object') {
         this.setCachedResponse(cacheKey, data);
       }
 
-      return data;
+      return data as T;
     } catch (error) {
+      // Enhanced error handling
       if (error instanceof Error) {
+        // Network errors
+        if (error.name === 'AbortError' || error.message.includes('timeout')) {
+          throw new Error('Request timeout. Please check your internet connection.');
+        }
+        
+        // Already formatted errors
+        if ('statusCode' in error) {
+          throw error;
+        }
+
         throw new Error(`API request failed: ${error.message}`);
       }
-      throw error;
+      throw new Error('Unknown error occurred');
     }
   }
 

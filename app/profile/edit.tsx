@@ -13,17 +13,20 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Toast, useToast } from '../../components/Toast';
 import { Button } from '../../components/ui/Button';
+import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
+import { VerificationCodeInput } from '../../components/ui/VerificationCodeInput';
+import { useTheme } from '../../components/ui/theme/ThemeContext';
 import { authFetch } from '../../utils/auth';
 
 export default function EditProfileScreen() {
   const router = useRouter();
+  const theme = useTheme();
   const { toast, showError, showSuccess, hideToast } = useToast();
   
   const [loading, setLoading] = React.useState(true);
@@ -65,7 +68,6 @@ export default function EditProfileScreen() {
   const [showNewPassword, setShowNewPassword] = React.useState(false);
   const [forgotPassword, setForgotPassword] = React.useState(false);
   const [verificationCode, setVerificationCode] = React.useState('');
-  const [codeDigits, setCodeDigits] = React.useState(['', '', '', '', '', '']);
   const [sendingCode, setSendingCode] = React.useState(false);
   const [codeSent, setCodeSent] = React.useState(false);
   const [codeVerified, setCodeVerified] = React.useState(false);
@@ -252,7 +254,6 @@ export default function EditProfileScreen() {
       setNewPassword('');
       setConfirmPassword('');
       setVerificationCode('');
-      setCodeDigits(['', '', '', '', '', '']);
       setForgotPassword(false);
       setCodeSent(false);
       setCodeVerified(false);
@@ -285,18 +286,18 @@ export default function EditProfileScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="light-content" />
       
-      <LinearGradient colors={['#06b6d4', '#0ea5a4']} style={styles.header}>
+      <LinearGradient colors={theme.colors.gradient.primary as [string, string]} style={styles.header}>
         <View style={styles.headerInner}>
           <Pressable 
             onPress={() => router.back()} 
             style={styles.backButton}
             android_ripple={{ color: 'rgba(255,255,255,0.3)', borderless: true, radius: 20 }}
           >
-            <Ionicons name="arrow-back" size={24} color="#fff" />
+            <Ionicons name="arrow-back" size={24} color={theme.colors.text.primary} />
           </Pressable>
           <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>Profili Düzenle</Text>
-            <Text style={styles.headerSubtitle}>Bilgilerinizi güncelleyin</Text>
+            <Text style={[styles.headerTitle, { color: theme.colors.text.primary }]}>Profili Düzenle</Text>
+            <Text style={[styles.headerSubtitle, { color: theme.colors.text.secondary }]}>Bilgilerinizi güncelleyin</Text>
           </View>
         </View>
       </LinearGradient>
@@ -312,17 +313,17 @@ export default function EditProfileScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {/* Profil Bilgileri */}
-          <View style={styles.section}>
+          <Card variant="elevated" padding="lg" style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionIconWrapper}>
                 <LinearGradient
-                  colors={['#06b6d4', '#0891b2']}
+                  colors={theme.colors.gradient.primary as [string, string]}
                   style={styles.sectionIconGradient}
                 >
-                  <Ionicons name="person" size={20} color="#fff" />
+                  <Ionicons name="person" size={20} color={theme.colors.text.primary} />
                 </LinearGradient>
               </View>
-              <Text style={styles.sectionTitle}>Kişisel Bilgiler</Text>
+              <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>Kişisel Bilgiler</Text>
             </View>
             
             <Input
@@ -330,11 +331,11 @@ export default function EditProfileScreen() {
               placeholder="Adınız ve soyadınız"
               value={displayName}
               onChangeText={setDisplayName}
-              leftElement={
-                <View style={styles.iconCircle}>
-                  <Ionicons name="person-outline" size={18} color="#64748b" />
-                </View>
-              }
+                  leftElement={
+                    <View style={styles.iconWrapper}>
+                      <Ionicons name="person-outline" size={20} color={theme.colors.text.tertiary} />
+                    </View>
+                  }
               style={styles.input}
             />
 
@@ -344,13 +345,13 @@ export default function EditProfileScreen() {
               value={email}
               editable={false}
               leftElement={
-                <View style={styles.iconCircle}>
-                  <Ionicons name="mail-outline" size={16} color="#64748b" />
+                <View style={styles.iconWrapper}>
+                  <Ionicons name="mail-outline" size={20} color={theme.colors.text.tertiary} />
                 </View>
               }
               style={[styles.input, styles.inputDisabled]}
             />
-            <Text style={styles.helperText}>E-posta adresi değiştirilemez</Text>
+            <Text style={[styles.helperText, { color: theme.colors.text.tertiary }]}>E-posta adresi değiştirilemez</Text>
 
             <Input
               label="Telefon (Opsiyonel)"
@@ -360,28 +361,29 @@ export default function EditProfileScreen() {
               keyboardType="phone-pad"
               maxLength={17}
               leftElement={
-                <View style={styles.iconCircle}>
-                  <Ionicons name="call-outline" size={16} color="#64748b" />
+                <View style={styles.iconWrapper}>
+                  <Ionicons name="call-outline" size={20} color={theme.colors.text.tertiary} />
                 </View>
               }
               style={styles.input}
             />
-          </View>
+          </Card>
 
           {/* Şifre Değiştirme */}
-          <View ref={passwordSectionRef} style={styles.section}>
+          <View ref={passwordSectionRef}>
+            <Card variant="elevated" padding="lg" style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionIconWrapper}>
                 <LinearGradient
-                  colors={['#7c3aed', '#6d28d9']}
+                  colors={theme.colors.gradient.secondary as [string, string]}
                   style={styles.sectionIconGradient}
                 >
-                  <Ionicons name="lock-closed" size={20} color="#fff" />
+                  <Ionicons name="lock-closed" size={20} color={theme.colors.text.primary} />
                 </LinearGradient>
               </View>
               <View style={styles.sectionHeaderText}>
-                <Text style={styles.sectionTitle}>Şifre Değiştir</Text>
-                <Text style={styles.sectionDescription}>
+                <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>Şifre Değiştir</Text>
+                <Text style={[styles.sectionDescription, { color: theme.colors.text.tertiary }]}>
                   Şifrenizi değiştirmek istemiyorsanız bu alanları boş bırakın
                 </Text>
               </View>
@@ -396,16 +398,16 @@ export default function EditProfileScreen() {
                   onChangeText={setCurrentPassword}
                   secureTextEntry={!showCurrentPassword}
                   leftElement={
-                    <View style={styles.iconCircle}>
-                      <Ionicons name="lock-closed-outline" size={16} color="#64748b" />
+                    <View style={styles.iconWrapper}>
+                      <Ionicons name="lock-closed-outline" size={20} color={theme.colors.text.tertiary} />
                     </View>
                   }
                   rightElement={
-                    <Pressable onPress={() => setShowCurrentPassword(!showCurrentPassword)}>
+                    <Pressable onPress={() => setShowCurrentPassword(!showCurrentPassword)} style={styles.iconWrapper}>
                       <Ionicons 
                         name={showCurrentPassword ? 'eye-off-outline' : 'eye-outline'} 
                         size={20} 
-                        color="#64748b" 
+                        color={theme.colors.text.tertiary} 
                       />
                     </Pressable>
                   }
@@ -425,20 +427,20 @@ export default function EditProfileScreen() {
               </>
             ) : (
               <>
-                <View style={styles.verificationSection}>
+                <View style={[styles.verificationSection, { backgroundColor: theme.colors.primary.main + '14', borderColor: theme.colors.primary.main + '40' }]}>
                   <View style={styles.verificationHeader}>
                     <View style={styles.verificationIconWrapper}>
                       <LinearGradient
-                        colors={['#06b6d4', '#0891b2']}
+                        colors={theme.colors.gradient.primary as [string, string]}
                         style={styles.verificationIconGradient}
                       >
-                        <Ionicons name="mail" size={20} color="#fff" />
+                        <Ionicons name="mail" size={20} color={theme.colors.text.primary} />
                       </LinearGradient>
                     </View>
                     <View style={styles.verificationHeaderText}>
-                      <Text style={styles.verificationTitle}>E-posta Doğrulama</Text>
-                      <Text style={styles.verificationDescription}>
-                        <Text style={styles.emailHighlight}>{email}</Text> adresine gönderilen doğrulama kodunu girin
+                      <Text style={[styles.verificationTitle, { color: theme.colors.primary.main }]}>E-posta Doğrulama</Text>
+                      <Text style={[styles.verificationDescription, { color: theme.colors.text.secondary }]}>
+                        <Text style={[styles.emailHighlight, { color: theme.colors.primary.main }]}>{email}</Text> adresine gönderilen doğrulama kodunu girin
                       </Text>
                     </View>
                   </View>
@@ -456,7 +458,7 @@ export default function EditProfileScreen() {
                           const data = await response.json();
                           if (response.ok) {
                             setCodeSent(true);
-                              showSuccess('Doğrulama kodu e-postanıza gönderildi');
+                            showSuccess('Doğrulama kodu e-postanıza gönderildi');
                           } else {
                             showError(data.error || 'Kod gönderilemedi');
                           }
@@ -474,79 +476,53 @@ export default function EditProfileScreen() {
                   ) : (
                     <>
                       <View style={styles.codeInputWrapper}>
-                        <Text style={styles.codeInputLabel}>Doğrulama Kodu</Text>
-                        <View style={styles.codeInputContainer}>
-                          {[0, 1, 2, 3, 4, 5].map((index) => (
-                            <View
-                              key={index}
-                              style={[
-                                styles.codeDigitContainer,
-                                codeDigits[index] && styles.codeDigitFilled,
-                                codeVerified && codeDigits[index] && styles.codeDigitVerified,
-                                checkingCode && codeDigits[index] && styles.codeDigitChecking
-                              ]}
-                            >
-                              <Text style={styles.codeDigitText}>
-                                {codeDigits[index] || ''}
-                              </Text>
-                            </View>
-                          ))}
-                          <TextInput
-                            style={styles.hiddenCodeInput}
-                            value={verificationCode}
-                            onChangeText={(text) => {
-                              const digits = text.replace(/[^0-9]/g, '').slice(0, 6).split('');
-                              const newDigits: string[] = [...Array(6).fill('')];
-                              digits.forEach((digit, i) => {
-                                newDigits[i] = digit;
-                              });
-                              setCodeDigits(newDigits);
-                              setVerificationCode(digits.join(''));
-                              if (codeVerified) {
-                                setCodeVerified(false);
-                              }
-                            }}
-                            keyboardType="number-pad"
-                            maxLength={6}
-                            autoFocus={codeSent}
-                            autoComplete="off"
-                          />
-                        </View>
+                        <Text style={[styles.codeInputLabel, { color: theme.colors.text.primary }]}>Doğrulama Kodu</Text>
+                        <VerificationCodeInput
+                          value={verificationCode}
+                          onChangeText={(text: string) => {
+                            setVerificationCode(text);
+                            if (codeVerified) {
+                              setCodeVerified(false);
+                            }
+                          }}
+                          length={6}
+                          loading={checkingCode}
+                          verified={codeVerified}
+                          autoFocus={codeSent}
+                        />
                       </View>
                       {codeVerified && verificationCode.length === 6 && (
-                        <View style={styles.verifiedBadge}>
-                          <Ionicons name="checkmark-circle" size={16} color="#10b981" />
-                          <Text style={styles.verifiedText}>Kod doğrulandı</Text>
+                        <View style={[styles.verifiedBadge, { backgroundColor: theme.colors.semantic.success + '1A', borderColor: theme.colors.semantic.success + '33' }]}>
+                          <Ionicons name="checkmark-circle" size={16} color={theme.colors.semantic.success} />
+                          <Text style={[styles.verifiedText, { color: theme.colors.semantic.success }]}>Kod doğrulandı</Text>
                         </View>
                       )}
-                      {checkingCode && verificationCode.length === 6 && (
-                        <View style={styles.verifiedBadge}>
-                          <ActivityIndicator size="small" color="#06b6d4" />
-                          <Text style={[styles.verifiedText, { color: '#06b6d4' }]}>Kod doğrulanıyor...</Text>
+                      {checkingCode && verificationCode.length === 6 && !codeVerified && (
+                        <View style={[styles.verifiedBadge, { backgroundColor: theme.colors.primary.main + '1A', borderColor: theme.colors.primary.main + '33' }]}>
+                          <ActivityIndicator size="small" color={theme.colors.primary.main} />
+                          <Text style={[styles.verifiedText, { color: theme.colors.primary.main }]}>Kod doğrulanıyor...</Text>
                         </View>
                       )}
                       <Pressable 
                         onPress={() => {
                           setCodeSent(false);
                           setVerificationCode('');
-                          setCodeDigits(['', '', '', '', '', '']);
                           setCodeVerified(false);
                         }}
                         style={styles.resendCodeLink}
                       >
-                        <Text style={styles.resendCodeText}>Yeni kod gönder</Text>
+                        <Text style={[styles.resendCodeText, { color: theme.colors.primary.main }]}>Yeni kod gönder</Text>
                       </Pressable>
                       <Pressable 
                         onPress={() => {
                           setForgotPassword(false);
                           setCodeSent(false);
                           setVerificationCode('');
-                          setCodeDigits(['', '', '', '', '', '']);
                           setCodeVerified(false);
                         }}
                         style={styles.backToPasswordLink}
                       >
-                        <Text style={styles.backToPasswordText}>Mevcut şifremi biliyorum</Text>
+                        <Text style={[styles.backToPasswordText, { color: theme.colors.text.tertiary }]}>Mevcut şifremi biliyorum</Text>
                       </Pressable>
                     </>
                   )}
@@ -564,16 +540,16 @@ export default function EditProfileScreen() {
                   onChangeText={setNewPassword}
                   secureTextEntry={!showNewPassword}
                   leftElement={
-                    <View style={styles.iconCircle}>
-                      <Ionicons name="key-outline" size={16} color="#64748b" />
+                    <View style={styles.iconWrapper}>
+                      <Ionicons name="key-outline" size={20} color={theme.colors.text.tertiary} />
                     </View>
                   }
                   rightElement={
-                    <Pressable onPress={() => setShowNewPassword(!showNewPassword)}>
+                    <Pressable onPress={() => setShowNewPassword(!showNewPassword)} style={styles.iconWrapper}>
                       <Ionicons 
                         name={showNewPassword ? 'eye-off-outline' : 'eye-outline'} 
                         size={20} 
-                        color="#64748b" 
+                        color={theme.colors.text.tertiary} 
                       />
                     </Pressable>
                   }
@@ -587,8 +563,8 @@ export default function EditProfileScreen() {
                   onChangeText={setConfirmPassword}
                   secureTextEntry={!showNewPassword}
                   leftElement={
-                    <View style={styles.iconCircle}>
-                      <Ionicons name="checkmark-circle-outline" size={16} color="#64748b" />
+                    <View style={styles.iconWrapper}>
+                      <Ionicons name="checkmark-circle-outline" size={20} color={theme.colors.text.tertiary} />
                     </View>
                   }
                   style={styles.input}
@@ -596,6 +572,7 @@ export default function EditProfileScreen() {
               </>
             ) : null}
 
+            </Card>
           </View>
 
           {/* Kaydet Butonu */}
@@ -624,7 +601,7 @@ export default function EditProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#0a0e1a',
   },
   loadingContainer: {
     flex: 1,
@@ -665,16 +642,16 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.2)',
   },
   headerTitle: {
-    color: '#fff',
     fontSize: 24,
     fontWeight: '900',
     letterSpacing: 0.5,
+    fontFamily: 'Poppins-Bold',
   },
   headerSubtitle: {
-    color: 'rgba(255,255,255,0.9)',
     marginTop: 3,
     fontSize: 14,
     fontWeight: '600',
+    fontFamily: 'Poppins-SemiBold',
   },
   content: {
     flex: 1,
@@ -682,12 +659,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   section: {
-    marginBottom: 32,
-    padding: 20,
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.1)',
+    marginBottom: 24,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -730,22 +702,18 @@ const styles = StyleSheet.create({
   inputDisabled: {
     opacity: 0.6,
   },
-  iconCircle: {
-    width: 32,
-    height: 32,
-    marginTop: -15,
-    right: 8,
-    borderRadius: 16,
-    backgroundColor: 'rgba(100, 116, 139, 0.1)',
+  iconWrapper: {
+    width: 24,
+    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
   helperText: {
     fontSize: 12,
-    color: '#64748b',
-    marginTop: -12,
-    marginBottom: 16,
+    marginTop: -8,
+    marginBottom: 12,
     marginLeft: 4,
+    fontFamily: 'Poppins-Regular',
   },
   buttonContainer: {
     marginTop: 12,
@@ -769,11 +737,8 @@ const styles = StyleSheet.create({
   verificationSection: {
     marginBottom: 20,
     padding: 20,
-    backgroundColor: 'rgba(6, 182, 212, 0.08)',
     borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: 'rgba(6, 182, 212, 0.25)',
-    shadowColor: '#06b6d4',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
@@ -782,14 +747,12 @@ const styles = StyleSheet.create({
   verificationTitle: {
     fontSize: 18,
     fontWeight: '900',
-    color: '#06b6d4',
     marginBottom: 6,
     fontFamily: 'Poppins-Bold',
     letterSpacing: 0.3,
   },
   verificationDescription: {
     fontSize: 14,
-    color: '#cbd5e1',
     lineHeight: 20,
     fontFamily: 'Poppins-Regular',
   },
@@ -802,60 +765,8 @@ const styles = StyleSheet.create({
   codeInputLabel: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#fff',
     marginBottom: 12,
     fontFamily: 'Poppins-SemiBold',
-  },
-  codeInputContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
-    position: 'relative',
-  },
-  codeDigitContainer: {
-    flex: 1,
-    height: 68,
-    borderRadius: 18,
-    backgroundColor: 'rgba(100, 116, 139, 0.12)',
-    borderWidth: 2,
-    borderColor: 'rgba(100, 116, 139, 0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  codeDigitFilled: {
-    borderColor: '#06b6d4',
-    backgroundColor: 'rgba(6, 182, 212, 0.2)',
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  codeDigitVerified: {
-    borderColor: '#10b981',
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-    shadowColor: '#10b981',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-  },
-  codeDigitChecking: {
-    borderColor: '#06b6d4',
-    backgroundColor: 'rgba(6, 182, 212, 0.15)',
-  },
-  codeDigitText: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#fff',
-    fontFamily: 'Poppins-ExtraBold',
-    letterSpacing: 1,
-  },
-  hiddenCodeInput: {
-    position: 'absolute',
-    opacity: 0,
-    width: 1,
-    height: 1,
   },
   verificationHeader: {
     flexDirection: 'row',
@@ -879,7 +790,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   emailHighlight: {
-    color: '#06b6d4',
     fontWeight: '700',
     fontFamily: 'Poppins-SemiBold',
   },
@@ -888,7 +798,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   resendCodeText: {
-    color: '#06b6d4',
     fontSize: 13,
     fontWeight: '600',
     textDecorationLine: 'underline',
@@ -898,7 +807,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   backToPasswordText: {
-    color: '#94a3b8',
     fontSize: 13,
     fontWeight: '500',
   },
@@ -910,13 +818,10 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingVertical: 10,
     paddingHorizontal: 16,
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.2)',
   },
   verifiedText: {
-    color: '#10b981',
     fontSize: 14,
     fontWeight: '700',
     fontFamily: 'Poppins-SemiBold',

@@ -2,7 +2,7 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { Animated, ColorValue, Pressable, StyleProp, StyleSheet, Text, ViewStyle } from 'react-native';
-import theme from './theme';
+import { useTheme } from './theme/ThemeContext';
 
 interface Props {
   title: string;
@@ -16,10 +16,11 @@ interface Props {
 }
 
 export const Button: React.FC<Props> = ({ title, onPress, loading, disabled, style, variant = 'primary', accessibilityLabel, accessibilityHint }) => {
+  const theme = useTheme();
   const gradientColors: [ColorValue, ColorValue] =
-    variant === 'danger' ? ['#ef4444', '#dc2626'] :
-    variant === 'secondary' ? ['#64748b', '#475569'] :
-    [theme.colors.primary, theme.colors.primaryDark];
+    variant === 'danger' ? theme.colors.gradient.danger as [ColorValue, ColorValue] :
+    variant === 'secondary' ? theme.colors.gradient.secondary as [ColorValue, ColorValue] :
+    theme.colors.gradient.primary as [ColorValue, ColorValue];
   const textColor = '#fff';
   const scaleAnim = React.useRef(new Animated.Value(1)).current;
   const opacityAnim = React.useRef(new Animated.Value(1)).current;
@@ -70,11 +71,6 @@ const styles = StyleSheet.create({
   pressable: {
     borderRadius: 12,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8,
   },
   gradient: {
     paddingVertical: 14,

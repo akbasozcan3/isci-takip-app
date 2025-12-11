@@ -6,26 +6,25 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   BackHandler,
-  Dimensions,
   Easing,
   KeyboardAvoidingView,
   Linking,
   Platform,
+  Pressable,
   SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View
 } from 'react-native';
 import { BrandLogo } from '../../components/BrandLogo';
 import { Toast, useToast } from '../../components/Toast';
 import { Button } from '../../components/ui/Button';
+import { Card } from '../../components/ui/Card/index';
 import { Input } from '../../components/ui/Input';
+import { useTheme } from '../../components/ui/theme/ThemeContext';
 import { getApiBase } from '../../utils/api';
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 function calcPasswordStrength(pw: string) {
   let score = 0;
@@ -38,13 +37,15 @@ function calcPasswordStrength(pw: string) {
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ token?: string }>();
+  const params = useLocalSearchParams<{ token?: string; email?: string; fromSettings?: string }>();
+  const theme = useTheme();
   const { toast, showError, showSuccess, hideToast } = useToast();
 
+  const isFromSettings = params.fromSettings === 'true';
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(params.email || '');
   const [token, setToken] = useState<string>('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -142,7 +143,13 @@ export default function ResetPasswordScreen() {
     }
 
     if (!tokenToVerify || !tokenToVerify.trim()) {
-      showError('Geçersiz link. Lütfen e-postanızdaki linki kullanın.');
+      showError('Token gereklidir. Lütfen e-postanızdaki token\'ı girin.');
+      setStep(1);
+      return;
+    }
+
+    if (tokenToVerify.trim().length < 10) {
+      showError('Geçersiz token formatı. Lütfen e-postanızdaki token\'ı tam olarak kopyalayın.');
       setStep(1);
       return;
     }
@@ -153,7 +160,6 @@ export default function ResetPasswordScreen() {
       const apiBase = getApiBase();
       const url = `${apiBase}/api/auth/reset/verify?token=${encodeURIComponent(tokenToVerify)}`;
       
-      // Timeout controller (15 saniye)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
       
@@ -181,10 +187,11 @@ export default function ResetPasswordScreen() {
         showSuccess('Link doğrulandı. Yeni şifrenizi belirleyebilirsiniz.');
       } else {
         hasVerifiedToken.current = false;
-        const errorMsg = d?.error || 'Geçersiz veya süresi dolmuş link';
+        const errorMsg = d?.error || 'Token geçersiz veya süresi dolmuş. Lütfen yeni bir şifre sıfırlama isteği gönderin.';
         showError(errorMsg);
         setStep(1);
         setToken('');
+        setManualTokenValue('');
       }
     } catch (error: any) {
       hasVerifiedToken.current = false;
@@ -212,6 +219,10 @@ export default function ResetPasswordScreen() {
       showError('Token girin veya panodan yapıştırın.');
       return;
     }
+    if (clean.length < 10) {
+      showError('Geçersiz token formatı. Lütfen e-postanızdaki token\'ı tam olarak kopyalayın.');
+      return;
+    }
     setToken(clean);
     verifyToken(clean);
   }, [manualTokenValue, verifyToken, showError]);
@@ -230,6 +241,12 @@ export default function ResetPasswordScreen() {
     }
   }, [params.token, verifyToken]);
 
+  React.useEffect(() => {
+    if (params.email && typeof params.email === 'string' && params.email.trim()) {
+      setEmail(params.email.trim());
+    }
+  }, [params.email]);
+
   const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
   const startResendTimer = (seconds = 60) => setResendTimer(seconds);
 
@@ -241,14 +258,10 @@ export default function ResetPasswordScreen() {
       return true;
     }
     if (step === 3) {
-      router.replace('/auth/login');
+      router.back();
       return true;
     }
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/auth/login');
-    }
+    router.back();
     return true;
   }, [router, step]);
 
@@ -259,7 +272,7 @@ export default function ResetPasswordScreen() {
     }, [handleBackPress])
   );
 
-  const   requestResetLink = async () => {
+  const requestResetLink = async () => {
     const clean = email.trim();
     if (!clean) {
       showError('E-posta giriniz');
@@ -276,7 +289,6 @@ export default function ResetPasswordScreen() {
       const apiBase = getApiBase();
       const url = `${apiBase}/api/auth/reset/request`;
       
-      // Timeout controller (15 saniye)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
       
@@ -296,13 +308,18 @@ export default function ResetPasswordScreen() {
       }
 
       const d = await res.json().catch(() => ({} as any));
-      if (res.ok) {
-        showSuccess('Şifre sıfırlama linki e-postanıza gönderildi.');
+      if (res.ok && d.success) {
+        showSuccess(d.message || 'Şifre sıfırlama bilgileri e-postanıza gönderildi. Mobil uygulamadan şifrenizi sıfırlayabilirsiniz.');
         startResendTimer(60);
       } else {
-        const errorMsg = d?.error || 'Link gönderilemedi';
-        if (errorMsg.includes('429') || errorMsg.includes('çok fazla')) {
-          showError('Çok fazla istek. Lütfen 10 dakika sonra tekrar deneyin.');
+        const errorMsg = d?.error || 'Şifre sıfırlama isteği gönderilemedi. Lütfen tekrar deneyin.';
+        if (res.status === 429 || errorMsg.includes('429') || errorMsg.includes('çok fazla')) {
+          const retryAfter = d?.retryAfter || 900;
+          const minutes = Math.ceil(retryAfter / 60);
+          showError(`Çok fazla istek. Lütfen ${minutes} dakika sonra tekrar deneyin.`);
+          startResendTimer(Math.min(retryAfter, 900));
+        } else if (res.status === 404 || errorMsg.includes('bulunamadı')) {
+          showError('Bu e-posta adresi ile kayıtlı bir hesap bulunamadı. Lütfen e-posta adresinizi kontrol edin.');
         } else {
           showError(errorMsg);
         }
@@ -320,7 +337,7 @@ export default function ResetPasswordScreen() {
     }
   };
 
-  const   confirmReset = async (): Promise<boolean> => {
+  const confirmReset = async (): Promise<boolean> => {
     const cleanPw = newPassword.trim();
     const cleanConfirm = confirmPassword.trim();
 
@@ -354,7 +371,6 @@ export default function ResetPasswordScreen() {
       const apiBase = getApiBase();
       const url = `${apiBase}/api/auth/reset/confirm`;
       
-      // Timeout controller (15 saniye)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
       
@@ -384,8 +400,13 @@ export default function ResetPasswordScreen() {
         setConfirmPassword('');
         return true;
       } else {
-        const errorMsg = d?.error || 'Şifre sıfırlanamadı';
+        const errorMsg = d?.error || 'Şifre sıfırlanamadı. Lütfen tekrar deneyin.';
         showError(errorMsg);
+        if (errorMsg.includes('geçersiz') || errorMsg.includes('süresi dolmuş')) {
+          setStep(1);
+          setToken('');
+          setManualTokenValue('');
+        }
         return false;
       }
     } catch (error: any) {
@@ -412,12 +433,12 @@ export default function ResetPasswordScreen() {
   }, [email]);
 
   const pwLabel = passwordScore >= 3 ? 'Güçlü' : passwordScore >= 2 ? 'Orta' : passwordScore >= 1 ? 'Zayıf' : '';
-  const pwColor = passwordScore >= 3 ? '#10b981' : passwordScore >= 2 ? '#f59e0b' : passwordScore >= 1 ? '#ef4444' : '#64748b';
+  const pwColor = passwordScore >= 3 ? theme.colors.semantic.success : passwordScore >= 2 ? theme.colors.semantic.warning : passwordScore >= 1 ? theme.colors.semantic.danger : theme.colors.text.disabled;
 
   if (verifying) {
     return (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
-        <LinearGradient colors={['#0f172a', '#1e293b', '#334155']} style={styles.gradient}>
+        <LinearGradient colors={[theme.colors.bg.secondary, theme.colors.bg.tertiary, theme.colors.bg.elevated]} style={styles.gradient}>
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.loadingContainer}>
               <Animated.View
@@ -429,11 +450,11 @@ export default function ResetPasswordScreen() {
                   }
                 ]}
               >
-                <LinearGradient colors={['#06b6d4', '#3b82f6', '#8b5cf6']} style={styles.loadingIconGradient}>
-                  <Ionicons name="lock-closed" size={48} color="#ffffff" />
+                <LinearGradient colors={theme.colors.gradient.primary as [string, string]} style={styles.loadingIconGradient}>
+                  <Ionicons name="lock-closed" size={48} color={theme.colors.text.primary} />
                 </LinearGradient>
               </Animated.View>
-              <Text style={styles.loadingText}>Link doğrulanıyor...</Text>
+              <Text style={[styles.loadingText, { color: theme.colors.text.primary }]}>Link doğrulanıyor...</Text>
             </View>
           </SafeAreaView>
         </LinearGradient>
@@ -447,42 +468,19 @@ export default function ResetPasswordScreen() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       style={styles.container}
     >
-      <LinearGradient colors={['#0f172a', '#1e293b', '#334155']} style={styles.gradient}>
+      <LinearGradient colors={[theme.colors.bg.secondary, theme.colors.bg.tertiary, theme.colors.bg.elevated]} style={styles.gradient}>
         <StatusBar barStyle="light-content" />
-        <Animated.View
-          style={[
-            styles.decorativeCircle1,
-            {
-              opacity: fadeAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 0.15]
-              })
-            }
-          ]}
-        />
-        <Animated.View
-          style={[
-            styles.decorativeCircle2,
-            {
-              opacity: fadeAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 0.12]
-              })
-            }
-          ]}
-        />
-
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity onPress={handleBackPress} style={styles.backButton} activeOpacity={0.7}>
-              <View style={styles.backButtonInner}>
-                <Ionicons name="chevron-back" size={22} color="#E6EEF8" />
-                <Text style={styles.backText}>Geri</Text>
+            <Pressable onPress={handleBackPress} style={styles.backButton}>
+              <View style={[styles.backButtonInner, { backgroundColor: theme.colors.surface.default + 'CC', borderColor: theme.colors.border.subtle }]}>
+                <Ionicons name="arrow-back" size={20} color={theme.colors.text.primary} />
+                <Text style={[styles.backText, { color: theme.colors.text.primary }]}>Geri</Text>
               </View>
-            </TouchableOpacity>
+            </Pressable>
           </View>
 
-          <View style={styles.progressTrack}>
+          <View style={[styles.progressTrack, { backgroundColor: theme.colors.border.subtle }]}>
             <Animated.View
               style={[
                 styles.progressFill,
@@ -494,95 +492,131 @@ export default function ResetPasswordScreen() {
                 }
               ]}
             >
-              <LinearGradient colors={['#06b6d4', '#3b82f6', '#8b5cf6']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.progressGradient} />
+              <LinearGradient 
+                colors={[theme.colors.primary.main, theme.colors.accent.main]} 
+                start={{ x: 0, y: 0 }} 
+                end={{ x: 1, y: 0 }} 
+                style={styles.progressGradient} 
+              />
             </Animated.View>
           </View>
 
-          <ScrollView
+          <ScrollView 
+            style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
-            bounces={false}
+            keyboardShouldPersistTaps="handled"
           >
-            <Animated.View
-              style={[
-                styles.headerContent,
-                {
-                  opacity: fadeAnim,
-                  transform: [{ translateY: slideAnim }]
-                }
-              ]}
-            >
-              <View style={styles.logoWrapper}>
-                <BrandLogo size={250} withSoftContainer={false} variant="default" />
-              </View>
-              <View style={styles.titleContainer}>
-                <Text style={styles.title}>
-                  {step === 1 && 'Şifre Sıfırlama'}
-                  {step === 2 && 'Yeni Şifre Belirle'}
-                  {step === 3 && 'Şifre Güncellendi'}
-                </Text>
-                <Text style={styles.subtitle}>
-                  {step === 1 && 'E-posta adresinize gönderilen link ile şifrenizi sıfırlayın'}
-                  {step === 2 && `Doğrulanan hesap: ${maskedEmail || '—'}`}
-                  {step === 3 && 'Yeni şifrenle giriş yapabilirsin'}
-                </Text>
-              </View>
-            </Animated.View>
+            <View style={styles.contentContainer}>
+              <Animated.View
+                style={[
+                  styles.headerContent,
+                  {
+                    opacity: fadeAnim,
+                    transform: [{ translateY: slideAnim }]
+                  }
+                ]}
+              >
+                <View style={styles.logoWrapper}>
+                  <BrandLogo size={200} withSoftContainer={false} variant="default" />
+                </View>
+                <View style={styles.titleContainer}>
+                  <Text style={[styles.title, { color: theme.colors.text.primary }]}>
+                    {step === 1 && 'Şifre Sıfırlama'}
+                    {step === 2 && 'Yeni Şifre Belirle'}
+                    {step === 3 && 'Şifre Güncellendi'}
+                  </Text>
+                  <Text style={[styles.subtitle, { color: theme.colors.text.tertiary }]}>
+                    {step === 1 && 'E-posta adresinize gönderilen token ile şifrenizi sıfırlayın'}
+                    {step === 2 && `Doğrulanan hesap: ${maskedEmail || '—'}`}
+                    {step === 3 && 'Yeni şifrenle giriş yapabilirsin'}
+                  </Text>
+                </View>
+              </Animated.View>
 
-            <Animated.View
-              style={[
-                styles.form,
-                {
-                  opacity: fadeAnim,
-                  transform: [{ translateY: slideAnim }]
-                }
-              ]}
-            >
+              <Animated.View
+                style={[
+                  styles.form,
+                  {
+                    opacity: fadeAnim,
+                    transform: [{ translateY: slideAnim }]
+                  }
+                ]}
+              >
               {step === 1 && (
-                <>
+                <Card variant="elevated" padding="md" style={styles.mainCard}>
                   <Input
                     label="E-posta Adresi"
                     placeholder="ornek@email.com"
                     value={email}
-                    onChangeText={setEmail}
+                    onChangeText={isFromSettings ? undefined : setEmail}
+                    editable={!isFromSettings}
                     keyboardType="email-address"
                     autoCapitalize="none"
                     autoComplete="email"
                     leftElement={
-                      <View style={styles.iconCircle}>
-                        <Ionicons name="mail-outline" size={18} color="#94a3b8" />
+                      <View style={styles.iconWrapper}>
+                        <Ionicons 
+                          name={isFromSettings ? "lock-closed-outline" : "mail-outline"} 
+                          size={20} 
+                          color={isFromSettings ? theme.colors.primary.main : theme.colors.text.tertiary} 
+                        />
                       </View>
                     }
-                    style={styles.input}
+                    style={[
+                      styles.input,
+                      isFromSettings && styles.inputLocked
+                    ]}
+                    containerStyle={isFromSettings ? {
+                      backgroundColor: theme.colors.primary.main + '08',
+                      borderColor: theme.colors.primary.main + '30',
+                    } : undefined}
                   />
+                  {isFromSettings && (
+                    <View style={[styles.lockedInfo, { backgroundColor: theme.colors.primary.main + '12', borderColor: theme.colors.primary.main + '30' }]}>
+                      <View style={[styles.lockedIconWrapper, { backgroundColor: theme.colors.primary.main + '20' }]}>
+                        <Ionicons name="shield-checkmark" size={14} color={theme.colors.primary.main} />
+                      </View>
+                      <Text style={[styles.lockedInfoText, { color: theme.colors.text.primary }]}>
+                        <Text style={{ fontWeight: '700', fontFamily: 'Poppins-Bold' }}>Korumalı:</Text> E-posta adresiniz ayarlardan alındı ve güvenli şekilde korunuyor
+                      </Text>
+                    </View>
+                  )}
 
-                  <View style={styles.infoRow}>
-                    <Ionicons name="information-circle-outline" size={16} color="#38bdf8" />
-                    <Text style={styles.infoRowText}>Link 10 dakika geçerlidir</Text>
+                  <View style={[styles.infoRow, { backgroundColor: theme.colors.primary.main + '14', borderColor: theme.colors.primary.main + '25' }]}>
+                    <Ionicons name="information-circle-outline" size={16} color={theme.colors.primary.main} />
+                    <Text style={[styles.infoRowText, { color: theme.colors.text.secondary }]}>Token 1 saat geçerlidir</Text>
                   </View>
 
                   <View style={styles.quickActions}>
-                    <TouchableOpacity 
-                      style={styles.chip} 
+                    <Pressable 
+                      style={[styles.actionButton, { backgroundColor: theme.colors.primary.main + '1A', borderColor: theme.colors.primary.main + '40' }]}
                       onPress={openGmailInbox}
-                      activeOpacity={0.7}
                     >
-                      <Ionicons name="logo-google" size={16} color="#4285f4" />
-                      <Text style={styles.chipText}>Gmail Aç</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={styles.chip} 
+                      <LinearGradient
+                        colors={[theme.colors.primary.main + '33', theme.colors.primary.light + '33']}
+                        style={styles.actionButtonGradient}
+                      >
+                        <Ionicons name="logo-google" size={18} color={theme.colors.primary.main} />
+                        <Text style={[styles.actionButtonText, { color: theme.colors.primary.main }]}>Gmail Aç</Text>
+                      </LinearGradient>
+                    </Pressable>
+                    <Pressable 
+                      style={[styles.actionButton, { backgroundColor: theme.colors.accent.main + '1A', borderColor: theme.colors.accent.main + '40' }]}
                       onPress={() => setIsManualTokenMode((p) => !p)}
-                      activeOpacity={0.7}
                     >
-                      <Ionicons name="key-outline" size={16} color="#f472b6" />
-                      <Text style={styles.chipText}>{isManualTokenMode ? 'Token Gizle' : 'Token Gir'}</Text>
-                    </TouchableOpacity>
+                      <LinearGradient
+                        colors={[theme.colors.accent.main + '33', theme.colors.accent.light + '33']}
+                        style={styles.actionButtonGradient}
+                      >
+                        <Ionicons name="key-outline" size={18} color={theme.colors.accent.main} />
+                        <Text style={[styles.actionButtonText, { color: theme.colors.accent.main }]}>Token Gir</Text>
+                      </LinearGradient>
+                    </Pressable>
                   </View>
 
                   {isManualTokenMode && (
-                    <View style={styles.manualTokenCard}>
+                    <Card variant="default" padding="sm" style={styles.manualTokenCard}>
                       <Input
                         label="Token"
                         placeholder="E-postadaki uzun kodu yapıştır"
@@ -598,15 +632,15 @@ export default function ResetPasswordScreen() {
                         style={styles.submitButton}
                       />
                       {!!clipboardSuggestion && (
-                        <TouchableOpacity
-                          style={styles.clipboardPill}
+                        <Pressable
+                          style={[styles.clipboardPill, { backgroundColor: theme.colors.primary.main + '1A', borderColor: theme.colors.primary.main + '33' }]}
                           onPress={() => setManualTokenValue(clipboardSuggestion)}
                         >
-                          <Ionicons name="clipboard-outline" size={14} color="#0ea5e9" />
-                          <Text style={styles.clipboardPillText}>Panodan yapıştır ({clipboardSuggestion.slice(0, 6)}...)</Text>
-                        </TouchableOpacity>
+                          <Ionicons name="clipboard-outline" size={14} color={theme.colors.primary.main} />
+                          <Text style={[styles.clipboardPillText, { color: theme.colors.primary.light }]}>Panodan yapıştır ({clipboardSuggestion.slice(0, 6)}...)</Text>
+                        </Pressable>
                       )}
-                    </View>
+                    </Card>
                   )}
 
                   <Button
@@ -616,15 +650,15 @@ export default function ResetPasswordScreen() {
                     disabled={loading || resendTimer > 0 || !email.trim()}
                     style={styles.submitButton}
                   />
-                </>
+                </Card>
               )}
 
               {step === 2 && (
-                <>
+                <Card variant="elevated" padding="lg" style={styles.mainCard}>
                   {tokenPreview && (
-                    <View style={styles.tokenBadge}>
-                      <Ionicons name="checkmark-circle-outline" size={18} color="#10b981" />
-                      <Text style={styles.tokenBadgeText}>{tokenPreview}</Text>
+                    <View style={[styles.tokenBadge, { backgroundColor: theme.colors.semantic.success + '1A', borderColor: theme.colors.semantic.success + '33' }]}>
+                      <Ionicons name="checkmark-circle-outline" size={18} color={theme.colors.semantic.success} />
+                      <Text style={[styles.tokenBadgeText, { color: theme.colors.semantic.success }]}>{tokenPreview}</Text>
                     </View>
                   )}
 
@@ -637,14 +671,14 @@ export default function ResetPasswordScreen() {
                     autoCapitalize="none"
                     autoComplete="password-new"
                     leftElement={
-                      <View style={styles.iconCircle}>
-                        <Ionicons name="lock-closed-outline" size={18} color="#94a3b8" />
+                      <View style={styles.iconWrapper}>
+                        <Ionicons name="lock-closed-outline" size={20} color={theme.colors.text.tertiary} />
                       </View>
                     }
                     rightElement={
-                      <TouchableOpacity onPress={() => setShowPassword((s) => !s)} style={styles.iconCircle}>
-                        <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#94a3b8" />
-                      </TouchableOpacity>
+                      <Pressable onPress={() => setShowPassword((s) => !s)} style={styles.iconWrapper}>
+                        <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={theme.colors.text.tertiary} />
+                      </Pressable>
                     }
                     style={styles.input}
                   />
@@ -658,21 +692,21 @@ export default function ResetPasswordScreen() {
                     autoCapitalize="none"
                     autoComplete="password-new"
                     leftElement={
-                      <View style={styles.iconCircle}>
-                        <Ionicons name="checkmark-circle-outline" size={18} color="#94a3b8" />
+                      <View style={styles.iconWrapper}>
+                        <Ionicons name="checkmark-circle-outline" size={20} color={theme.colors.text.tertiary} />
                       </View>
                     }
                     style={styles.input}
                   />
 
                   {confirmPassword.length > 0 && confirmPassword !== newPassword && (
-                    <Text style={styles.mismatchText}>Şifreler eşleşmiyor</Text>
+                    <Text style={[styles.mismatchText, { color: theme.colors.semantic.danger }]}>Şifreler eşleşmiyor</Text>
                   )}
 
                   {newPassword.length > 0 && (
-                    <View style={styles.passwordStrength}>
+                    <View style={[styles.passwordStrength, { backgroundColor: theme.colors.surface.default, borderColor: theme.colors.border.subtle }]}>
                       <View style={styles.passwordStrengthHeader}>
-                        <Text style={styles.passwordStrengthLabel}>Şifre gücü</Text>
+                        <Text style={[styles.passwordStrengthLabel, { color: theme.colors.text.secondary }]}>Şifre gücü</Text>
                         <Text style={[styles.passwordStrengthText, { color: pwColor }]}>{pwLabel}</Text>
                       </View>
                       <View style={styles.passwordMeter}>
@@ -682,7 +716,7 @@ export default function ResetPasswordScreen() {
                             style={[
                               styles.passwordBar,
                               {
-                                backgroundColor: i <= passwordScore - 1 ? pwColor : 'rgba(255,255,255,0.08)'
+                                backgroundColor: i <= passwordScore - 1 ? pwColor : theme.colors.border.subtle
                               }
                             ]}
                           />
@@ -707,13 +741,13 @@ export default function ResetPasswordScreen() {
                     }
                     style={styles.submitButton}
                   />
-                </>
+                </Card>
               )}
 
               {step === 3 && (
-                <>
-                  <View style={styles.successIconBackground}>
-                    <Ionicons name="checkmark-circle" size={56} color="#10b981" />
+                <Card variant="elevated" padding="lg" style={styles.mainCard}>
+                  <View style={[styles.successIconBackground, { backgroundColor: theme.colors.semantic.success + '1A', borderColor: theme.colors.semantic.success + '33' }]}>
+                    <Ionicons name="checkmark-circle" size={56} color={theme.colors.semantic.success} />
                   </View>
                   <Button
                     title="Girişe Dön"
@@ -725,9 +759,10 @@ export default function ResetPasswordScreen() {
                     }}
                     style={styles.submitButton}
                   />
-                </>
+                </Card>
               )}
-            </Animated.View>
+              </Animated.View>
+            </View>
           </ScrollView>
         </SafeAreaView>
 
@@ -741,221 +776,193 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   gradient: { flex: 1, position: 'relative' },
   safeArea: { flex: 1 },
-  decorativeCircle1: {
-    position: 'absolute',
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    backgroundColor: 'rgba(6,182,212,0.12)',
-    top: -120,
-    right: -120
-  },
-  decorativeCircle2: {
-    position: 'absolute',
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    backgroundColor: 'rgba(59,130,246,0.1)',
-    bottom: -120,
-    left: -120
-  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8
+    paddingTop: Platform.OS === 'ios' ? 12 : 25,
+    paddingBottom: 4
   },
   backButton: { borderRadius: 12, overflow: 'hidden' },
   backButtonInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 14,
     paddingVertical: 10,
-    paddingHorizontal: 12,
-    gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 14,
+    gap: 8,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)'
   },
   backText: {
-    color: '#E6EEF8',
     fontWeight: '700',
     fontSize: 15,
     letterSpacing: 0.3
   },
   progressTrack: {
     height: 4,
-    top: 10,
     marginHorizontal: 20,
-    marginBottom: 16,
+    marginBottom: 8,
     borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.12)',
     overflow: 'hidden'
   },
   progressFill: { height: 4, borderRadius: 8 },
   progressGradient: { flex: 1, height: 4, borderRadius: 8 },
+  scrollView: {
+    flex: 1,
+  },
   scrollContent: {
     flexGrow: 1,
-    padding: 20,
-    paddingBottom: 40
+    paddingBottom: 20,
   },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 20,
+  contentContainer: {
+    paddingTop: Platform.OS === 'ios' ? 12 : 8,
+    paddingHorizontal: 20,
   },
   headerContent: {
     alignItems: 'center',
-    width: '100%'
+    width: '100%',
+    marginBottom: 8
   },
   logoWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
-    marginBottom: 0
+    marginBottom: 2
   },
   titleContainer: {
     alignItems: 'center',
-    width: '100%'
+    width: '100%',
+    marginBottom: 2
   },
   title: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '900',
-    color: '#ffffff',
-    marginBottom: 4,
-    letterSpacing: 0.5,
-    textAlign: 'center'
+    marginBottom: 2,
+    letterSpacing: 0.3,
+    textAlign: 'center',
+    fontFamily: 'Poppins-Bold',
   },
   subtitle: {
-    fontSize: 13,
-    color: '#94a3b8',
+    fontSize: 12,
     textAlign: 'center',
-    lineHeight: 18,
-    paddingHorizontal: 20,
-    fontWeight: '500'
+    lineHeight: 16,
+    paddingHorizontal: 16,
+    fontWeight: '500',
+    fontFamily: 'Poppins-Regular',
   },
   form: {
-    width: '100%'
+    width: '100%',
+    marginTop: 2
   },
-  input: { marginBottom: 10 },
-  iconCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(100, 116, 139, 0.2)',
+  mainCard: {
+    marginBottom: 0,
+  },
+  input: { marginBottom: 8 },
+  iconWrapper: {
+    width: 24,
+    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    flexShrink: 0,
   },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
+    gap: 6,
+    paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 10,
-    backgroundColor: 'rgba(56,189,248,0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.15)',
-    marginBottom: 12
+    marginBottom: 10
   },
   infoRowText: {
     flex: 1,
-    color: '#cbd5e1',
     fontSize: 12,
-    fontWeight: '500'
+    fontWeight: '500',
+    fontFamily: 'Poppins-Regular',
   },
   quickActions: {
     flexDirection: 'row',
-    gap: 10
+    gap: 10,
+    marginBottom: 10
   },
-  chip: {
+  actionButton: {
     flex: 1,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    overflow: 'hidden',
+  },
+  actionButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    backgroundColor: 'rgba(59,130,246,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(59,130,246,0.25)'
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
-  chipText: {
-    color: '#e0e7ff',
-    fontSize: 13,
-    fontWeight: '600'
+  actionButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: 'Poppins-SemiBold',
   },
   manualTokenCard: {
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: 'rgba(2,6,23,0.6)',
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.15)',
-    gap: 10,
-    marginTop: 8,
-    marginBottom: 8
+    marginTop: 6,
+    marginBottom: 10,
   },
-  tokenInput: { marginBottom: 0 },
+  tokenInput: { marginBottom: 8 },
   clipboardPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     alignSelf: 'flex-start',
-    paddingVertical: 6,
+    paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 999,
-    backgroundColor: 'rgba(14,165,233,0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(14,165,233,0.25)'
+    marginTop: 8
   },
   clipboardPillText: {
-    color: '#bae6fd',
     fontSize: 12,
-    fontWeight: '600'
+    fontWeight: '600',
+    fontFamily: 'Poppins-SemiBold',
   },
-  submitButton: { marginTop: 4, marginBottom: 0 },
+  submitButton: { marginTop: 6, marginBottom: 0 },
   tokenBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     alignSelf: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     borderRadius: 14,
-    backgroundColor: 'rgba(16,185,129,0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(16,185,129,0.3)',
-    marginBottom: 8
+    marginBottom: 16
   },
   tokenBadgeText: {
-    color: '#86efac',
     fontSize: 12,
-    letterSpacing: 0.4
+    letterSpacing: 0.4,
+    fontWeight: '600',
+    fontFamily: 'Poppins-SemiBold',
   },
   passwordStrength: {
-    padding: 12,
+    padding: 14,
     borderRadius: 14,
-    backgroundColor: 'rgba(15,23,42,0.7)',
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.18)',
-    gap: 8
+    gap: 10,
+    marginBottom: 12
   },
   passwordStrengthHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between'
   },
   passwordStrengthLabel: {
-    color: '#cbd5e1',
     fontSize: 12.5,
-    fontWeight: '600'
+    fontWeight: '600',
+    fontFamily: 'Poppins-SemiBold',
   },
   passwordStrengthText: {
     fontWeight: '700',
-    fontSize: 12.5
+    fontSize: 12.5,
+    fontFamily: 'Poppins-Bold',
   },
   passwordMeter: {
     flexDirection: 'row',
@@ -967,22 +974,20 @@ const styles = StyleSheet.create({
     borderRadius: 3
   },
   mismatchText: {
-    color: '#fca5a5',
     fontSize: 12,
     marginTop: -8,
-    marginBottom: 4
+    marginBottom: 8,
+    fontFamily: 'Poppins-Regular',
   },
   successIconBackground: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: 'rgba(16,185,129,0.1)',
-    borderWidth: 2,
-    borderColor: 'rgba(16,185,129,0.25)',
     alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20
+    marginBottom: 24,
+    borderWidth: 2,
   },
   loadingContainer: {
     flex: 1,
@@ -994,11 +999,6 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10
   },
   loadingIconGradient: {
     width: 120,
@@ -1010,8 +1010,37 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.2)'
   },
   loadingText: {
-    color: '#E6EEF8',
     fontSize: 20,
-    fontWeight: '700'
+    fontWeight: '700',
+    fontFamily: 'Poppins-Bold',
+  },
+  inputLocked: {
+    opacity: 0.95
+  },
+  lockedInfo: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    marginTop: -4,
+    marginBottom: 16
+  },
+  lockedIconWrapper: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1
+  },
+  lockedInfoText: {
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: '500',
+    fontFamily: 'Poppins-Medium',
+    lineHeight: 18
   }
 });

@@ -88,28 +88,62 @@ export function MessageProvider({ children }: { children: React.ReactNode }) {
       {queue.length > 0 && (
         <Animated.View
           pointerEvents="box-none"
-          style={{ position: 'absolute', top: 48, left: 16, right: 16, transform: [{ translateY: translate }], opacity }}
+          style={{ 
+            position: 'absolute', 
+            top: 48, 
+            left: 20,
+            right: 20,
+            width: '90%',
+            maxWidth: 400,
+            alignSelf: 'center',
+            transform: [{ translateY: translate }], 
+            opacity 
+          }}
         >
           <View
             style={{
-              borderRadius: 12,
-              padding: 12,
+              borderRadius: 16,
+              padding: 16,
               backgroundColor: bgColor(queue[0].type),
-              borderWidth: 1,
+              borderWidth: 1.5,
               borderColor: borderColor(queue[0].type),
               flexDirection: 'row',
               alignItems: 'center',
-              gap: 10
+              gap: 12,
+              shadowColor: borderColor(queue[0].type),
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.3,
+              shadowRadius: 20,
+              elevation: 18,
+              borderTopWidth: 2,
+              borderTopColor: `${borderColor(queue[0].type)}80`,
             }}
           >
-            <Ionicons name={iconName(queue[0].type)} size={22} color={borderColor(queue[0].type)} />
+            <View style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: `${borderColor(queue[0].type)}20`,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <Ionicons name={iconName(queue[0].type)} size={22} color={borderColor(queue[0].type)} />
+            </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: '#e5e7eb', fontWeight: '700' }}>{queue[0].title}</Text>
+              <Text style={{ color: '#e5e7eb', fontWeight: '700', fontSize: 15, letterSpacing: 0.3 }}>{queue[0].title}</Text>
               {!!queue[0].description && (
-                <Text style={{ color: '#cbd5e1', marginTop: 2 }}>{queue[0].description}</Text>
+                <Text style={{ color: '#cbd5e1', marginTop: 4, fontSize: 13, lineHeight: 18 }}>{queue[0].description}</Text>
               )}
             </View>
-            <Pressable onPress={() => animateOut(() => setQueue((q) => q.slice(1)))} hitSlop={10}>
+            <Pressable 
+              onPress={() => animateOut(() => setQueue((q) => q.slice(1)))} 
+              hitSlop={10}
+              style={{
+                padding: 4,
+                borderRadius: 8,
+                backgroundColor: 'rgba(148, 163, 184, 0.1)',
+              }}
+            >
               <Ionicons name="close" size={18} color="#94a3b8" />
             </Pressable>
           </View>

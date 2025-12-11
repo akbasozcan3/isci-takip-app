@@ -1,17 +1,17 @@
-import theme from './theme';
+import theme from './theme/index';
 
 export const mapTheme = {
   colors: {
-    background: theme.colors.bg,
-    surface: theme.colors.card,
-    border: theme.colors.border,
-    primary: theme.colors.primary,
-    accent: theme.colors.accent,
-    success: theme.colors.success,
-    danger: theme.colors.danger,
-    text: theme.colors.text,
-    textSecondary: theme.colors.textSecondary,
-    textMuted: theme.colors.textMuted,
+    background: theme.colors.bg.primary,
+    surface: theme.colors.surface.default,
+    border: theme.colors.border.default,
+    primary: theme.colors.primary.main,
+    accent: theme.colors.accent.main,
+    success: theme.colors.semantic.success,
+    danger: theme.colors.semantic.danger,
+    text: theme.colors.text.primary,
+    textSecondary: theme.colors.text.secondary,
+    textMuted: theme.colors.text.tertiary,
     gps: {
       active: theme.colors.gps.active,
       inactive: theme.colors.gps.inactive,
@@ -156,7 +156,7 @@ export const mapTheme = {
     },
     other: {
       size: 40,
-      color: theme.colors.textMuted,
+      color: theme.colors.text.tertiary,
       borderColor: '#fff',
       borderWidth: 2,
     },

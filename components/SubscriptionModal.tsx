@@ -6,7 +6,6 @@ import React from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   Modal,
   Platform,
   Pressable,
@@ -17,8 +16,6 @@ import {
 } from 'react-native';
 import { authFetch } from '../utils/auth';
 import PaymentScreen from './PaymentScreen';
-
-const { width, height } = Dimensions.get('window');
 
 interface Plan {
   id: string;
@@ -53,7 +50,7 @@ export function useSubscriptionModal() {
   const checkAndShow = React.useCallback(async () => {
     try {
       // Kullanıcının mevcut aboneliğini kontrol et
-      const response = await authFetch('/api/me/subscription');
+      const response = await authFetch('/me/subscription');
       if (response.ok) {
         const data = await response.json();
         setSubscription(data.subscription);
@@ -79,8 +76,12 @@ export function useSubscriptionModal() {
           await AsyncStorage.setItem(STORAGE_KEY, today);
         }
       }
-    } catch (error) {
-      console.error('[SubscriptionModal] Check error:', error);
+    } catch (error: any) {
+      // Silently handle network errors - don't spam console
+      const { isNetworkError } = await import('../utils/network');
+      if (!isNetworkError(error)) {
+        console.error('[SubscriptionModal] Check error:', error);
+      }
       // Hata durumunda da göster (free plan varsayımı)
       try {
         const shown = await AsyncStorage.getItem(STORAGE_KEY);
@@ -119,8 +120,8 @@ export default function SubscriptionModal({ visible, onClose, onSubscriptionChan
     try {
       setLoading(true);
       const [plansRes, subscriptionRes] = await Promise.all([
-        authFetch('/api/plans'),
-        authFetch('/api/me/subscription')
+        authFetch('/plans'),
+        authFetch('/me/subscription')
       ]);
       
       if (plansRes.ok) {
@@ -157,6 +158,7 @@ export default function SubscriptionModal({ visible, onClose, onSubscriptionChan
       return;
     }
 
+    setProcessingPlan(planId);
     setSelectedPlan(plan);
     setShowPayment(true);
   };
@@ -168,7 +170,7 @@ export default function SubscriptionModal({ visible, onClose, onSubscriptionChan
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     try {
-      const subRes = await authFetch('/api/me/subscription');
+      const subRes = await authFetch('/me/subscription');
       if (subRes.ok) {
         const subData = await subRes.json();
         onSubscriptionChange?.(subData.subscription);
@@ -188,6 +190,7 @@ export default function SubscriptionModal({ visible, onClose, onSubscriptionChan
   const handlePaymentCancel = () => {
     setShowPayment(false);
     setSelectedPlan(null);
+    setProcessingPlan(null);
   };
 
   const renderPlan = (plan: Plan) => {
