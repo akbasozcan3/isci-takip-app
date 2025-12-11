@@ -3,8 +3,20 @@ const https = require('https');
 class OneSignalService {
   constructor() {
     this.appId = (process.env.ONESIGNAL_APP_ID || '4a846145-621c-4a0d-a29f-0598da946c50').trim();
+    
+    // Get API key from environment - NO default fallback for security
+    const rawApiKey = process.env.ONESIGNAL_REST_API_KEY;
+    
+    if (!rawApiKey || rawApiKey === 'YOUR_ONESIGNAL_REST_API_KEY' || rawApiKey.trim().length === 0) {
+      console.warn('[OneSignalService] ⚠️ ONESIGNAL_REST_API_KEY not configured in .env file');
+      console.warn('[OneSignalService] ⚠️ OneSignal notifications will be disabled');
+      console.warn('[OneSignalService] 💡 To enable: Add ONESIGNAL_REST_API_KEY=your_key_here to backend/.env');
+      this.apiKey = null;
+      this.enabled = false;
+      return;
+    }
+    
     // Clean API key: remove quotes, spaces, and trim
-    const rawApiKey = process.env.ONESIGNAL_REST_API_KEY || 'os_v2_app_jkcgcrlcdrfa3iu7awmnvfdmkalawts4jneuy7mhnsqivy4zf666eke1t5bdmalce6etrnlne7dx6it64h7epaitrpjgcphry7n5ody';
     this.apiKey = rawApiKey.trim().replace(/^["']|["']$/g, '').trim(); // Remove surrounding quotes if present
     
     // Validate API key format
