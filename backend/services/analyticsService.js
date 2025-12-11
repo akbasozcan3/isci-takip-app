@@ -4,6 +4,12 @@ const locationService = require('./locationService');
 class AnalyticsService {
   getDailyStats(deviceId, date) {
     const locations = db.getStore(deviceId);
+    
+    activityLogService.logActivity(deviceId, 'analytics', 'get_daily_stats', {
+      deviceId,
+      date
+    });
+    
     if (!Array.isArray(locations) || locations.length === 0) {
       return {
         date,
@@ -126,6 +132,13 @@ class AnalyticsService {
 
   getHeatmapData(deviceId, startDate, endDate) {
     const locations = db.getStore(deviceId);
+    
+    activityLogService.logActivity(deviceId, 'analytics', 'get_heatmap_data', {
+      deviceId,
+      startDate,
+      endDate
+    });
+    
     if (!Array.isArray(locations) || locations.length === 0) {
       return [];
     }
@@ -154,6 +167,12 @@ class AnalyticsService {
 
   getSpeedAnalysis(deviceId, timeWindowMs = 3600000) {
     const locations = db.getStore(deviceId);
+    
+    activityLogService.logActivity(deviceId, 'analytics', 'get_speed_analysis', {
+      deviceId,
+      timeWindowMs
+    });
+    
     if (!Array.isArray(locations) || locations.length < 2) {
       return {
         average: 0,

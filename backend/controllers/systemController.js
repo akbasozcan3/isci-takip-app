@@ -1,5 +1,14 @@
 const backupService = require('../services/backupService');
 const db = require('../config/database');
+const activityLogService = require('../services/activityLogService');
+
+function getUserIdFromToken(req) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return null;
+  const TokenModel = require('../core/database/models/token.model');
+  const tokenData = TokenModel.get(token);
+  return tokenData ? tokenData.userId : null;
+}
 
 class SystemController {
   async getSystemInfo(req, res) {
@@ -7,6 +16,36 @@ class SystemController {
       const memUsage = process.memoryUsage();
       const uptime = process.uptime();
       
+      return res.json({
+        system: {
+          nodeVersion: process.version,
+          platform: process.platform,
+          arch: process.arch,
+          uptime: uptime,
+          uptimeFormatted: this.formatUptime(uptime)
+        },
+        memory: {
+          heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
+          heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
+          rss: Math.round(memUsage.rss / 1024 / 1024),
+          external: Math.round(memUsage.external / 1024 / 1024)
+        },
+        database: {
+          users: Object.keys(db.data.users || {}).length,
+          devices: Object.keys(db.data.store || {}).length,
+          groups: Object.keys(db.data.groups || {}).length,
+          articles: Object.keys(db.data.articles || {}).length
+        },
+        environment: process.env.NODE_ENV || 'development'
+      });
+
+      const userId = getUserIdFromToken(req);
+      if (userId) {
+        activityLogService.logActivity(userId, 'system', 'view_system_info', {
+          path: req.path
+        });
+      }
+
       return res.json({
         system: {
           nodeVersion: process.version,
@@ -37,7 +76,15 @@ class SystemController {
 
   async createBackup(req, res) {
     try {
+      const userId = getUserIdFromToken(req);
       const result = backupService.createBackup();
+      
+      if (userId) {
+        activityLogService.logActivity(userId, 'system', 'create_backup', {
+          path: req.path
+        });
+      }
+      
       if (result.success) {
         return res.json({
           success: true,
@@ -58,7 +105,16 @@ class SystemController {
 
   async listBackups(req, res) {
     try {
+      const userId = getUserIdFromToken(req);
       const backups = backupService.listBackups();
+      
+      if (userId) {
+        activityLogService.logActivity(userId, 'system', 'view_backups', {
+          backupCount: backups.length,
+          path: req.path
+        });
+      }
+      
       return res.json({ backups });
     } catch (error) {
       console.error('List backups error:', error);

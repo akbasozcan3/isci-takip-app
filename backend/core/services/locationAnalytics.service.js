@@ -1,8 +1,17 @@
 const db = require('../../config/database');
 const locationService = require('../../services/locationService');
-const { createLogger } = require('../core/utils/logger');
-
-const logger = createLogger('LocationAnalytics');
+let logger;
+try {
+  const { getLogger } = require('../utils/loggerHelper');
+  logger = getLogger('LocationAnalytics');
+} catch (err) {
+  logger = {
+    warn: (...args) => console.warn('[LocationAnalytics]', ...args),
+    error: (...args) => console.error('[LocationAnalytics]', ...args),
+    info: (...args) => console.log('[LocationAnalytics]', ...args),
+    debug: (...args) => console.debug('[LocationAnalytics]', ...args)
+  };
+}
 
 class LocationAnalyticsService {
   calculateRouteMetrics(deviceId, startTime = null, endTime = null) {

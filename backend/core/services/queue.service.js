@@ -1,13 +1,22 @@
-const { createLogger } = require('../core/utils/logger');
-
-const logger = createLogger('QueueService');
+let logger;
+try {
+  const { getLogger } = require('../utils/loggerHelper');
+  logger = getLogger('QueueService');
+} catch (err) {
+  logger = {
+    warn: (...args) => console.warn('[QueueService]', ...args),
+    error: (...args) => console.error('[QueueService]', ...args),
+    info: (...args) => console.log('[QueueService]', ...args),
+    debug: (...args) => console.debug('[QueueService]', ...args)
+  };
+}
 
 class QueueService {
   constructor() {
     this.queues = new Map();
     this.processing = new Map();
     this.maxConcurrency = 5;
-    this.retryService = require('../core/services/retry.service');
+    this.retryService = require('./retry.service');
   }
 
   createQueue(name, options = {}) {
@@ -28,7 +37,7 @@ class QueueService {
     const queue = this.createQueue(queueName, options);
     
     const jobData = {
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
       data: job,
       priority: options.priority || 0,
       attempts: 0,

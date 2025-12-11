@@ -19,7 +19,8 @@ router.post('/reset/confirm', authController.confirmPasswordReset.bind(authContr
 router.post('/profile/send-password-code', requireAuth, authController.sendPasswordChangeCode.bind(authController));
 router.post('/profile/verify-password-code', requireAuth, authController.verifyPasswordChangeCode.bind(authController));
 
-// Alias for /api/users/me compatibility
+router.get('/email/health', authController.getEmailHealth.bind(authController));
+
 router.get('/me', requireAuth, authController.getProfile.bind(authController));
 
 module.exports = router;

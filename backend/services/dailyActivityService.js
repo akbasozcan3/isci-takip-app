@@ -1,8 +1,17 @@
 const db = require('../config/database');
 const locationService = require('./locationService');
-const { createLogger } = require('../core/utils/logger');
-
-const logger = createLogger('DailyActivityService');
+let logger;
+try {
+  const { getLogger } = require('../core/utils/loggerHelper');
+  logger = getLogger('DailyActivityService');
+} catch (err) {
+  logger = {
+    warn: (...args) => console.warn('[DailyActivityService]', ...args),
+    error: (...args) => console.error('[DailyActivityService]', ...args),
+    info: (...args) => console.log('[DailyActivityService]', ...args),
+    debug: (...args) => console.debug('[DailyActivityService]', ...args)
+  };
+}
 
 function calculateDailyDistance(userId, date = null) {
   const targetDate = date || new Date();

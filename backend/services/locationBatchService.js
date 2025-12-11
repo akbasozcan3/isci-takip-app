@@ -1,5 +1,6 @@
 const db = require('../config/database');
 const smartTrackingService = require('./smartTrackingService');
+const activityLogService = require('./activityLogService');
 
 class LocationBatchService {
   constructor() {
@@ -72,6 +73,11 @@ class LocationBatchService {
           await new Promise(resolve => setImmediate(resolve));
         }
       }
+      
+      activityLogService.logActivity(deviceId, 'location', 'batch_location_flush', {
+        deviceId,
+        batchSize: locations.length
+      });
     } catch (error) {
       console.error(`[LocationBatch] Error flushing device ${deviceId}:`, error);
       const currentQueue = this.batchQueue.get(deviceId) || [];

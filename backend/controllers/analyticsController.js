@@ -1,4 +1,18 @@
 const analyticsService = require('../services/analyticsService');
+const db = require('../config/database');
+const SubscriptionModel = require('../core/database/models/subscription.model');
+const activityLogService = require('../services/activityLogService');
+const ResponseFormatter = require('../core/utils/responseFormatter');
+const { logger } = require('../core/utils/logger');
+
+function resolveUser(req) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return null;
+  const TokenModel = require('../core/database/models/token.model');
+  const tokenData = TokenModel.get(token);
+  if (!tokenData) return null;
+  return db.findUserById(tokenData.userId) || null;
+}
 
 class AnalyticsController {
   async getDailyStats(req, res) {
@@ -10,12 +24,25 @@ class AnalyticsController {
         return res.status(400).json({ error: 'Device ID required' });
       }
 
+      const user = resolveUser(req);
+      const subscription = user ? db.getUserSubscription(user.id) : null;
+      const planId = subscription?.planId || 'free';
+
       const targetDate = date || new Date().toISOString().split('T')[0];
       const stats = analyticsService.getDailyStats(deviceId, targetDate);
-      return res.json(stats);
+
+      if (user) {
+        activityLogService.logActivity(user.id, 'analytics', 'view_daily_stats', {
+          deviceId,
+          date: targetDate,
+          planId,
+          path: req.path
+        });
+      }
+
+      return res.json(ResponseFormatter.success(stats));
     } catch (error) {
-      console.error('Get daily stats error:', error);
-      return res.status(500).json({ error: 'Failed to get daily stats' });
+      return res.status(500).json(ResponseFormatter.error('Günlük istatistikler alınamadı', 'ANALYTICS_ERROR'));
     }
   }
 
@@ -28,12 +55,26 @@ class AnalyticsController {
         return res.status(400).json({ error: 'Device ID required' });
       }
 
+      const user = resolveUser(req);
+      const subscription = user ? db.getUserSubscription(user.id) : null;
+      const planId = subscription?.planId || 'free';
+
       const weekStartDate = weekStart || new Date().toISOString().split('T')[0];
       const stats = analyticsService.getWeeklyStats(deviceId, weekStartDate);
-      return res.json(stats);
+
+      if (user) {
+        activityLogService.logActivity(user.id, 'analytics', 'view_weekly_stats', {
+          deviceId,
+          weekStart: weekStartDate,
+          planId,
+          path: req.path
+        });
+      }
+
+      return res.json(ResponseFormatter.success(stats));
     } catch (error) {
-      console.error('Get weekly stats error:', error);
-      return res.status(500).json({ error: 'Failed to get weekly stats' });
+      logger.error('Get weekly stats error', error);
+      return res.status(500).json(ResponseFormatter.error('Haftalık istatistikler alınamadı', 'ANALYTICS_ERROR'));
     }
   }
 
@@ -46,15 +87,30 @@ class AnalyticsController {
         return res.status(400).json({ error: 'Device ID required' });
       }
 
+      const user = resolveUser(req);
+      const subscription = user ? db.getUserSubscription(user.id) : null;
+      const planId = subscription?.planId || 'free';
+
       const currentDate = new Date();
       const targetYear = year ? parseInt(year) : currentDate.getFullYear();
       const targetMonth = month ? parseInt(month) : currentDate.getMonth() + 1;
 
       const stats = analyticsService.getMonthlyStats(deviceId, targetYear, targetMonth);
-      return res.json(stats);
+
+      if (user) {
+        activityLogService.logActivity(user.id, 'analytics', 'view_monthly_stats', {
+          deviceId,
+          year: targetYear,
+          month: targetMonth,
+          planId,
+          path: req.path
+        });
+      }
+
+      return res.json(ResponseFormatter.success(stats));
     } catch (error) {
-      console.error('Get monthly stats error:', error);
-      return res.status(500).json({ error: 'Failed to get monthly stats' });
+      logger.error('Get monthly stats error', error);
+      return res.status(500).json(ResponseFormatter.error('Aylık istatistikler alınamadı', 'ANALYTICS_ERROR'));
     }
   }
 
@@ -67,14 +123,39 @@ class AnalyticsController {
         return res.status(400).json({ error: 'Device ID required' });
       }
 
+      const user = resolveUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const subscription = db.getUserSubscription(user.id);
+      const planId = subscription?.planId || 'free';
+
+      if (planId === 'free') {
+        return res.status(403).json({
+          error: 'Heatmap analytics requires premium subscription',
+          code: 'PREMIUM_REQUIRED',
+          currentPlan: planId
+        });
+      }
+
       const start = startDate || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const end = endDate || new Date().toISOString();
 
       const heatmap = analyticsService.getHeatmapData(deviceId, start, end);
-      return res.json(heatmap);
+
+      activityLogService.logActivity(user.id, 'analytics', 'view_heatmap', {
+        deviceId,
+        startDate: start,
+        endDate: end,
+        planId,
+        path: req.path
+      });
+
+      return res.json(ResponseFormatter.success(heatmap));
     } catch (error) {
-      console.error('Get heatmap data error:', error);
-      return res.status(500).json({ error: 'Failed to get heatmap data' });
+      logger.error('Get heatmap data error', error);
+      return res.status(500).json(ResponseFormatter.error('Heatmap verileri alınamadı', 'ANALYTICS_ERROR'));
     }
   }
 
@@ -87,12 +168,36 @@ class AnalyticsController {
         return res.status(400).json({ error: 'Device ID required' });
       }
 
+      const user = resolveUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const subscription = db.getUserSubscription(user.id);
+      const planId = subscription?.planId || 'free';
+
+      if (planId === 'free') {
+        return res.status(403).json({
+          error: 'Speed analysis requires premium subscription',
+          code: 'PREMIUM_REQUIRED',
+          currentPlan: planId
+        });
+      }
+
       const timeWindowMs = timeWindow ? parseInt(timeWindow) : 3600000;
       const analysis = analyticsService.getSpeedAnalysis(deviceId, timeWindowMs);
-      return res.json(analysis);
+
+      activityLogService.logActivity(user.id, 'analytics', 'view_speed_analysis', {
+        deviceId,
+        timeWindow: timeWindowMs,
+        planId,
+        path: req.path
+      });
+
+      return res.json(ResponseFormatter.success(analysis));
     } catch (error) {
-      console.error('Get speed analysis error:', error);
-      return res.status(500).json({ error: 'Failed to get speed analysis' });
+      logger.error('Get speed analysis error', error);
+      return res.status(500).json(ResponseFormatter.error('Hız analizi alınamadı', 'ANALYTICS_ERROR'));
     }
   }
 }

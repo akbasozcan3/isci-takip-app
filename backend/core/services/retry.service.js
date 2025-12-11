@@ -1,6 +1,15 @@
-const { createLogger } = require('../core/utils/logger');
-
-const logger = createLogger('RetryService');
+let logger;
+try {
+  const { getLogger } = require('../utils/loggerHelper');
+  logger = getLogger('RetryService');
+} catch (err) {
+  logger = {
+    warn: (...args) => console.warn('[RetryService]', ...args),
+    error: (...args) => console.error('[RetryService]', ...args),
+    info: (...args) => console.log('[RetryService]', ...args),
+    debug: (...args) => console.debug('[RetryService]', ...args)
+  };
+}
 
 class RetryService {
   async execute(fn, options = {}) {

@@ -2,6 +2,7 @@ const onesignalService = require('./onesignalService');
 const db = require('../config/database');
 const retryService = require('../core/services/retry.service');
 const SubscriptionModel = require('../core/database/models/subscription.model');
+const activityLogService = require('./activityLogService');
 
 class NotificationService {
   constructor() {
@@ -52,7 +53,7 @@ class NotificationService {
     this.registerChannel('database', async (userId, notification) => {
       try {
         db.addNotification(userId, {
-          id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
           type: notification.type || 'info',
           title: notification.title,
           message: notification.message || notification.body,
@@ -70,11 +71,13 @@ class NotificationService {
     this.registerChannel('onesignal', async (userId, notification) => {
       const user = db.findUserById(userId);
       if (!user) {
+        console.error(`[NotificationService] User not found: ${userId}`);
         throw new Error('User not found');
       }
 
       const pushCheck = this.canSendPushNotification(userId);
       if (!pushCheck.allowed) {
+        console.warn(`[NotificationService] Push notification not allowed for user ${userId}: ${pushCheck.reason}`);
         throw new Error(pushCheck.reason || 'Push notification not allowed');
       }
 
@@ -83,6 +86,12 @@ class NotificationService {
       const limits = SubscriptionModel.getPlanLimits(planId);
       const priorityMap = { normal: 5, high: 8, max: 10 };
       const notificationPriority = priorityMap[limits.pushNotificationPriority] || 10;
+
+      console.log(`[NotificationService] Sending OneSignal notification to user ${userId}`, {
+        title: notification.title,
+        message: notification.message,
+        priority: notification.priority || notificationPriority
+      });
 
       const result = await retryService.execute(
         async () => {
@@ -99,9 +108,11 @@ class NotificationService {
           );
 
           if (!sendResult.success) {
+            console.error(`[NotificationService] OneSignal send failed for user ${userId}:`, sendResult.error);
             throw new Error(sendResult.error || 'OneSignal send failed');
           }
 
+          console.log(`[NotificationService] OneSignal notification sent successfully to user ${userId}`, sendResult.data);
           this.recordNotificationSent(userId);
           return sendResult;
         },
@@ -151,9 +162,23 @@ class NotificationService {
             }
           );
           results.push({ channel, success: true, result });
+          
+          if (channel === 'onesignal' && result) {
+            activityLogService.logActivity(userId, 'notification', 'send_push_notification', {
+              channel,
+              notificationType: notification.type,
+              success: true
+            });
+          }
         } catch (error) {
           if (channel === 'onesignal') {
             console.error(`[NotificationService] OneSignal failed for user ${userId}:`, error.message);
+            activityLogService.logActivity(userId, 'notification', 'send_push_notification', {
+              channel,
+              notificationType: notification.type,
+              success: false,
+              error: error.message
+            });
           }
           results.push({ channel, success: false, error: error.message });
         }

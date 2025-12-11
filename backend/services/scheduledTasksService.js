@@ -1,8 +1,17 @@
 const dailyActivityService = require('./dailyActivityService');
 const pushNotificationService = require('./pushNotificationService');
-const { createLogger } = require('../core/utils/logger');
-
-const logger = createLogger('ScheduledTasksService');
+let logger;
+try {
+  const { getLogger } = require('../core/utils/loggerHelper');
+  logger = getLogger('ScheduledTasksService');
+} catch (err) {
+  logger = {
+    warn: (...args) => console.warn('[ScheduledTasksService]', ...args),
+    error: (...args) => console.error('[ScheduledTasksService]', ...args),
+    info: (...args) => console.log('[ScheduledTasksService]', ...args),
+    debug: (...args) => console.debug('[ScheduledTasksService]', ...args)
+  };
+}
 
 class ScheduledTasksService {
   constructor() {
@@ -11,6 +20,14 @@ class ScheduledTasksService {
   }
 
   start() {
+    // Start inactivity notification service
+    try {
+      const inactivityNotificationService = require('./inactivityNotification.service');
+      inactivityNotificationService.start();
+      console.log('[ScheduledTasks] ✅ Inactivity notification service started');
+    } catch (error) {
+      console.warn('[ScheduledTasks] ⚠️  Inactivity notification service not available:', error.message);
+    }
     if (this.isRunning) {
       logger.warn('Scheduled tasks already running');
       return;
@@ -24,6 +41,14 @@ class ScheduledTasksService {
   }
 
   stop() {
+    // Stop inactivity notification service
+    try {
+      const inactivityNotificationService = require('./inactivityNotification.service');
+      inactivityNotificationService.stop();
+    } catch (error) {
+      console.warn('[ScheduledTasks] Error stopping inactivity notification service:', error.message);
+    }
+    
     this.isRunning = false;
     for (const [name, interval] of this.tasks.entries()) {
       clearInterval(interval);
@@ -99,6 +124,7 @@ class ScheduledTasksService {
   async checkDailyActivities() {
     try {
       const activities = dailyActivityService.getAllUsersDailyActivity();
+      const autoNotificationService = require('./autoNotificationService');
       const notifications = [];
 
       for (const activity of activities) {
@@ -113,32 +139,42 @@ class ScheduledTasksService {
           const user = require('../config/database').findUserById(activity.userId);
           if (!user) continue;
           
-          let title = '🏃 Günlük Aktivite';
-          let message = `Bugün ${activity.today.distance.toFixed(1)} km yürüdünüz!`;
-          
-          if (checks.improved) {
-            title = '🎉 Harika İlerleme!';
-            message = `Bugün ${activity.today.distance.toFixed(1)} km yürüdünüz! Dünkünden daha fazla!`;
-          } else if (activity.today.distance >= 5) {
-            title = '✅ Hedef Aşıldı!';
-            message = `Tebrikler! Bugün ${activity.today.distance.toFixed(1)} km yürüdünüz. 5 km hedefini aştınız!`;
-          }
-          
-          notifications.push({
-            userId: activity.userId,
-            message,
-            options: {
-              title,
-              type: 'daily_activity',
-              data: {
-                distance: activity.today.distance,
-                threshold: 5,
-                improved: checks.improved,
-                yesterdayDistance: activity.yesterday.distance
-              },
-              deepLink: 'bavaxe://analytics'
+          try {
+            await autoNotificationService.notifyDailySummary(activity.userId, {
+              distance: activity.today.distance,
+              steps: activity.today.steps || 0,
+              activeTime: activity.today.activeTime || 0
+            });
+          } catch (error) {
+            logger.warn(`Daily summary notification failed for user ${activity.userId}:`, error.message);
+            
+            let title = '🏃 Günlük Aktivite';
+            let message = `Bugün ${activity.today.distance.toFixed(1)} km yürüdünüz!`;
+            
+            if (checks.improved) {
+              title = '🎉 Harika İlerleme!';
+              message = `Bugün ${activity.today.distance.toFixed(1)} km yürüdünüz! Dünkünden daha fazla!`;
+            } else if (activity.today.distance >= 5) {
+              title = '✅ Hedef Aşıldı!';
+              message = `Tebrikler! Bugün ${activity.today.distance.toFixed(1)} km yürüdünüz. 5 km hedefini aştınız!`;
             }
-          });
+            
+            notifications.push({
+              userId: activity.userId,
+              message,
+              options: {
+                title,
+                type: 'daily_activity',
+                data: {
+                  distance: activity.today.distance,
+                  threshold: 5,
+                  improved: checks.improved,
+                  yesterdayDistance: activity.yesterday.distance
+                },
+                deepLink: 'bavaxe://analytics'
+              }
+            });
+          }
         }
       }
 
@@ -206,5 +242,10 @@ class ScheduledTasksService {
 }
 
 const scheduledTasksService = new ScheduledTasksService();
+
+if (process.env.NODE_ENV !== 'test') {
+  scheduledTasksService.start();
+  console.log('[ScheduledTasksService] Auto-started on server initialization');
+}
 
 module.exports = scheduledTasksService;

@@ -152,6 +152,14 @@ class AdvancedCacheService {
     };
   }
 
+  size() {
+    return {
+      l1Size: this.l1Cache.size(),
+      l2Size: this.l2Cache.size,
+      totalSize: this.l1Cache.size() + this.l2Cache.size
+    };
+  }
+
   startCleanup() {
     setInterval(() => {
       this.l1Cache.cleanup();

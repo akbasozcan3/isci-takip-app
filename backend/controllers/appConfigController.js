@@ -31,6 +31,7 @@ class AppConfigController {
           payments: true
         }
       }));
+
     } catch (error) {
       if (error.isOperational) {
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code));
@@ -70,6 +71,7 @@ class AppConfigController {
           duration: 400
         }
       }));
+
     } catch (error) {
       if (error.isOperational) {
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code));

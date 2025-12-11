@@ -11,11 +11,11 @@ class AuthController {
     try {
       const { email } = req.body;
       if (!email) {
-        return res.status(400).json({ error: 'E-posta adresi gereklidir' });
+        return res.status(400).json(ResponseFormatter.error('E-posta adresi gereklidir', 'MISSING_EMAIL'));
       }
 
       if (!AuthService.isValidEmail(email.trim())) {
-        return res.status(400).json({ error: 'Geçersiz e-posta formatı' });
+        return res.status(400).json(ResponseFormatter.error('Geçersiz e-posta formatı', 'INVALID_EMAIL'));
       }
 
       if (AuthService.userExists(email.trim())) {
@@ -36,46 +36,40 @@ class AuthController {
 
       const code = await AuthService.sendVerificationCode(email.trim());
 
-      const emailServiceUrl = process.env.EMAIL_SERVICE_URL || 'http://localhost:5001';
-      let emailSent = false;
+        const emailVerificationService = require('../../services/emailVerificationService');
       
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-        
-        const emailResponse = await fetch(`${emailServiceUrl}/send-verification`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            email: email.trim(),
-            code: code
-          }),
-          signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (emailResponse.ok) {
-          const responseData = await emailResponse.json().catch(() => ({}));
-          if (responseData.success) {
-            emailSent = true;
-          }
-        }
-      } catch (error) {
-        console.warn(`Email service unavailable: ${error.message}`);
-      }
-
-      console.log(`Verification code for ${email}: ${code}`);
+        const result = await emailVerificationService.sendVerificationEmail(email.trim(), code);
+        console.log(`[Auth] ✓ Verification email sent to ${email.trim()} (MessageId: ${result.messageId})`);
 
       return res.json({
         success: true,
-        message: emailSent ? 'Doğrulama kodu gönderildi' : 'Doğrulama kodu oluşturuldu (e-posta gönderilemedi)',
-        code: process.env.NODE_ENV === 'development' ? code : undefined,
-        emailSent: emailSent
-      });
+          message: 'Doğrulama kodu e-postanıza gönderildi',
+          emailSent: true
+        });
+      } catch (error) {
+        console.error(`[Auth] ✗ Failed to send verification email to ${email.trim()}:`, error.message);
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[Auth] [DEV] Verification code for ${email.trim()}: ${code}`);
+          return res.json(ResponseFormatter.success(
+            { code: code, emailSent: false, emailError: error.message },
+            'Doğrulama kodu oluşturuldu (SMTP hatası - development modunda kod konsola yazdırıldı)'
+          ));
+        }
+        
+        return res.status(500).json(ResponseFormatter.error(
+          'E-posta gönderilemedi. Lütfen SMTP ayarlarını kontrol edin veya daha sonra tekrar deneyin.',
+          'EMAIL_SEND_ERROR',
+          { emailError: error.message }
+        ));
+      }
     } catch (error) {
-      console.error('Pre-verify email error:', error);
-      return res.status(500).json({ error: 'Doğrulama kodu gönderilemedi' });
+      console.error('[Auth] Pre-verify email error:', error);
+      if (error.isOperational) {
+        return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
+      }
+      return res.status(500).json(ResponseFormatter.error('Doğrulama kodu gönderilemedi', 'VERIFICATION_ERROR'));
     }
   }
 
@@ -96,8 +90,11 @@ class AuthController {
 
       return res.json(ResponseFormatter.success(null, 'E-posta başarıyla doğrulandı'));
     } catch (error) {
-      console.error('Verify email code error:', error);
-      return res.status(500).json({ error: 'E-posta doğrulama kodu kontrol edilemedi' });
+      console.error('[Auth] Verify email code error:', error);
+      if (error.isOperational) {
+        return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
+      }
+      return res.status(500).json(ResponseFormatter.error('E-posta doğrulama kodu kontrol edilemedi', 'VERIFICATION_ERROR'));
     }
   }
 
@@ -106,22 +103,23 @@ class AuthController {
       const { email, password, displayName, verificationCode } = req.body;
       
       if (!email || !password) {
-        return res.status(400).json({ error: 'E-posta ve şifre gereklidir' });
+        return res.status(400).json(ResponseFormatter.error('E-posta ve şifre gereklidir', 'MISSING_CREDENTIALS'));
       }
 
-      if (!AuthService.isValidEmail(email)) {
-        return res.status(400).json({ error: 'Geçersiz e-posta formatı' });
+      if (!AuthService.isValidEmail(email.trim())) {
+        return res.status(400).json(ResponseFormatter.error('Geçersiz e-posta formatı', 'INVALID_EMAIL'));
       }
 
       if (!AuthService.isValidPassword(password)) {
-        return res.status(400).json({ error: 'Şifre en az 6 karakter olmalıdır' });
+        return res.status(400).json(ResponseFormatter.error('Şifre en az 6 karakter olmalıdır', 'INVALID_PASSWORD'));
       }
 
       if (!verificationCode) {
-        return res.status(400).json({ 
-          error: 'Doğrulama kodu gereklidir',
-          requiresVerification: true
-        });
+        return res.status(400).json(ResponseFormatter.error(
+          'Doğrulama kodu gereklidir',
+          'MISSING_VERIFICATION_CODE',
+          { requiresVerification: true }
+        ));
       }
 
       const verification = await AuthService.verifyCode(email, verificationCode);
@@ -129,14 +127,15 @@ class AuthController {
         return res.status(400).json(ResponseFormatter.error(verification.error, 'INVALID_VERIFICATION_CODE', { requiresVerification: true }));
       }
 
-      if (AuthService.userExists(email)) {
-        return res.status(400).json({ error: 'Bu e-posta adresi zaten kayıtlıdır' });
+      if (AuthService.userExists(email.trim().toLowerCase())) {
+        return res.status(400).json(ResponseFormatter.error('Bu e-posta adresi zaten kayıtlıdır', 'EMAIL_ALREADY_EXISTS'));
       }
 
       const hashedPassword = await AuthService.hashPassword(password);
+      const cleanEmail = email.trim().toLowerCase();
       
       const user = UserModel.create({
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         displayName: (displayName || email.split('@')[0]).trim(),
         username: email.split('@')[0].toLowerCase(),
         role: 'user',
@@ -144,14 +143,42 @@ class AuthController {
         updatedAt: new Date().toISOString()
       });
 
-      UserModel.setPassword(email, hashedPassword);
-      UserModel.verifyEmail(email);
+      UserModel.setPassword(cleanEmail, hashedPassword);
+      UserModel.verifyEmail(cleanEmail);
 
       const token = AuthService.createSession(user.id, user.email, user.role);
 
-      return res.status(201).json({
-        success: true,
-        message: 'Kayıt başarılı',
+      // OneSignal ile hoş geldiniz bildirimi gönder (yeni kayıt için)
+      setImmediate(async () => {
+        try {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          const onesignalService = require('../../services/onesignalService');
+          const userName = user.displayName || user.name || user.email.split('@')[0] || 'Kullanıcı';
+          
+          const result = await onesignalService.sendToUser(
+            user.id,
+            'Hoş Geldiniz! 🎉',
+            `Merhaba ${userName}, hesabınız başarıyla oluşturuldu!`,
+            {
+              data: {
+                type: 'welcome',
+                userId: user.id,
+                timestamp: Date.now()
+              },
+              priority: 10,
+              sound: 'default'
+            }
+          );
+          
+          if (result.success) {
+            console.log(`[Auth] ✅ Welcome notification sent to new user ${user.id} (${userName})`);
+          }
+        } catch (notificationError) {
+          console.warn(`[Auth] ⚠️ Failed to send welcome notification to new user ${user.id}:`, notificationError.message);
+        }
+      });
+
+      return res.status(201).json(ResponseFormatter.success({
         user: {
           id: user.id,
           email: user.email,
@@ -161,13 +188,17 @@ class AuthController {
           createdAt: user.createdAt
         },
         token
-      });
+      }, 'Kayıt başarılı'));
     } catch (error) {
-      console.error('Register error:', error);
-      return res.status(500).json({ 
-        error: 'Kullanıcı kaydı başarısız',
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
+      console.error('[Auth] Register error:', error);
+      if (error.isOperational) {
+        return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
+      }
+      return res.status(500).json(ResponseFormatter.error(
+        'Kullanıcı kaydı başarısız',
+        'REGISTRATION_ERROR',
+        process.env.NODE_ENV === 'development' ? { details: error.message } : null
+      ));
     }
   }
 
@@ -176,39 +207,78 @@ class AuthController {
       const { email, password } = req.body;
       
       if (!email || !password) {
-        return res.status(400).json({ error: 'E-posta ve şifre gereklidir' });
+        return res.status(400).json(ResponseFormatter.error('E-posta ve şifre gereklidir', 'MISSING_CREDENTIALS'));
       }
 
-      const user = UserModel.findByEmail(email);
+      // Email format validation
+      if (!AuthService.isValidEmail(email.trim())) {
+        return res.status(400).json(ResponseFormatter.error('Geçersiz e-posta formatı', 'INVALID_EMAIL'));
+      }
+
+      const user = UserModel.findByEmail(email.trim().toLowerCase());
       if (!user) {
-        return res.status(401).json({ error: 'Bu e-posta adresi ile kayıtlı bir hesap bulunamadı' });
+        return res.status(401).json(ResponseFormatter.error('Bu e-posta adresi ile kayıtlı bir hesap bulunamadı', 'USER_NOT_FOUND'));
       }
 
-      if (!UserModel.isEmailVerified(email)) {
-        return res.status(403).json({ 
-          error: 'E-posta doğrulanmamış',
-          requiresVerification: true,
-          message: 'Lütfen giriş yapmadan önce e-postanızı doğrulayın'
-        });
+      if (!UserModel.isEmailVerified(email.trim().toLowerCase())) {
+        return res.status(403).json(ResponseFormatter.error(
+          'E-posta doğrulanmamış',
+          'EMAIL_NOT_VERIFIED',
+          { requiresVerification: true, message: 'Lütfen giriş yapmadan önce e-postanızı doğrulayın' }
+        ));
       }
 
-      const hashedPassword = UserModel.getPassword(email);
+      const hashedPassword = UserModel.getPassword(email.trim().toLowerCase());
       if (!hashedPassword) {
-        return res.status(401).json({ error: 'Geçersiz e-posta veya şifre' });
+        return res.status(401).json(ResponseFormatter.error('Geçersiz e-posta veya şifre', 'INVALID_CREDENTIALS'));
       }
 
       const isValidPassword = await AuthService.comparePassword(password, hashedPassword);
       if (!isValidPassword) {
-        return res.status(401).json({ error: 'Geçersiz e-posta veya şifre' });
+        return res.status(401).json(ResponseFormatter.error('Geçersiz e-posta veya şifre', 'INVALID_CREDENTIALS'));
       }
 
       TokenModel.removeAllForUser(user.id);
 
       const token = AuthService.createSession(user.id, user.email, user.role);
 
-      return res.json({
-        success: true,
-        message: 'Giriş başarılı',
+      // OneSignal ile hoş geldiniz bildirimi gönder (gecikmeli - player ID sync olması için)
+      // Async olarak gönder, login response'u bekletme
+      setImmediate(async () => {
+        try {
+          // Player ID'nin backend'e sync olması için 3 saniye bekle
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          const onesignalService = require('../../services/onesignalService');
+          const userName = user.displayName || user.name || user.email.split('@')[0] || 'Kullanıcı';
+          
+          const result = await onesignalService.sendToUser(
+            user.id,
+            'Hoş Geldiniz! 👋',
+            `Merhaba ${userName}, uygulamaya hoş geldiniz!`,
+            {
+              data: {
+                type: 'welcome',
+                userId: user.id,
+                timestamp: Date.now()
+              },
+              priority: 10,
+              sound: 'default'
+            }
+          );
+          
+          if (result.success) {
+            console.log(`[Auth] ✅ Welcome notification sent to user ${user.id} (${userName})`);
+          } else {
+            console.warn(`[Auth] ⚠️ Welcome notification failed for user ${user.id}:`, result.error || 'Unknown error');
+          }
+        } catch (notificationError) {
+          // Bildirim hatası login'i engellemesin
+          console.warn(`[Auth] ⚠️ Failed to send welcome notification to user ${user.id}:`, notificationError.message);
+        }
+      });
+
+      return res.json(ResponseFormatter.success({
         user: {
           id: user.id,
           email: user.email,
@@ -216,10 +286,13 @@ class AuthController {
           email_verified: true
         },
         token
-      });
+      }, 'Giriş başarılı'));
     } catch (error) {
-      console.error('Login error:', error);
-      return res.status(500).json({ error: 'Giriş yapılamadı' });
+      console.error('[Auth] Login error:', error);
+      if (error.isOperational) {
+        return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
+      }
+      return res.status(500).json(ResponseFormatter.error('Giriş yapılamadı', 'LOGIN_ERROR'));
     }
   }
 
@@ -230,13 +303,13 @@ class AuthController {
         TokenModel.remove(token);
       }
 
-      return res.json({
-        success: true,
-        message: 'Çıkış başarılı'
-      });
+      return res.json(ResponseFormatter.success(null, 'Çıkış başarılı'));
     } catch (error) {
-      console.error('Logout error:', error);
-      return res.status(500).json({ error: 'Çıkış yapılamadı' });
+      console.error('[Auth] Logout error:', error);
+      if (error.isOperational) {
+        return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
+      }
+      return res.status(500).json(ResponseFormatter.error('Çıkış yapılamadı', 'LOGOUT_ERROR'));
     }
   }
 
@@ -259,8 +332,11 @@ class AuthController {
         }
       });
     } catch (error) {
-      console.error('Get profile error:', error);
-      return res.status(500).json({ error: 'Profil bilgileri alınamadı' });
+      console.error('[Auth] Get profile error:', error);
+      if (error.isOperational) {
+        return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
+      }
+      return res.status(500).json(ResponseFormatter.error('Profil bilgileri alınamadı', 'PROFILE_FETCH_ERROR'));
     }
   }
 
@@ -279,33 +355,31 @@ class AuthController {
         if (currentPassword) {
           const hashedPassword = UserModel.getPassword(user.email);
           if (!hashedPassword) {
-            return res.status(400).json({ error: 'Şifre bulunamadı' });
+            return res.status(400).json(ResponseFormatter.error('Şifre bulunamadı', 'PASSWORD_NOT_FOUND'));
           }
 
           const isValidPassword = await AuthService.comparePassword(currentPassword, hashedPassword);
           if (!isValidPassword) {
-            return res.status(400).json({ error: 'Mevcut şifre yanlış' });
+            return res.status(400).json(ResponseFormatter.error('Mevcut şifre yanlış', 'INVALID_CURRENT_PASSWORD'));
           }
           canChangePassword = true;
         } else if (verificationCode) {
           const verification = await AuthService.verifyCode(user.email, verificationCode);
           if (!verification.valid) {
-            return res.status(400).json({ error: verification.error });
+            return res.status(400).json(ResponseFormatter.error(verification.error, 'INVALID_VERIFICATION_CODE'));
           }
           canChangePassword = true;
         } else {
-          return res.status(400).json({ error: 'Mevcut şifre veya doğrulama kodu gereklidir' });
+          return res.status(400).json(ResponseFormatter.error('Mevcut şifre veya doğrulama kodu gereklidir', 'MISSING_PASSWORD_VERIFICATION'));
         }
 
         if (canChangePassword) {
           if (newPassword.length < 6) {
-            return res.status(400).json({ error: 'Yeni şifre en az 6 karakter olmalıdır' });
+            return res.status(400).json(ResponseFormatter.error('Yeni şifre en az 6 karakter olmalıdır', 'INVALID_PASSWORD_LENGTH'));
           }
 
           const newHashedPassword = await AuthService.hashPassword(newPassword);
           UserModel.setPassword(user.email, newHashedPassword);
-
-          TokenModel.removeAllForUser(user.id);
         }
       }
       
@@ -320,9 +394,7 @@ class AuthController {
       const db = require('../../config/database');
       db.scheduleSave();
 
-      return res.json({
-        success: true,
-        message: newPassword ? 'Profil ve şifre başarıyla güncellendi' : 'Profil başarıyla güncellendi',
+      return res.json(ResponseFormatter.success({
         user: {
           id: user.id,
           email: user.email,
@@ -330,10 +402,13 @@ class AuthController {
           phone: user.phone || null,
           createdAt: user.createdAt
         }
-      });
+      }, newPassword ? 'Profil ve şifre başarıyla güncellendi' : 'Profil başarıyla güncellendi'));
     } catch (error) {
-      console.error('Update profile error:', error);
-      return res.status(500).json({ error: 'Profil güncellenemedi' });
+      console.error('[Auth] Update profile error:', error);
+      if (error.isOperational) {
+        return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
+      }
+      return res.status(500).json(ResponseFormatter.error('Profil güncellenemedi', 'PROFILE_UPDATE_ERROR'));
     }
   }
 
@@ -341,7 +416,7 @@ class AuthController {
     try {
       const user = req.user;
       if (!user) {
-        return res.status(401).json({ error: 'Token gereklidir' });
+        return res.status(401).json(ResponseFormatter.error('Token gereklidir', 'AUTH_REQUIRED'));
       }
 
       UserModel.delete(user.id);
@@ -350,73 +425,95 @@ class AuthController {
         TokenModel.remove(token);
       }
 
-      return res.json({
-        success: true,
-        message: 'Hesap başarıyla silindi'
-      });
+      return res.json(ResponseFormatter.success(null, 'Hesap başarıyla silindi'));
     } catch (error) {
-      console.error('Delete account error:', error);
-      return res.status(500).json({ error: 'Hesap silinemedi' });
+      console.error('[Auth] Delete account error:', error);
+      if (error.isOperational) {
+        return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
+      }
+      return res.status(500).json(ResponseFormatter.error('Hesap silinemedi', 'ACCOUNT_DELETE_ERROR'));
     }
   }
 
   async requestPasswordReset(req, res) {
     try {
       const { email } = req.body;
-      if (!email) {
-        return res.status(400).json({ error: 'E-posta adresi gereklidir' });
+      if (!email || !email.trim()) {
+        return res.status(400).json({ success: false, error: 'E-posta adresi gereklidir' });
       }
 
-      if (!AuthService.isValidEmail(email.trim())) {
-        return res.status(400).json({ error: 'Geçersiz e-posta formatı' });
+      const cleanEmail = email.trim().toLowerCase();
+
+      if (!AuthService.isValidEmail(cleanEmail)) {
+        return res.status(400).json({ success: false, error: 'Geçersiz e-posta formatı. Lütfen geçerli bir e-posta adresi girin.' });
       }
 
-      const user = UserModel.findByEmail(email.trim());
+      const VerificationModel = require('../../core/database/models/verification.model');
+      const recentResets = VerificationModel.getPasswordResets(cleanEmail) || [];
+      const now = Date.now();
+      const recentRequests = recentResets.filter(r => now - (r.timestamp || r.requestedAt || 0) < 15 * 60 * 1000);
+      
+      if (recentRequests.length >= 3) {
+        const oldestRequest = Math.min(...recentRequests.map(r => r.timestamp || r.requestedAt || 0));
+        const waitTime = Math.ceil((15 * 60 * 1000 - (now - oldestRequest)) / 1000 / 60);
+        return res.status(429).json({ 
+          success: false,
+          error: `Çok fazla istek. Lütfen ${waitTime} dakika sonra tekrar deneyin.`,
+          retryAfter: Math.ceil((15 * 60 * 1000 - (now - oldestRequest)) / 1000)
+        });
+      }
+
+      const user = UserModel.findByEmail(cleanEmail);
       if (!user) {
-        return res.status(404).json(ResponseFormatter.error('Bu e-posta adresi ile kayıtlı bir hesap bulunamadı', 'USER_NOT_FOUND'));
+        VerificationModel.addPasswordReset(cleanEmail, { 
+          timestamp: now, 
+          requestedAt: now,
+          success: false 
+        });
+        return res.status(404).json({ 
+          success: false,
+          error: 'Bu e-posta adresi ile kayıtlı bir hesap bulunamadı. Lütfen e-posta adresinizi kontrol edin.' 
+        });
       }
 
-      const resetToken = AuthService.generateResetToken(email.trim());
-      const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:8081'}/auth/reset-password?token=${resetToken}`;
+      VerificationModel.addPasswordReset(cleanEmail, { 
+        timestamp: now, 
+        requestedAt: now,
+        success: true 
+      });
+      const resetToken = AuthService.generateResetToken(cleanEmail);
 
-      const emailServiceUrl = process.env.EMAIL_SERVICE_URL || 'http://localhost:5001';
-      let emailSent = false;
+        const emailVerificationService = require('../../services/emailVerificationService');
       
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-        
-        const emailResponse = await fetch(`${emailServiceUrl}/send-reset-link`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            email: email.trim(),
-            resetLink: resetLink
-          }),
-          signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (emailResponse.ok) {
-          const responseData = await emailResponse.json().catch(() => ({}));
-          if (responseData.success) {
-            emailSent = true;
-          }
-        }
-      } catch (error) {
-        console.warn(`Email service unavailable: ${error.message}`);
-      }
-
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`Password reset link for ${email}: ${resetLink}`);
-      }
+        const result = await emailVerificationService.sendResetLinkEmail(email.trim(), '', resetToken);
+        console.log(`[Auth] ✓ Password reset email sent to ${email.trim()} (MessageId: ${result.messageId})`);
 
       return res.json({
         success: true,
-        message: emailSent ? 'Şifre sıfırlama linki e-postanıza gönderildi' : 'Şifre sıfırlama linki oluşturuldu (e-posta gönderilemedi)',
-        resetLink: process.env.NODE_ENV === 'development' ? resetLink : undefined
+          message: 'Şifre sıfırlama bilgileri e-postanıza gönderildi. Mobil uygulamadan şifrenizi sıfırlayabilirsiniz.',
+          emailSent: true
+        });
+      } catch (error) {
+        console.error(`[Auth] ✗ Failed to send reset email to ${email.trim()}:`, error.message);
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[Auth] [DEV] Password reset token for ${email.trim()}: ${resetToken}`);
+          return res.json({
+            success: true,
+            message: 'Şifre sıfırlama token\'ı oluşturuldu (SMTP hatası - development modunda token konsola yazdırıldı). Mobil uygulamadan şifrenizi sıfırlayabilirsiniz.',
+            resetToken: resetToken,
+            emailSent: false,
+            emailError: error.message
+          });
+        }
+        
+        return res.status(500).json({
+          success: false,
+          error: 'E-posta gönderilemedi. Lütfen SMTP ayarlarını kontrol edin veya daha sonra tekrar deneyin.',
+          emailError: error.message
       });
+      }
     } catch (error) {
       console.error('Request password reset error:', error);
       return res.status(500).json({ error: 'Şifre sıfırlama isteği oluşturulamadı' });
@@ -426,63 +523,145 @@ class AuthController {
   async verifyResetToken(req, res) {
     try {
       const { token } = req.query;
-      if (!token) {
-        return res.status(400).json({ error: 'Token gereklidir' });
+      if (!token || typeof token !== 'string' || !token.trim()) {
+        return res.status(400).json({ success: false, error: 'Token gereklidir. Lütfen e-postanızdaki token\'ı girin.' });
       }
 
-      const decoded = AuthService.verifyResetToken(token);
+      let decodedToken;
+      try {
+        decodedToken = decodeURIComponent(token.trim());
+      } catch (e) {
+        decodedToken = token.trim();
+      }
+
+      if (!decodedToken || decodedToken.length < 10) {
+        return res.status(400).json({ success: false, error: 'Geçersiz token formatı. Lütfen e-postanızdaki token\'ı tam olarak kopyalayın.' });
+      }
+
+      const decoded = AuthService.verifyResetToken(decodedToken);
+      
       if (!decoded || !decoded.email) {
-        return res.status(400).json({ error: 'Geçersiz veya süresi dolmuş link' });
+        console.error(`[Auth] ✗ Invalid or expired reset token`);
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Token geçersiz veya süresi dolmuş. Lütfen yeni bir şifre sıfırlama isteği gönderin.' 
+        });
       }
 
       const user = UserModel.findByEmail(decoded.email);
       if (!user) {
-        throw createError('Kullanıcı bulunamadı', 404, 'USER_NOT_FOUND');
+        console.error(`[Auth] ✗ User not found for email: ${decoded.email}`);
+        return res.status(404).json({ 
+          success: false, 
+          error: 'Kullanıcı bulunamadı. Lütfen geçerli bir token kullanın.' 
+        });
       }
 
+      console.log(`[Auth] ✓ Reset token verified for ${decoded.email}`);
       return res.json({
         success: true,
-        email: decoded.email
+        email: decoded.email,
+        message: 'Token doğrulandı. Yeni şifrenizi belirleyebilirsiniz.'
       });
     } catch (error) {
-      console.error('Verify reset token error:', error);
-      return res.status(500).json({ error: 'Token doğrulanamadı' });
+      console.error('[Auth] ✗ Verify reset token error:', error);
+      if (error.message && error.message.includes('malformed')) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Geçersiz token formatı. Lütfen e-postanızdaki token\'ı tam olarak kopyalayın.' 
+        });
+      }
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Token doğrulanırken bir hata oluştu. Lütfen tekrar deneyin.' 
+      });
     }
   }
 
   async confirmPasswordReset(req, res) {
     try {
       const { token, newPassword } = req.body;
-      if (!token || !newPassword) {
-        return res.status(400).json({ error: 'Token ve yeni şifre gereklidir' });
+      
+      if (!token || (typeof token === 'string' && !token.trim())) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Token gereklidir. Lütfen e-postanızdaki token\'ı girin.' 
+        });
       }
 
-      const decoded = AuthService.verifyResetToken(token);
+      if (!newPassword || (typeof newPassword === 'string' && !newPassword.trim())) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Yeni şifre gereklidir. Lütfen yeni şifrenizi girin.' 
+        });
+      }
+
+      let decodedToken;
+      try {
+        decodedToken = typeof token === 'string' ? decodeURIComponent(token.trim()) : token;
+      } catch (e) {
+        decodedToken = typeof token === 'string' ? token.trim() : token;
+      }
+
+      if (!decodedToken || (typeof decodedToken === 'string' && decodedToken.length < 10)) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Geçersiz token formatı. Lütfen e-postanızdaki token\'ı tam olarak kopyalayın.' 
+        });
+      }
+
+      const decoded = AuthService.verifyResetToken(decodedToken);
+      
       if (!decoded || !decoded.email) {
-        return res.status(400).json({ error: 'Geçersiz veya süresi dolmuş link' });
+        console.error(`[Auth] ✗ Invalid or expired reset token in confirm`);
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Token geçersiz veya süresi dolmuş. Lütfen yeni bir şifre sıfırlama isteği gönderin.' 
+        });
       }
 
-      if (!AuthService.isValidPassword(newPassword)) {
-        return res.status(400).json({ error: 'Şifre en az 6 karakter olmalıdır' });
+      const cleanPassword = typeof newPassword === 'string' ? newPassword.trim() : String(newPassword);
+
+      if (!AuthService.isValidPassword(cleanPassword)) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Şifre en az 6 karakter olmalıdır. Lütfen daha güçlü bir şifre seçin.' 
+        });
       }
 
       const user = UserModel.findByEmail(decoded.email);
       if (!user) {
-        throw createError('Kullanıcı bulunamadı', 404, 'USER_NOT_FOUND');
+        console.error(`[Auth] ✗ User not found for email: ${decoded.email}`);
+        return res.status(404).json({ 
+          success: false, 
+          error: 'Kullanıcı bulunamadı. Lütfen geçerli bir token kullanın.' 
+        });
       }
 
-      const hashedPassword = await AuthService.hashPassword(newPassword);
+      const hashedPassword = await AuthService.hashPassword(cleanPassword);
       UserModel.setPassword(decoded.email, hashedPassword);
-
       TokenModel.removeAllForUser(user.id);
 
+      const VerificationModel = require('../../core/database/models/verification.model');
+      VerificationModel.deletePasswordResets(decoded.email);
+
+      console.log(`[Auth] ✓ Password reset successful for ${decoded.email}`);
       return res.json({
         success: true,
-        message: 'Şifre başarıyla sıfırlandı'
+        message: 'Şifreniz başarıyla sıfırlandı. Yeni şifrenizle giriş yapabilirsiniz.'
       });
     } catch (error) {
-      console.error('Confirm password reset error:', error);
-      return res.status(500).json({ error: 'Şifre sıfırlanamadı' });
+      console.error('[Auth] ✗ Confirm password reset error:', error);
+      if (error.message && error.message.includes('malformed')) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Geçersiz token formatı. Lütfen e-postanızdaki token\'ı tam olarak kopyalayın.' 
+        });
+      }
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Şifre sıfırlanırken bir hata oluştu. Lütfen tekrar deneyin.' 
+      });
     }
   }
 
@@ -507,45 +686,37 @@ class AuthController {
 
       const code = await AuthService.sendVerificationCode(user.email);
 
-      const emailServiceUrl = process.env.EMAIL_SERVICE_URL || 'http://localhost:5001';
-      let emailSent = false;
+        const emailVerificationService = require('../../services/emailVerificationService');
       
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-        
-        const emailResponse = await fetch(`${emailServiceUrl}/send-verification`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            email: user.email,
-            code: code
-          }),
-          signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (emailResponse.ok) {
-          const responseData = await emailResponse.json().catch(() => ({}));
-          if (responseData.success) {
-            emailSent = true;
-          }
-        }
-      } catch (error) {
-        console.warn(`Email service unavailable: ${error.message}`);
-      }
-
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`Password change verification code for ${user.email}: ${code}`);
-      }
+        const result = await emailVerificationService.sendVerificationEmail(user.email, code);
+        console.log(`[Auth] ✓ Password change verification email sent to ${user.email} (MessageId: ${result.messageId})`);
 
       return res.json({
         success: true,
-        message: emailSent ? 'Doğrulama kodu e-postanıza gönderildi' : 'Doğrulama kodu oluşturuldu (e-posta gönderilemedi)',
-        code: process.env.NODE_ENV === 'development' ? code : undefined,
-        emailSent: emailSent
+          message: 'Doğrulama kodu e-postanıza gönderildi',
+          emailSent: true
+        });
+      } catch (error) {
+        console.error(`[Auth] ✗ Failed to send password change email to ${user.email}:`, error.message);
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[Auth] [DEV] Password change verification code for ${user.email}: ${code}`);
+          return res.json({
+            success: true,
+            message: 'Doğrulama kodu oluşturuldu (SMTP hatası - development modunda kod konsola yazdırıldı)',
+            code: code,
+            emailSent: false,
+            emailError: error.message
+          });
+        }
+        
+        return res.status(500).json({
+          success: false,
+          error: 'E-posta gönderilemedi. Lütfen SMTP ayarlarını kontrol edin veya daha sonra tekrar deneyin.',
+          emailError: error.message
       });
+      }
     } catch (error) {
       console.error('Send password change code error:', error);
       return res.status(500).json({ error: 'Doğrulama kodu gönderilemedi' });
@@ -578,6 +749,93 @@ class AuthController {
       return res.status(500).json({ error: 'Doğrulama kodu kontrol edilemedi' });
     }
   }
+
+  async getEmailHealth(req, res) {
+    try {
+      const emailVerificationService = require('../../services/emailVerificationService');
+      const health = await emailVerificationService.getHealthStatus();
+      return res.json(health);
+    } catch (error) {
+      console.error('Get email health error:', error);
+      return res.status(500).json({ 
+        status: 'ERROR',
+        service: 'Email Verification Service',
+        error: error.message 
+      });
+    }
+  }
+
+  async updateOnesignalPlayerId(req, res) {
+    try {
+      const user = req.user;
+      if (!user) {
+        console.warn('[AuthController] updateOnesignalPlayerId: No user in request');
+        return res.status(401).json({ 
+          success: false,
+          error: 'Token gereklidir' 
+        });
+      }
+
+      const { playerId, userId } = req.body;
+      
+      if (!playerId || typeof playerId !== 'string' || playerId.trim().length === 0) {
+        console.warn('[AuthController] updateOnesignalPlayerId: Invalid playerId');
+        return res.status(400).json({ 
+          success: false,
+          error: 'playerId gereklidir ve geçerli bir string olmalıdır' 
+        });
+      }
+
+      // Verify userId matches token user (if provided)
+      if (userId && userId !== user.id) {
+        console.warn(`[AuthController] updateOnesignalPlayerId: User ID mismatch. Token: ${user.id}, Request: ${userId}`);
+        return res.status(403).json({ 
+          success: false,
+          error: 'Yetkisiz işlem' 
+        });
+      }
+
+      const db = require('../../config/database');
+      const trimmedPlayerId = String(playerId).trim();
+      
+      console.log(`[AuthController] Updating OneSignal Player ID for user ${user.id}: ${trimmedPlayerId}`);
+      
+      const updatedUser = db.updateUserOnesignalPlayerId(user.id, trimmedPlayerId);
+      
+      if (!updatedUser) {
+        console.error(`[AuthController] updateOnesignalPlayerId: User not found in database: ${user.id}`);
+        return res.status(404).json({ 
+          success: false,
+          error: 'Kullanıcı bulunamadı' 
+        });
+      }
+
+      const activityLogService = require('../../services/activityLogService');
+      try {
+        activityLogService.logActivity(user.id, 'notification', 'update_onesignal_player_id', {
+          playerId: trimmedPlayerId,
+          path: req.path
+        });
+      } catch (logError) {
+        console.warn('[AuthController] Failed to log activity:', logError.message);
+      }
+
+      console.log(`[AuthController] ✅ OneSignal Player ID updated successfully for user ${user.id}`);
+
+      return res.json({
+        success: true,
+        message: 'OneSignal Player ID güncellendi',
+        playerId: updatedUser.onesignalPlayerId || trimmedPlayerId
+      });
+    } catch (error) {
+      console.error('[AuthController] updateOnesignalPlayerId error:', error);
+      return res.status(500).json({ 
+        success: false,
+        error: 'Player ID güncellenemedi: ' + error.message 
+      });
+    }
+  }
+
 }
 
 module.exports = new AuthController();

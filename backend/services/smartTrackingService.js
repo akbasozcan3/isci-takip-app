@@ -1,5 +1,6 @@
 const locationService = require('./locationService');
 const db = require('../config/database');
+const activityLogService = require('./activityLogService');
 
 class SmartTrackingService {
   constructor() {
@@ -113,10 +114,20 @@ class SmartTrackingService {
     const speed = (distance / timeDiff) * 3.6;
 
     if (speed > this.anomalyThresholds.maxSpeed) {
+      activityLogService.logActivity(deviceId, 'location', 'anomaly_detected', {
+        reason: 'excessive_speed',
+        speed,
+        deviceId
+      });
       return { isAnomaly: true, reason: 'excessive_speed', speed };
     }
 
     if (distance > this.anomalyThresholds.maxJumpDistance) {
+      activityLogService.logActivity(deviceId, 'location', 'anomaly_detected', {
+        reason: 'jump_detected',
+        distance,
+        deviceId
+      });
       return { isAnomaly: true, reason: 'jump_detected', distance };
     }
 
@@ -126,7 +137,7 @@ class SmartTrackingService {
         return { isAnomaly: true, reason: 'excessive_acceleration', acceleration };
       }
     }
-
+ 
     profile.lastSpeed = speed;
     profile.lastLocation = newLocation;
     profile.updateCount++;

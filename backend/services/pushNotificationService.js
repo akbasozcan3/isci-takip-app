@@ -1,8 +1,18 @@
 const onesignalService = require('./onesignalService');
 const notificationService = require('./notificationService');
-const { createLogger } = require('../core/utils/logger');
-
-const logger = createLogger('PushNotificationService');
+const activityLogService = require('./activityLogService');
+let logger;
+try {
+  const { getLogger } = require('../core/utils/loggerHelper');
+  logger = getLogger('PushNotificationService');
+} catch (err) {
+  logger = {
+    warn: (...args) => console.warn('[PushNotificationService]', ...args),
+    error: (...args) => console.error('[PushNotificationService]', ...args),
+    info: (...args) => console.log('[PushNotificationService]', ...args),
+    debug: (...args) => console.debug('[PushNotificationService]', ...args)
+  };
+}
 
 async function sendPushNotification(userId, message, options = {}) {
   const {
@@ -33,9 +43,25 @@ async function sendPushNotification(userId, message, options = {}) {
     const onesignalResult = result.find(r => r.channel === 'onesignal');
     if (onesignalResult && onesignalResult.success) {
       logger.info(`✅ Push notification sent to user ${userId}: ${message}`);
+      
+      activityLogService.logActivity(userId, 'notification', 'send_push_notification', {
+        type,
+        title,
+        success: true,
+        notificationId: onesignalResult.result?.data?.id
+      });
+      
       return { success: true, notificationId: onesignalResult.result?.data?.id };
     } else {
       logger.warn(`⚠️ Push notification partially failed for user ${userId}`);
+      
+      activityLogService.logActivity(userId, 'notification', 'send_push_notification', {
+        type,
+        title,
+        success: false,
+        error: 'OneSignal send failed'
+      });
+      
       return { success: false, error: 'OneSignal send failed' };
     }
   } catch (error) {

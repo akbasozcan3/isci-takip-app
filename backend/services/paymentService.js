@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const db = require('../config/database');
+const activityLogService = require('./activityLogService');
 
 let Iyzipay;
 let iyzipay;
@@ -281,11 +282,33 @@ class PaymentService {
         });
         
         this.recordBillingEvent(userId, transaction, result);
+        
+        activityLogService.logActivity(userId, 'billing', 'process_payment', {
+          transactionId: transaction.id,
+          planId,
+          amount,
+          currency,
+          gateway: result.gateway || this.gateway,
+          paymentId: result.paymentId || result.gatewayTransactionId,
+          status: 'succeeded',
+          retryCount
+        });
       } else {
         this.updateTransaction(transaction.id, {
           status: 'failed',
           error: result.error || 'Payment failed',
           retryCount: retryCount
+        });
+        
+        activityLogService.logActivity(userId, 'billing', 'process_payment', {
+          transactionId: transaction.id,
+          planId,
+          amount,
+          currency,
+          gateway: result.gateway || this.gateway,
+          status: 'failed',
+          error: result.error || 'Payment failed',
+          retryCount
         });
       }
 
@@ -302,6 +325,18 @@ class PaymentService {
         error: error.message || 'Payment processing failed',
         retryCount: retryCount
       });
+      
+      activityLogService.logActivity(userId, 'billing', 'process_payment', {
+        transactionId: transaction.id,
+        planId,
+        amount,
+        currency,
+        gateway: this.gateway,
+        status: 'failed',
+        error: error.message || 'Payment processing failed',
+        retryCount
+      });
+      
       throw error;
     }
   }

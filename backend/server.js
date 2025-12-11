@@ -19,6 +19,15 @@ const db = require('./config/database');
 const metricsService = require('./services/metricsService');
 const cacheService = require('./services/cacheService');
 
+// Initialize email service on startup
+try {
+  const emailVerificationService = require('./services/emailVerificationService');
+  emailVerificationService.initializeEmailService();
+  console.log('[Server] Email service initialized');
+} catch (error) {
+  console.error('[Server] Failed to initialize email service:', error.message);
+}
+
 class ServerApp {
   constructor() {
     this.app = express();
@@ -36,6 +45,7 @@ class ServerApp {
     });
     
     this.port = process.env.PORT || 4000;
+    this.shutdownHandlers = [];
     
     // Validate required environment variables
     if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
@@ -46,6 +56,129 @@ class ServerApp {
     this.setupSocketIO();
     this.setupBackgroundJobs();
     this.setupErrorHandling();
+    this.initializeOptimizations();
+    this.initializeStartupService();
+  }
+
+  initializeStartupService() {
+    try {
+      const startupService = require('./core/services/startup.service');
+      
+      // Register critical services
+      startupService.registerService('Database', async () => {
+        const db = require('./config/database');
+        if (!db.data) {
+          throw new Error('Database not initialized');
+        }
+      }, 100);
+      
+      startupService.registerService('Cache', async () => {
+        const cacheService = require('./services/cacheService');
+        if (!cacheService) {
+          throw new Error('Cache service not available');
+        }
+      }, 90);
+      
+      startupService.registerService('Advanced Cache', async () => {
+        const advancedCache = require('./core/services/advancedCache.service');
+        if (!advancedCache) {
+          throw new Error('Advanced cache not available');
+        }
+      }, 85);
+      
+      startupService.registerService('Database Service', async () => {
+        const databaseService = require('./core/services/database.service');
+        if (!databaseService) {
+          throw new Error('Database service not available');
+        }
+      }, 80);
+      
+      startupService.registerService('Memory Optimizer', async () => {
+        const memoryOptimizer = require('./core/services/memoryOptimizer.service');
+        memoryOptimizer.start();
+      }, 70);
+      
+      startupService.registerService('Performance Service', async () => {
+        const performanceService = require('./core/services/performance.service');
+        if (!performanceService) {
+          throw new Error('Performance service not available');
+        }
+      }, 60);
+      
+      startupService.registerService('Analytics Service', async () => {
+        const analyticsService = require('./core/services/analytics.service');
+        if (!analyticsService) {
+          throw new Error('Analytics service not available');
+        }
+      }, 50);
+      
+      startupService.registerService('Realtime Service', async () => {
+        const realtimeService = require('./core/services/realtime.service');
+        if (!realtimeService) {
+          throw new Error('Realtime service not available');
+        }
+      }, 40);
+      
+      // Initialize asynchronously
+      startupService.initialize().catch(err => {
+        console.error('[Server] Startup service initialization error:', err);
+      });
+      
+      console.log('[Server] ✅ Startup service initialized');
+    } catch (error) {
+      console.warn('[Server] ⚠️  Startup service not available:', error.message);
+    }
+  }
+
+  initializeOptimizations() {
+    // Initialize database optimizer
+    try {
+      const databaseOptimizer = require('./core/utils/databaseOptimizer');
+      console.log('[Server] ✅ Database optimizer initialized');
+    } catch (error) {
+      console.warn('[Server] ⚠️  Database optimizer not available:', error.message);
+    }
+
+    // Initialize database service
+    try {
+      const databaseService = require('./core/services/database.service');
+      console.log('[Server] ✅ Database service initialized');
+    } catch (error) {
+      console.warn('[Server] ⚠️  Database service not available:', error.message);
+    }
+
+    // Initialize backup service
+    try {
+      const backupService = require('./core/services/backup.service');
+      console.log('[Server] ✅ Backup service initialized');
+    } catch (error) {
+      console.warn('[Server] ⚠️  Backup service not available:', error.message);
+    }
+
+    // Initialize monitoring
+    try {
+      const monitoringMiddleware = require('./core/middleware/monitoring.middleware');
+      console.log('[Server] ✅ Monitoring middleware initialized');
+    } catch (error) {
+      console.warn('[Server] ⚠️  Monitoring middleware not available:', error.message);
+    }
+
+    // Initialize memory optimizer
+    try {
+      const memoryOptimizer = require('./core/services/memoryOptimizer.service');
+      memoryOptimizer.start();
+      console.log('[Server] ✅ Memory optimizer initialized');
+    } catch (error) {
+      console.warn('[Server] ⚠️  Memory optimizer not available:', error.message);
+    }
+
+    // Initialize advanced cache
+    try {
+      const advancedCache = require('./core/services/cache.service');
+      console.log('[Server] ✅ Advanced cache service initialized');
+    } catch (error) {
+      console.warn('[Server] ⚠️  Advanced cache service not available:', error.message);
+    }
   }
 
   setupMiddleware() {
@@ -126,10 +259,29 @@ class ServerApp {
           health: '/api/health',
           location: '/api/location/*',
           devices: '/api/devices',
-          analytics: '/api/analytics/*'
+          analytics: '/api/analytics/*',
+          docs: '/api-docs'
         }
       });
     });
+    
+    // Swagger API Documentation
+    if (process.env.NODE_ENV !== 'production' || process.env.ENABLE_SWAGGER === 'true') {
+      try {
+        const swaggerUi = require('swagger-ui-express');
+        const swaggerSpec = require('./swagger');
+        
+        this.app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+          customCss: '.swagger-ui .topbar { display: none }',
+          customSiteTitle: 'BAVAXE API Documentation',
+          customfavIcon: '/favicon.ico',
+        }));
+        
+        console.log('[Server] 📚 Swagger UI available at /api-docs');
+      } catch (error) {
+        console.warn('[Server] ⚠️  Swagger not available:', error.message);
+      }
+    }
     
     this.app.use('/api', routes);
   }
@@ -173,6 +325,20 @@ class ServerApp {
       next();
     });
 
+    // Initialize realtime service
+    try {
+      const realtimeService = require('./core/services/realtime.service');
+      const realtimeIO = realtimeService.initialize(this.server);
+      if (realtimeIO) {
+        this.io = realtimeIO; // Use realtime service's io instance
+        console.log('[Server] ✅ Real-time service initialized');
+        return; // Exit early if realtime service initialized successfully
+      }
+    } catch (error) {
+      console.warn('[Server] ⚠️  Real-time service not available, using default Socket.IO:', error.message);
+    }
+    
+    // Fallback to default Socket.IO setup
     const performanceService = require('./core/services/performance.service');
     
     this.io.on('connection', (socket) => {
@@ -324,8 +490,12 @@ class ServerApp {
   }
 
   setupErrorHandling() {
-    const { handleError } = require('./core/utils/errorHandler');
-    this.app.use(handleError);
+    const { errorHandlerMiddleware } = require('./core/middleware/errorHandler.middleware');
+    this.app.use((req, res, next) => {
+      req.startTime = Date.now();
+      next();
+    });
+    this.app.use(errorHandlerMiddleware);
 
     this.shutdownHandlers = [];
     this.isShuttingDown = false;
@@ -420,8 +590,9 @@ class ServerApp {
   async start() {
     try {
       await this.validateEnvironment();
+      this.verifyEmailService();
       
-      this.server.listen(this.port, '0.0.0.0', () => {
+      this.server.listen(this.port, '0.0.0.0', async () => {
         const memUsage = process.memoryUsage();
         metricsService.updateMemory();
         
@@ -442,12 +613,16 @@ class ServerApp {
         console.log(`📈 Metrics: Active`);
         
         const onesignalService = require('./services/onesignalService');
-        const hasAppId = onesignalService.appId && onesignalService.appId !== 'YOUR_ONESIGNAL_APP_ID';
-        const hasApiKey = onesignalService.apiKey && onesignalService.apiKey !== 'YOUR_ONESIGNAL_REST_API_KEY';
-        if (hasAppId && hasApiKey) {
-          console.log(`🔔 OneSignal: Active (App ID: ${onesignalService.appId.substring(0, 8)}...)`);
+        const onesignalStatus = onesignalService.getStatus();
+        if (onesignalStatus.enabled && onesignalStatus.apiKeyConfigured) {
+          console.log(`🔔 OneSignal: ✅ Active`);
+          console.log(`   App ID: ${onesignalStatus.appId.substring(0, 8)}...`);
+          console.log(`   API Key: ${onesignalStatus.apiKeyPrefix}`);
         } else {
           console.log(`⚠️  OneSignal: Configuration incomplete`);
+          if (!onesignalStatus.apiKeyConfigured) {
+            console.log(`   ⚠️  API Key not configured properly`);
+          }
         }
         
         const paymentGateway = require('./services/paymentGateway.service');
@@ -466,6 +641,14 @@ class ServerApp {
           console.log(`   ⚠️  Production için IYZICO_API_KEY ve IYZICO_SECRET_KEY ayarlayın`);
         }
         
+        const emailVerificationService = require('./services/emailVerificationService');
+        const emailHealth = await emailVerificationService.getHealthStatus();
+        if (emailHealth.status === 'OK') {
+          console.log(`📧 Email Service: ✓ Aktif (${emailHealth.smtp_host}:${emailHealth.smtp_port})`);
+        } else {
+          console.log(`📧 Email Service: ✗ ${emailHealth.connection_status} - ${emailHealth.connection_error || 'Yapılandırılmamış'}`);
+        }
+        
         console.log(`⏱️  Startup Time: ${Date.now() - startTime}ms`);
         
         if (process.env.NODE_ENV === 'production') {
@@ -477,8 +660,10 @@ class ServerApp {
         const metricsInterval = setInterval(() => {
           metricsService.updateMemory();
           const performanceService = require('./core/services/performance.service');
+          const performanceMonitor = require('./core/utils/performanceMonitor');
           const socketRooms = this.io.sockets.adapter.rooms.size;
           performanceService.setSocketRooms(socketRooms);
+          performanceMonitor.recordMemory();
         }, 30000);
 
         this.addShutdownHandler(async () => {
@@ -492,9 +677,6 @@ class ServerApp {
 
       this.server.on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
-          console.error(`\n❌ ERROR: Port ${this.port} is already in use`);
-          console.error(`   Attempting to find and stop conflicting process...\n`);
-          
           const { execSync } = require('child_process');
           try {
             if (process.platform === 'win32') {
@@ -502,17 +684,14 @@ class ServerApp {
               const match = netstat.match(/LISTENING\s+(\d+)/);
               if (match) {
                 const pid = match[1];
-                console.log(`   Found process ${pid}, stopping...`);
                 execSync(`taskkill /PID ${pid} /F`, { stdio: 'ignore' });
-                console.log(`   Process stopped. Retrying in 2 seconds...\n`);
                 setTimeout(() => {
                   this.server.listen(this.port, '0.0.0.0');
-                }, 2000);
+                }, 1000);
                 return;
               }
             }
           } catch (e) {
-            console.error(`   Could not auto-resolve port conflict. Please stop process manually.\n`);
           }
           process.exit(1);
         } else {
@@ -523,6 +702,35 @@ class ServerApp {
     } catch (error) {
       console.error('\n❌ FATAL: Failed to start server:', error);
       process.exit(1);
+    }
+  }
+
+  verifyEmailService() {
+    try {
+      const emailVerificationService = require('./services/emailVerificationService');
+      const smtpUser = process.env.SMTP_USER || '';
+      const smtpPass = process.env.SMTP_PASS || '';
+      const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+      const smtpPort = process.env.SMTP_PORT || '465';
+      
+      if (smtpUser && smtpPass) {
+        emailVerificationService.verifySMTPConnection().then(result => {
+          if (result.success) {
+            console.log(`📧 Email Service: ✓ Aktif (${smtpHost}:${smtpPort})`);
+          } else {
+            console.error(`📧 Email Service: ✗ Bağlantı hatası - ${result.error}`);
+            console.error(`   Email gönderimi çalışmayacak. SMTP ayarlarını kontrol edin.`);
+          }
+        }).catch(err => {
+          console.error(`📧 Email Service: ✗ Hata - ${err.message}`);
+        });
+      } else {
+        console.warn(`📧 Email Service: ⚠ Yapılandırılmamış`);
+        console.warn(`   SMTP_USER ve SMTP_PASS .env dosyasında ayarlanmalı`);
+        console.warn(`   Email gönderimi çalışmayacak.`);
+      }
+    } catch (error) {
+      console.error(`📧 Email Service: ✗ Başlatma hatası - ${error.message}`);
     }
   }
 

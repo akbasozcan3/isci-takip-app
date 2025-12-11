@@ -1,4 +1,5 @@
 const db = require('../config/database');
+const activityLogService = require('../services/activityLogService');
 
 class AdminController {
   resetAllData(req, res) {
@@ -21,6 +22,12 @@ class AdminController {
 
       const snapshot = db.resetAllData();
       const userCount = Object.keys(snapshot.users || {}).length;
+
+      activityLogService.logActivity('admin', 'admin', 'reset_all_data', {
+        userCount,
+        path: req.path,
+        ip: req.ip || req.connection?.remoteAddress
+      });
 
       return res.json({
         success: true,

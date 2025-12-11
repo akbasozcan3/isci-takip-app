@@ -1,4 +1,4 @@
-const ValidationService = require('../utils/validation');
+const ValidationService = require('../core/utils/validation');
 
 class ExtendedValidationService {
   validateLocationData(data) {

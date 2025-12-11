@@ -3,6 +3,7 @@ const ResponseFormatter = require('../core/utils/responseFormatter');
 const SubscriptionModel = require('../core/database/models/subscription.model');
 const { getUserIdFromToken } = require('../core/middleware/auth.middleware');
 const createError = require('../core/utils/errorHandler').createError;
+const activityLogService = require('../services/activityLogService');
 
 class CrossPageController {
   async getNavigationData(req, res) {
@@ -63,6 +64,14 @@ class CrossPageController {
           }
         }
       }
+
+      activityLogService.logActivity(userId, 'navigation', 'view_navigation_data', {
+        totalGroups: activeGroups.length,
+        totalMembers,
+        activeMembers: totalActiveMembers,
+        planId,
+        path: req.path
+      });
 
       return res.json(ResponseFormatter.success({
         user: {
@@ -179,6 +188,12 @@ class CrossPageController {
           break;
       }
 
+      activityLogService.logActivity(userId, 'navigation', 'view_page_context', {
+        page,
+        planId,
+        path: req.path
+      });
+
       return res.json(ResponseFormatter.success(context));
     } catch (error) {
       if (error.isOperational) {
@@ -224,6 +239,12 @@ class CrossPageController {
         }
       }, 5 * 60 * 1000);
 
+      activityLogService.logActivity(userId, 'navigation', 'share_data_between_pages', {
+        sourcePage,
+        targetPage,
+        path: req.path
+      });
+
       return res.json(ResponseFormatter.success({
         shareKey,
         expiresAt: shareData.expiresAt
@@ -260,6 +281,13 @@ class CrossPageController {
         delete db.data.pageShares[shareKey];
         throw createError('Paylaşılan veri süresi dolmuş', 410, 'SHARE_EXPIRED');
       }
+
+      activityLogService.logActivity(userId, 'navigation', 'get_shared_data', {
+        shareKey,
+        sourcePage: shareData.sourcePage,
+        targetPage: shareData.targetPage,
+        path: req.path
+      });
 
       return res.json(ResponseFormatter.success(shareData.data));
     } catch (error) {

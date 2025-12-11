@@ -1,54 +1,39 @@
-# İşçi Takip - React Native/Expo Project
-
-# Dependencies
 node_modules/
+npm-debug.log
 npm-debug.*
 yarn-debug.*
 yarn-error.*
 
-# Expo
-.expo/
-dist/
-web-build/
-expo-env.d.ts
+.env
+.env.local
+.env.production
+.env.*.local
+data.json
+data.json.backup
+data.json.tmp
 
-# Native builds
+*.log
+logs/
+*.pem
+*.key
+*.cert
+
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+
+backups/backup-*.json
+!backups/.gitkeep
+
 *.orig.*
 *.jks
 *.p8
 *.p12
-*.key
 *.mobileprovision
-/ios
-/android
 
-# Metro
-.metro-health-check*
-
-# Environment files
-.env
-.env*.local
-data.json
-
-# TypeScript
-*.tsbuildinfo
-
-# System files
-.DS_Store
-*.pem
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-
-# Logs
-*.log
-gradle_build_log.txt
-
-# Temporary files
-app-example
-.venv/
-api/pybackend/.venv/
-__pycache__/
-*.pyc
+.deploy
+.deploy-trigger
+*.backup
+*.tmp

@@ -7,11 +7,11 @@ const SubscriptionModel = require('../core/database/models/subscription.model');
 const smartTrackingService = require('../services/smartTrackingService');
 const locationAnalytics = require('../core/services/locationAnalytics.service');
 const notificationService = require('../services/notificationService');
-const { createLogger } = require('../core/utils/logger');
+const autoNotificationService = require('../services/autoNotificationService');
+const geocodingService = require('../services/geocodingService');
+const { logger } = require('../core/utils/logger');
 const ResponseFormatter = require('../core/utils/responseFormatter');
 const { createError } = require('../core/utils/errorHandler');
-
-const logger = createLogger('LocationController');
 
 const REQUEST_METRICS = new Map();
 const ERROR_METRICS = new Map();
@@ -291,6 +291,7 @@ function checkGroupAccess(userId, groupId, requireAdmin = false) {
 class LocationController {
   // Store location data (optimized with batch processing)
   async storeLocation(req, res) {
+    const startTime = Date.now();
     try {
       const { deviceId, coords, timestamp, workerId, name, phone } = req.body || {};
       
@@ -303,14 +304,22 @@ class LocationController {
       });
 
       if (!validation.valid) {
-        return res.status(400).json({ error: validation.error });
+        return res.status(400).json(ResponseFormatter.error(validation.error, 'VALIDATION_ERROR'));
+      }
+
+      if (!coords || typeof coords !== 'object') {
+        return res.status(400).json(ResponseFormatter.error('Koordinatlar gereklidir', 'MISSING_COORDINATES'));
       }
 
       const lat = parseFloat(coords.latitude);
       const lng = parseFloat(coords.longitude);
       
       if (!isFinite(lat) || !isFinite(lng)) {
-        return res.status(400).json({ error: 'Invalid coordinates' });
+        return res.status(400).json(ResponseFormatter.error('Geçersiz koordinat formatı', 'INVALID_COORDINATES'));
+      }
+      
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return res.status(400).json(ResponseFormatter.error('Koordinatlar geçerli aralıkta değil', 'COORDINATES_OUT_OF_RANGE'));
       }
 
       const locationActivityService = require('../services/locationActivityService');
@@ -332,10 +341,42 @@ class LocationController {
         userAgent: req.headers['user-agent']
       };
 
+      try {
+        const geocode = await Promise.race([
+          geocodingService.getCityProvince(lat, lng),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
+        ]);
+        locationData.geocode = geocode;
+      } catch (err) {
+        logger.warn('Geocoding failed or timed out, continuing without city data', { error: err.message });
+      }
+
       const locationWithActivity = locationActivityService.updateLocationWithActivity(finalDeviceId, locationData);
+      
+      if (locationData.geocode) {
+        locationWithActivity.geocode = locationData.geocode;
+      }
+      
       locationBatchService.addToBatch(finalDeviceId, locationWithActivity);
 
       const { planId, planLimits: locationLimits } = getUserPlan(finalDeviceId);
+      
+      try {
+        const userGroups = db.getUserGroups(finalDeviceId);
+        if (userGroups && userGroups.length > 0) {
+          setImmediate(() => {
+            autoNotificationService.notifyLocationUpdate(finalDeviceId, {
+              latitude: lat,
+              longitude: lng,
+              timestamp: locationData.timestamp
+            }).catch(err => {
+              logger.debug('Location update notification skipped:', err.message);
+            });
+          });
+        }
+      } catch (notifError) {
+        logger.debug('Location update notification error (non-critical):', notifError.message);
+      }
       
       const existingLocations = db.getStore(finalDeviceId);
       if (existingLocations.length > locationLimits.maxLocationsPerDevice) {
@@ -370,6 +411,16 @@ class LocationController {
       const processingTime = Date.now() - startTime;
       
       trackRequest('storeLocation', planId, processingTime, true);
+      
+      const activityLogService = require('../services/activityLogService');
+      activityLogService.logActivity(finalDeviceId, 'location', 'store_location', {
+        deviceId: finalDeviceId,
+        lat: latitude,
+        lng: longitude,
+        accuracy: accuracy !== undefined ? Number(accuracy) : null,
+        planId,
+        path: req.path
+      });
       logger.info('Location stored successfully', { 
         deviceId: finalDeviceId, 
         planId, 
@@ -397,8 +448,15 @@ class LocationController {
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
       
-      logger.error('Store location error', error, { processingTime });
-      return res.status(500).json(ResponseFormatter.error('Konum kaydedilemedi', 'STORAGE_ERROR'));
+      logger.error('Store location error', error, { 
+        processingTime,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
+      
+      const { createError } = require('../core/utils/errorHandler');
+      throw createError('Konum kaydedilemedi', 500, 'STORAGE_ERROR', { 
+        processingTime: `${processingTime}ms` 
+      });
     }
   }
 
@@ -457,6 +515,12 @@ class LocationController {
       const processingTime = Date.now() - startTime;
       trackRequest('getMetrics', planId, processingTime, true);
 
+      activityLogService.logActivity(userId, 'location', 'view_metrics', {
+        planId,
+        processingTime,
+        path: req.path
+      });
+
       return res.json(ResponseFormatter.success({
         ...metrics,
         _performance: {
@@ -509,6 +573,11 @@ class LocationController {
         }
       };
 
+      activityLogService.logActivity(userId, 'location', 'view_health_status', {
+        planId,
+        path: req.path
+      });
+
       return res.json(ResponseFormatter.success(health));
     } catch (error) {
       logger.error('Get health status error', error);
@@ -542,6 +611,11 @@ class LocationController {
         timestamp: new Date().toISOString()
       };
 
+      activityLogService.logActivity(userId, 'location', 'view_performance_stats', {
+        planId,
+        path: req.path
+      });
+
       return res.json(ResponseFormatter.success(stats));
     } catch (error) {
       logger.error('Get performance stats error', error);
@@ -555,8 +629,8 @@ class LocationController {
       const { deviceId } = req.params;
       const { limit: reqLimit, offset = 0 } = req.query;
       
-      if (!deviceId) {
-        return res.status(400).json({ error: 'Device ID required' });
+      if (!deviceId || typeof deviceId !== 'string' || deviceId.trim().length === 0) {
+        return res.status(400).json(ResponseFormatter.error('Device ID gereklidir', 'MISSING_DEVICE_ID'));
       }
 
       const user = db.findUserById(deviceId);
@@ -607,10 +681,31 @@ class LocationController {
         cacheService.set(cacheKey, response, locationLimits.cacheTTL, user?.id);
       }
 
+      const userId = getUserIdFromToken(req);
+      if (userId) {
+        activityLogService.logActivity(userId, 'location', 'view_location_history', {
+          deviceId,
+          limit,
+          offset,
+          total,
+          planId,
+          path: req.path
+        });
+      }
+
       return res.json(response);
     } catch (error) {
-      console.error('Get location history error:', error);
-      return res.status(500).json({ error: 'Failed to get location history' });
+      logger.error('Get location history error', error, {
+        deviceId: req.params.deviceId,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
+      
+      if (error.isOperational) {
+        return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
+      }
+      
+      const { createError } = require('../core/utils/errorHandler');
+      throw createError('Konum geçmişi alınamadı', 500, 'LOCATION_HISTORY_ERROR');
     }
   }
 
@@ -630,6 +725,17 @@ class LocationController {
 
       const startIndex = Math.max(0, locations.length - limit);
       const recent = locations.slice(startIndex);
+      
+      const userId = getUserIdFromToken(req);
+      if (userId) {
+        activityLogService.logActivity(userId, 'location', 'view_recent_locations', {
+          deviceId,
+          limit,
+          count: recent.length,
+          path: req.path
+        });
+      }
+      
       return res.json(recent);
     } catch (error) {
       console.error('Get recent locations error:', error);
@@ -642,26 +748,43 @@ class LocationController {
     try {
       const { deviceId } = req.params;
       
-      if (!deviceId) {
-        return res.status(400).json({ error: 'Device ID required' });
+      if (!deviceId || typeof deviceId !== 'string' || deviceId.trim().length === 0) {
+        return res.status(400).json(ResponseFormatter.error('Device ID gereklidir', 'MISSING_DEVICE_ID'));
       }
 
       const locations = db.getStore(deviceId);
-      if (locations.length === 0) {
-        return res.status(404).json({ error: 'No location data found' });
+      if (!Array.isArray(locations) || locations.length === 0) {
+        return res.status(404).json(ResponseFormatter.error('Konum verisi bulunamadı', 'NO_LOCATION_DATA', { deviceId }));
       }
 
       const locationActivityService = require('../services/locationActivityService');
       const latestLocation = locations[locations.length - 1];
       const activity = locationActivityService.getActivityForLocation(deviceId, latestLocation);
       
-      return res.json({
+      const userId = getUserIdFromToken(req);
+      if (userId) {
+        activityLogService.logActivity(userId, 'location', 'view_latest_location', {
+          deviceId,
+          path: req.path
+        });
+      }
+      
+      return res.json(ResponseFormatter.success({
         ...latestLocation,
         activity: activity
-      });
+      }));
     } catch (error) {
-      console.error('Get latest location error:', error);
-      return res.status(500).json({ error: 'Failed to get latest location' });
+      logger.error('Get latest location error', error, {
+        deviceId: req.params.deviceId,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
+      
+      if (error.isOperational) {
+        return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
+      }
+      
+      const { createError } = require('../core/utils/errorHandler');
+      throw createError('Son konum alınamadı', 500, 'LATEST_LOCATION_ERROR');
     }
   }
 
@@ -682,6 +805,14 @@ class LocationController {
             lastUpdate: latestLocation.timestamp
           });
         }
+      }
+
+      const userId = getUserIdFromToken(req);
+      if (userId) {
+        activityLogService.logActivity(userId, 'location', 'view_all_devices', {
+          deviceCount: devices.length,
+          path: req.path
+        });
       }
 
       return res.json({ devices });
@@ -726,6 +857,14 @@ class LocationController {
 
       delete db.data.store[deviceId];
       db.scheduleSave();
+
+      const userId = getUserIdFromToken(req);
+      if (userId) {
+        activityLogService.logActivity(userId, 'location', 'delete_location_data', {
+          deviceId,
+          path: req.path
+        });
+      }
 
       return res.json({ 
         success: true, 
@@ -780,6 +919,15 @@ class LocationController {
         });
       }
 
+      const userId = getUserIdFromToken(req);
+      if (userId) {
+        activityLogService.logActivity(userId, 'location', 'view_active_devices', {
+          count: items.length,
+          query,
+          path: req.path
+        });
+      }
+
       return res.json({
         count: items.length,
         items,
@@ -808,6 +956,15 @@ class LocationController {
       const quality = locationAnalytics.getLocationQuality(deviceId);
       const prediction = locationAnalytics.predictNextLocation(deviceId);
       
+      const userId = getUserIdFromToken(req);
+      if (userId) {
+        activityLogService.logActivity(userId, 'location', 'view_location_stats', {
+          deviceId,
+          planId,
+          path: req.path
+        });
+      }
+
       return res.json(ResponseFormatter.success({
         deviceId,
         ...stats,
@@ -836,6 +993,16 @@ class LocationController {
       const locations = db.getStore(deviceId);
       const optimized = locationService.optimizeRoute(locations, Number(minDistance));
       
+      const userId = getUserIdFromToken(req);
+      if (userId) {
+        activityLogService.logActivity(userId, 'location', 'view_route_optimized', {
+          deviceId,
+          originalCount: locations.length,
+          optimizedCount: optimized.length,
+          path: req.path
+        });
+      }
+
       return res.json({
         deviceId,
         originalCount: locations.length,
@@ -903,6 +1070,15 @@ class LocationController {
       
       const recommendations = smartTrackingService.getTrackingRecommendations(deviceId, planId);
       
+      const requestUserId = getUserIdFromToken(req);
+      if (requestUserId) {
+        activityLogService.logActivity(requestUserId, 'location', 'view_tracking_recommendations', {
+          deviceId,
+          planId,
+          path: req.path
+        });
+      }
+      
       return res.json(ResponseFormatter.success({
         deviceId,
         planId,
@@ -920,10 +1096,27 @@ class LocationController {
         return res.status(400).json({ error: 'Device ID required' });
       }
 
+      const userId = getUserIdFromToken(req);
+      const { planId } = getUserPlan(userId);
+
+      if (planId === 'free') {
+        return res.status(403).json({
+          error: 'Location analytics requires premium subscription',
+          code: 'PREMIUM_REQUIRED',
+          currentPlan: planId
+        });
+      }
+
       const routeMetrics = locationAnalytics.calculateRouteMetrics(deviceId);
       const speedZones = locationAnalytics.calculateSpeedZones(deviceId);
       const quality = locationAnalytics.getLocationQuality(deviceId);
       const heatmap = locationAnalytics.getLocationHeatmap(deviceId, 0.01);
+
+      activityLogService.logActivity(userId, 'location', 'view_analytics', {
+        deviceId,
+        planId,
+        path: req.path
+      });
 
       return res.json(ResponseFormatter.success({
         deviceId,
@@ -947,9 +1140,28 @@ class LocationController {
         return res.status(400).json({ error: 'Device ID required' });
       }
 
+      const userId = getUserIdFromToken(req);
+      const { planId } = getUserPlan(userId);
+
+      if (planId === 'free') {
+        return res.status(403).json({
+          error: 'Route metrics requires premium subscription',
+          code: 'PREMIUM_REQUIRED',
+          currentPlan: planId
+        });
+      }
+
       const start = startTime ? parseInt(startTime) : null;
       const end = endTime ? parseInt(endTime) : null;
       const metrics = locationAnalytics.calculateRouteMetrics(deviceId, start, end);
+
+      activityLogService.logActivity(userId, 'location', 'view_route_metrics', {
+        deviceId,
+        startTime: start,
+        endTime: end,
+        planId,
+        path: req.path
+      });
 
       return res.json(ResponseFormatter.success({
         deviceId,
@@ -970,6 +1182,14 @@ class LocationController {
 
       const quality = locationAnalytics.getLocationQuality(deviceId);
 
+      const userId = getUserIdFromToken(req);
+      if (userId) {
+        activityLogService.logActivity(userId, 'location', 'view_location_quality', {
+          deviceId,
+          path: req.path
+        });
+      }
+
       return res.json(ResponseFormatter.success({
         deviceId,
         ...quality
@@ -989,7 +1209,25 @@ class LocationController {
         return res.status(400).json({ error: 'Device ID required' });
       }
 
+      const userId = getUserIdFromToken(req);
+      const { planId } = getUserPlan(userId);
+
+      if (planId === 'free') {
+        return res.status(403).json({
+          error: 'Location prediction requires premium subscription',
+          code: 'PREMIUM_REQUIRED',
+          currentPlan: planId
+        });
+      }
+
       const prediction = locationAnalytics.predictNextLocation(deviceId, parseInt(lookbackMinutes));
+
+      activityLogService.logActivity(userId, 'location', 'view_prediction', {
+        deviceId,
+        lookbackMinutes: parseInt(lookbackMinutes),
+        planId,
+        path: req.path
+      });
 
       return res.json(ResponseFormatter.success({
         deviceId,
@@ -1011,18 +1249,63 @@ class LocationController {
       const includePredictions = req.query.includePredictions === 'true';
       const includeHeader = req.query.includeHeader === 'true';
 
-      if (!deviceId) {
-        throw createError('Device ID gereklidir', 400, 'MISSING_DEVICE_ID');
+      let userId = null;
+      try {
+        userId = getUserIdFromToken(req);
+      } catch (e) {
+      }
+      
+      const deviceIdToUse = deviceId || userId;
+      
+      const emptyResponse = {
+        summary: {
+          totalLocations: 0,
+          totalDistance: 0,
+          totalTime: 0,
+          averageSpeed: 0,
+          maxSpeed: 0,
+          activeDays: 0,
+          averageDailyDistance: 0,
+          topSpeedZone: 'parked',
+          mostActiveHour: 0,
+          mostActiveDay: 'Pazartesi'
+        },
+        routeMetrics: {
+          totalRoutes: 0,
+          averageRouteDistance: 0,
+          longestRoute: 0,
+          shortestRoute: 0,
+          averageRouteDuration: 0
+        },
+        quality: {
+          accuracy: 0,
+          reliability: 0,
+          consistency: 0,
+          gpsQuality: 'Yetersiz'
+        },
+        insights: [{
+          type: 'info',
+          message: 'Konum takibini başlatarak veri toplamaya başlayın',
+          icon: 'location'
+        }],
+        _performance: {
+          boost: false,
+          processingTime: `${Date.now() - startTime}ms`,
+          planId: 'free'
+        }
+      };
+      
+      if (!deviceIdToUse) {
+        return res.json(ResponseFormatter.success(emptyResponse));
       }
 
-      const userId = getUserIdFromToken(req);
-      const userPlanData = getUserPlan(userId);
+      const userPlanData = userId ? getUserPlan(userId) : { planId: 'free', planLimits: SubscriptionModel.getPlanLimits('free'), user: null };
       const planId = userPlanData?.planId || 'free';
       const planLimits = userPlanData?.planLimits || SubscriptionModel.getPlanLimits('free');
-      const user = userPlanData?.user || db.findUserById(userId);
+      const user = userPlanData?.user || (userId ? db.findUserById(userId) : null);
 
       const cacheService = require('../core/services/advancedCache.service');
-      const cacheKey = `analytics:${deviceId}:${dateRange}:${includeTimeSeries}:${includePatterns}:${includePredictions}:${includeHeader}`;
+      const cacheKey = `analytics:${deviceIdToUse}:${dateRange}:${includeTimeSeries}:${includePatterns}:${includePredictions}:${includeHeader}`;
       const cached = cacheService.get(cacheKey, userId);
       
       if (cached) {
@@ -1038,7 +1321,7 @@ class LocationController {
         }));
       }
 
-      const locations = db.getStore(deviceId);
+      const locations = db.getStore(deviceIdToUse);
       if (!Array.isArray(locations) || locations.length === 0) {
         return res.json(ResponseFormatter.success({
           summary: {
@@ -1439,6 +1722,15 @@ class LocationController {
         }
       }
 
+      if (tokenData && tokenData.userId) {
+        activityLogService.logActivity(tokenData.userId, 'location', 'create_share_link', {
+          shareToken,
+          lat: latNum,
+          lng: lngNum,
+          path: req.path
+        });
+      }
+
       const response = ResponseFormatter.success({
         shareToken,
         shareUrl,
@@ -1597,6 +1889,14 @@ class LocationController {
         cacheService.set(cacheKey, response, locationLimits.cacheTTL, userId);
       }
 
+      activityLogService.logActivity(userId, 'location', 'find_location_by_phone', {
+        phone,
+        foundUserId: foundUser.id,
+        groupId,
+        planId,
+        path: req.path
+      });
+
       return res.json(ResponseFormatter.success(response));
     } catch (error) {
       if (error.isOperational) {
@@ -1639,6 +1939,13 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('startLiveLocation', planId, processingTime, true);
+      
+      activityLogService.logActivity(userId, 'location', 'start_live_location', {
+        deviceId,
+        groupId,
+        planId,
+        path: req.path
+      });
       logger.info('Live location started', { userId, liveLocationId, planId, processingTime });
 
       return res.json(ResponseFormatter.success({
@@ -1820,6 +2127,14 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('addFamilyMember', planId, processingTime, true);
+      
+      activityLogService.logActivity(userId, 'location', 'add_family_member', {
+        memberId: familyUser.id,
+        memberName: finalName,
+        planId,
+        path: req.path
+      });
+      
       logger.info('Family member added successfully', { 
         userId, 
         memberId: familyUser.id, 
@@ -1973,6 +2288,13 @@ class LocationController {
         cacheService.set(cacheKey, response, locationLimits.cacheTTL, userId);
       }
 
+      activityLogService.logActivity(userId, 'location', 'view_family_locations', {
+        groupId,
+        memberCount: locations.length,
+        planId,
+        path: req.path
+      });
+
       return res.json(ResponseFormatter.success(response));
     } catch (error) {
       if (error.isOperational) {
@@ -1981,6 +2303,46 @@ class LocationController {
       }
       logger.error('Get family locations error', error);
       return res.status(500).json(ResponseFormatter.error('Aile konumları alınamadı', 'FAMILY_LOCATIONS_ERROR'));
+    }
+  }
+
+  async reverseGeocode(req, res) {
+    const startTime = Date.now();
+    try {
+      const { lat, lng } = req.query;
+      
+      if (!lat || !lng) {
+        return res.status(400).json(ResponseFormatter.error('lat ve lng parametreleri gereklidir', 'MISSING_COORDINATES'));
+      }
+
+      const latNum = parseFloat(lat);
+      const lngNum = parseFloat(lng);
+      
+      if (!isFinite(latNum) || !isFinite(lngNum)) {
+        return res.status(400).json(ResponseFormatter.error('Geçersiz koordinatlar', 'INVALID_COORDINATES'));
+      }
+
+      const userId = getUserIdFromToken(req);
+      const geocode = await geocodingService.getCityProvince(latNum, lngNum);
+      
+      const processingTime = Date.now() - startTime;
+      
+      if (userId) {
+        activityLogService.logActivity(userId, 'location', 'reverse_geocode', {
+          lat: latNum,
+          lng: lngNum,
+          path: req.path
+        });
+      }
+      
+      return res.json(ResponseFormatter.success({
+        geocode,
+        processingTime: `${processingTime}ms`
+      }));
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+      logger.error('Reverse geocode error', error, { processingTime });
+      return res.status(500).json(ResponseFormatter.error('Reverse geocoding başarısız', 'REVERSE_GEOCODE_ERROR'));
     }
   }
 
@@ -2031,6 +2393,12 @@ class LocationController {
 
         const processingTime = Date.now() - startTime;
         trackRequest('geocodeAddress', planId, processingTime, true);
+
+        activityLogService.logActivity(userId, 'location', 'geocode_address', {
+          address: address.trim(),
+          planId,
+          path: req.path
+        });
 
         return res.json(ResponseFormatter.success({
           address: result.display_name,
@@ -2320,6 +2688,13 @@ class LocationController {
         cacheService.set(cacheKey, response, locationLimits.cacheTTL, courierId);
       }
 
+      activityLogService.logActivity(courierId, 'location', 'view_deliveries', {
+        groupId,
+        deliveryCount: deliveries.length,
+        planId,
+        path: req.path
+      });
+
       return res.json(ResponseFormatter.success(response));
     } catch (error) {
       if (error.isOperational) {
@@ -2399,6 +2774,15 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('updateDeliveryStatus', planId, processingTime, true);
+      
+      activityLogService.logActivity(courierId, 'location', 'update_delivery_status', {
+        deliveryId,
+        previousStatus,
+        newStatus: status,
+        planId,
+        path: req.path
+      });
+      
       logger.info('Delivery status updated', { 
         courierId, 
         deliveryId, 
@@ -2513,6 +2897,15 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('saveRoute', planId, processingTime, true);
+      
+      activityLogService.logActivity(userId, 'location', 'save_route', {
+        routeId,
+        routeName: (name || 'Yeni Rota').trim(),
+        waypointsCount: (waypoints || []).length,
+        planId,
+        path: req.path
+      });
+      
       logger.info('Route saved successfully', { userId, routeId, planId, processingTime });
 
       return res.json(ResponseFormatter.success({
@@ -2618,6 +3011,13 @@ class LocationController {
       if (locationLimits.smartCaching || locationLimits.cacheEnabled) {
         cacheService.set(cacheKey, response, locationLimits.cacheTTL, userId);
       }
+
+      activityLogService.logActivity(userId, 'location', 'view_routes', {
+        groupId,
+        routeCount: routes.length,
+        planId,
+        path: req.path
+      });
 
       return res.json(ResponseFormatter.success(response));
     } catch (error) {
@@ -2863,6 +3263,17 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('sendMessage', planId, processingTime, true);
+      
+      activityLogService.logActivity(userId, 'location', 'send_message', {
+        messageId,
+        recipientId,
+        recipientPhone,
+        type,
+        groupId,
+        planId,
+        path: req.path
+      });
+      
       logger.info('Message sent successfully', { userId, messageId, planId, processingTime, type });
 
       return res.json(ResponseFormatter.success({
@@ -2966,6 +3377,15 @@ class LocationController {
         cacheService.set(cacheKey, response, planLimits.cacheTTL, userId);
       }
 
+      activityLogService.logActivity(userId, 'location', 'view_messages', {
+        groupId,
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        messageCount: total,
+        planId,
+        path: req.path
+      });
+
       return res.json(ResponseFormatter.success(response));
     } catch (error) {
       const processingTime = Date.now() - startTime;
@@ -3061,6 +3481,19 @@ class LocationController {
               groupId: groupId || null
             }
           }, ['database', 'onesignal']);
+          
+          if (groupId) {
+            try {
+              await autoNotificationService.notifyGroupActivity(groupId, 'location_shared', userId, {
+                lat: latNum,
+                lng: lngNum
+              }).catch(err => {
+                logger.debug('Group activity notification skipped:', err.message);
+              });
+            } catch (groupNotifError) {
+              logger.debug('Group activity notification error (non-critical):', groupNotifError.message);
+            }
+          }
         } catch (notifError) {
           logger.error('[LocationController] Location message notification error:', notifError);
         }
@@ -3068,6 +3501,18 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('sendLocationMessage', planId, processingTime, true);
+      
+      activityLogService.logActivity(userId, 'location', 'send_location_message', {
+        messageId,
+        recipientId,
+        recipientPhone,
+        lat: latNum,
+        lng: lngNum,
+        groupId,
+        planId,
+        path: req.path
+      });
+      
       logger.info('Location message sent successfully', { userId, messageId, planId, processingTime });
 
       return res.json(ResponseFormatter.success({
@@ -3467,6 +3912,15 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('trackVehicle', planId, processingTime, true);
+      
+      activityLogService.logActivity(userId, 'location', 'track_vehicle', {
+        deviceId,
+        isInVehicle: detection.isInVehicle,
+        confidence: detection.confidence,
+        planId,
+        path: req.path
+      });
+      
       logger.info('Vehicle tracking completed', { deviceId, isInVehicle: detection.isInVehicle, confidence: detection.confidence, planId, processingTime });
 
       return res.json(ResponseFormatter.success({
@@ -3546,6 +4000,12 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('getVehicleStatus', planId, processingTime, true);
+
+      activityLogService.logActivity(userId, 'location', 'view_vehicle_status', {
+        deviceId,
+        planId,
+        path: req.path
+      });
 
       return res.json(ResponseFormatter.success({
         isInVehicle: detection.isInVehicle,
@@ -3638,6 +4098,13 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('getActivityStatus', planId, processingTime, true);
+
+      activityLogService.logActivity(userId, 'location', 'view_activity_status', {
+        deviceId,
+        activity: activity.activity,
+        planId,
+        path: req.path
+      });
 
       return res.json(ResponseFormatter.success({
         activity: activity.type,
@@ -3843,6 +4310,13 @@ class LocationController {
       if (planLimits.smartCaching || planLimits.cacheEnabled) {
         cacheService.set(cacheKey, response, planLimits.cacheTTL, userId);
       }
+
+      activityLogService.logActivity(userId, 'location', 'view_group_vehicles', {
+        groupId,
+        vehicleCount: vehicles.length,
+        planId,
+        path: req.path
+      });
 
       return res.json(ResponseFormatter.success(response));
     } catch (error) {

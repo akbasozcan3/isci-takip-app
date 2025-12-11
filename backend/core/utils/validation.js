@@ -1,3 +1,8 @@
+/**
+ * Professional Validation Utilities
+ * Centralized validation functions for backend
+ */
+
 class ValidationError extends Error {
   constructor(message, field = null, value = null) {
     super(message);
@@ -7,131 +12,223 @@ class ValidationError extends Error {
   }
 }
 
+/**
+ * Validate email format
+ */
 function validateEmail(email) {
   if (!email || typeof email !== 'string') {
-    throw new ValidationError('Email is required and must be a string', 'email', email);
+    throw new ValidationError('Email is required', 'email', email);
   }
+
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
+  if (!emailRegex.test(email.trim())) {
     throw new ValidationError('Invalid email format', 'email', email);
   }
-  return email.toLowerCase().trim();
+
+  if (email.length > 254) {
+    throw new ValidationError('Email is too long (max 254 characters)', 'email', email);
+  }
+
+  return email.trim().toLowerCase();
 }
 
-function validatePassword(password) {
+/**
+ * Validate password strength
+ */
+function validatePassword(password, minLength = 8) {
   if (!password || typeof password !== 'string') {
-    throw new ValidationError('Password is required and must be a string', 'password');
+    throw new ValidationError('Password is required', 'password');
   }
-  if (password.length < 6) {
-    throw new ValidationError('Password must be at least 6 characters long', 'password');
+
+  if (password.length < minLength) {
+    throw new ValidationError(`Password must be at least ${minLength} characters`, 'password');
   }
+
   if (password.length > 128) {
-    throw new ValidationError('Password must be less than 128 characters', 'password');
+    throw new ValidationError('Password is too long (max 128 characters)', 'password');
   }
+
+  // Optional: Add complexity requirements
+  // if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+  //   throw new ValidationError('Password must contain uppercase, lowercase, and number', 'password');
+  // }
+
   return password;
 }
 
-function validateCardNumber(cardNumber) {
-  if (!cardNumber || typeof cardNumber !== 'string') {
-    throw new ValidationError('Card number is required', 'cardNumber');
+/**
+ * Validate coordinates
+ */
+function validateCoordinates(latitude, longitude) {
+  const lat = parseFloat(latitude);
+  const lng = parseFloat(longitude);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    throw new ValidationError('Invalid coordinates: must be numbers', 'coordinates', { latitude, longitude });
   }
-  const cleaned = cardNumber.replace(/\s/g, '');
-  if (cleaned.length < 13 || cleaned.length > 19) {
-    throw new ValidationError('Card number must be between 13 and 19 digits', 'cardNumber', cardNumber);
+
+  if (lat < -90 || lat > 90) {
+    throw new ValidationError('Latitude must be between -90 and 90', 'latitude', lat);
   }
-  if (!/^\d+$/.test(cleaned)) {
-    throw new ValidationError('Card number must contain only digits', 'cardNumber', cardNumber);
+
+  if (lng < -180 || lng > 180) {
+    throw new ValidationError('Longitude must be between -180 and 180', 'longitude', lng);
   }
+
+  return { latitude: lat, longitude: lng };
+}
+
+/**
+ * Validate string length
+ */
+function validateString(value, fieldName, minLength = 1, maxLength = 255) {
+  if (!value || typeof value !== 'string') {
+    throw new ValidationError(`${fieldName} is required`, fieldName, value);
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length < minLength) {
+    throw new ValidationError(`${fieldName} must be at least ${minLength} characters`, fieldName, value);
+  }
+
+  if (trimmed.length > maxLength) {
+    throw new ValidationError(`${fieldName} must be at most ${maxLength} characters`, fieldName, value);
+  }
+
+  return trimmed;
+}
+
+/**
+ * Validate ID format (UUID, MongoDB ObjectId, or custom format)
+ */
+function validateId(id, fieldName = 'id') {
+  if (!id || typeof id !== 'string') {
+    throw new ValidationError(`${fieldName} is required`, fieldName, id);
+  }
+
+  if (id.length < 1 || id.length > 100) {
+    throw new ValidationError(`${fieldName} is invalid`, fieldName, id);
+  }
+
+  return id.trim();
+}
+
+/**
+ * Validate phone number (basic)
+ */
+function validatePhone(phone) {
+  if (!phone || typeof phone !== 'string') {
+    throw new ValidationError('Phone number is required', 'phone', phone);
+  }
+
+  // Remove common formatting characters
+  const cleaned = phone.replace(/[\s\-\(\)\+]/g, '');
+  
+  // Basic validation: 10-15 digits
+  if (!/^\d{10,15}$/.test(cleaned)) {
+    throw new ValidationError('Invalid phone number format', 'phone', phone);
+  }
+
   return cleaned;
 }
 
-function validateCVV(cvv) {
-  if (!cvv || typeof cvv !== 'string') {
-    throw new ValidationError('CVV is required', 'cvv');
+/**
+ * Validate timestamp
+ */
+function validateTimestamp(timestamp) {
+  const ts = typeof timestamp === 'string' ? parseInt(timestamp, 10) : timestamp;
+  
+  if (!Number.isFinite(ts) || ts <= 0) {
+    throw new ValidationError('Invalid timestamp', 'timestamp', timestamp);
   }
-  if (cvv.length < 3 || cvv.length > 4) {
-    throw new ValidationError('CVV must be 3 or 4 digits', 'cvv', cvv);
+
+  // Check if timestamp is reasonable (not too far in past/future)
+  const now = Date.now();
+  const maxPast = 10 * 365 * 24 * 60 * 60 * 1000; // 10 years
+  const maxFuture = 1 * 365 * 24 * 60 * 60 * 1000; // 1 year
+
+  if (ts < now - maxPast) {
+    throw new ValidationError('Timestamp is too far in the past', 'timestamp', timestamp);
   }
-  if (!/^\d+$/.test(cvv)) {
-    throw new ValidationError('CVV must contain only digits', 'cvv', cvv);
+
+  if (ts > now + maxFuture) {
+    throw new ValidationError('Timestamp is too far in the future', 'timestamp', timestamp);
   }
-  return cvv;
+
+  return ts;
 }
 
-function validateExpiryDate(month, year) {
-  const monthNum = parseInt(month, 10);
-  const yearNum = parseInt(year, 10);
-  
-  if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-    throw new ValidationError('Invalid expiry month (must be 01-12)', 'expiryMonth', month);
+/**
+ * Validate pagination parameters
+ */
+function validatePagination(page, limit, maxLimit = 100) {
+  const pageNum = parseInt(page, 10) || 1;
+  const limitNum = parseInt(limit, 10) || 10;
+
+  if (pageNum < 1) {
+    throw new ValidationError('Page must be at least 1', 'page', page);
   }
-  
-  if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
-    throw new ValidationError('Invalid expiry year', 'expiryYear', year);
+
+  if (limitNum < 1) {
+    throw new ValidationError('Limit must be at least 1', 'limit', limit);
   }
-  
-  const expiryDate = new Date(yearNum, monthNum - 1);
-  const now = new Date();
-  
-  if (expiryDate < now) {
-    throw new ValidationError('Card expiry date has passed', 'expiry', `${month}/${year}`);
+
+  if (limitNum > maxLimit) {
+    throw new ValidationError(`Limit cannot exceed ${maxLimit}`, 'limit', limit);
   }
-  
-  return { month: monthNum, year: yearNum };
+
+  return { page: pageNum, limit: limitNum };
 }
 
-function validateRequired(value, fieldName) {
-  if (value === undefined || value === null || value === '') {
-    throw new ValidationError(`${fieldName} is required`, fieldName);
+/**
+ * Sanitize string (remove dangerous characters)
+ */
+function sanitizeString(input) {
+  if (typeof input !== 'string') {
+    return '';
   }
-  return value;
+
+  return input
+    .trim()
+    .replace(/[<>]/g, '') // Remove potential HTML tags
+    .replace(/javascript:/gi, '') // Remove javascript: protocol
+    .replace(/on\w+=/gi, '') // Remove event handlers
+    .substring(0, 10000); // Max length
 }
 
-function validateString(value, fieldName, minLength = 0, maxLength = Infinity) {
-  if (typeof value !== 'string') {
-    throw new ValidationError(`${fieldName} must be a string`, fieldName, value);
+/**
+ * Validate request body structure
+ */
+function validateRequestBody(body, requiredFields = [], optionalFields = []) {
+  if (!body || typeof body !== 'object') {
+    throw new ValidationError('Request body is required', 'body');
   }
-  if (value.length < minLength) {
-    throw new ValidationError(`${fieldName} must be at least ${minLength} characters`, fieldName, value);
-  }
-  if (value.length > maxLength) {
-    throw new ValidationError(`${fieldName} must be less than ${maxLength} characters`, fieldName, value);
-  }
-  return value.trim();
-}
 
-function validateNumber(value, fieldName, min = -Infinity, max = Infinity) {
-  const num = parseFloat(value);
-  if (isNaN(num)) {
-    throw new ValidationError(`${fieldName} must be a valid number`, fieldName, value);
+  const missing = requiredFields.filter(field => !(field in body) || body[field] === null || body[field] === undefined);
+  if (missing.length > 0) {
+    throw new ValidationError(`Missing required fields: ${missing.join(', ')}`, 'body', missing);
   }
-  if (num < min) {
-    throw new ValidationError(`${fieldName} must be at least ${min}`, fieldName, value);
-  }
-  if (num > max) {
-    throw new ValidationError(`${fieldName} must be at most ${max}`, fieldName, value);
-  }
-  return num;
-}
 
-function validatePlanId(planId) {
-  const validPlans = ['free', 'plus', 'business'];
-  if (!validPlans.includes(planId)) {
-    throw new ValidationError(`Invalid plan ID. Must be one of: ${validPlans.join(', ')}`, 'planId', planId);
+  // Check for unknown fields (optional strict mode)
+  const allFields = [...requiredFields, ...optionalFields];
+  const unknown = Object.keys(body).filter(key => !allFields.includes(key));
+  if (unknown.length > 0 && process.env.STRICT_VALIDATION === 'true') {
+    throw new ValidationError(`Unknown fields: ${unknown.join(', ')}`, 'body', unknown);
   }
-  return planId;
+
+  return body;
 }
 
 module.exports = {
   ValidationError,
   validateEmail,
   validatePassword,
-  validateCardNumber,
-  validateCVV,
-  validateExpiryDate,
-  validateRequired,
+  validateCoordinates,
   validateString,
-  validateNumber,
-  validatePlanId
+  validateId,
+  validatePhone,
+  validateTimestamp,
+  validatePagination,
+  sanitizeString,
+  validateRequestBody,
 };
-

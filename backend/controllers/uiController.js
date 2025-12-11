@@ -1,5 +1,6 @@
 const db = require('../config/database');
 const ResponseFormatter = require('../core/utils/responseFormatter');
+const activityLogService = require('../services/activityLogService');
 
 class UIController {
   async updateUIPreference(req, res) {
@@ -25,6 +26,12 @@ class UIController {
 
       user.uiPreferences[preference] = value;
       db.scheduleSave();
+
+      activityLogService.logActivity(userId, 'ui', 'update_preference', {
+        preference,
+        value,
+        path: req.path
+      });
 
       return res.json(ResponseFormatter.success({ 
         preference, 

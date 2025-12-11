@@ -37,5 +37,19 @@ function optionalAuth(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth, optionalAuth };
+function getUserIdFromToken(req) {
+  if (req.user && req.user.id) {
+    return req.user.id;
+  }
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return null;
+  try {
+    const tokenData = TokenModel.get(token);
+    return tokenData ? tokenData.userId : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+module.exports = { requireAuth, optionalAuth, getUserIdFromToken };
 

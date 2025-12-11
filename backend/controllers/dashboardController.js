@@ -2,17 +2,25 @@
 const db = require('../config/database');
 const cacheService = require('../services/cacheService');
 const SubscriptionModel = require('../core/database/models/subscription.model');
+const activityLogService = require('../services/activityLogService');
+const ResponseFormatter = require('../core/utils/responseFormatter');
+const { createError } = require('../core/utils/errorHandler');
+const { getUserIdFromToken } = require('../core/middleware/auth.middleware');
+const { logger } = require('../core/utils/logger');
 
 const ACTIVE_WINDOW_MS = 15 * 60 * 1000;
 
 class DashboardController {
   // Token'dan kullanıcı çöz
   resolveUser(req) {
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    if (!token) return null;
-    const tokenData = db.getToken(token);
-    if (!tokenData) return null;
-    return db.findUserById(tokenData.userId) || null;
+    try {
+      const userId = getUserIdFromToken(req);
+      if (!userId) return null;
+      return db.findUserById(userId) || null;
+    } catch (error) {
+      logger.warn('resolveUser error', { error: error.message });
+      return null;
+    }
   }
 
   getPlanBasedConfig(planId) {
@@ -29,18 +37,20 @@ class DashboardController {
   // Ana dashboard verileri
   async getDashboard(req, res) {
     try {
-      const { userId } = req.params;
-      const user = this.resolveUser(req) || db.findUserById(userId);
+      const { userId: paramUserId } = req.params;
+      const user = this.resolveUser(req) || (paramUserId ? db.findUserById(paramUserId) : null);
       
       if (!user) {
-        return res.json({
+        return res.status(200).json(ResponseFormatter.success({
           activeWorkers: 0,
           totalGroups: 0,
           todayDistance: 0,
           activeAlerts: 0,
           onlineMembers: 0,
-          totalMembers: 0
-        });
+          totalMembers: 0,
+          subscription: null,
+          planId: 'free'
+        }, 'Dashboard verileri alındı'));
       }
 
       const subscription = db.getUserSubscription(user.id);
@@ -52,11 +62,20 @@ class DashboardController {
       if (config.cacheEnabled) {
         const cached = cacheService.get(cacheKey);
         if (cached) {
-          return res.json({
+          try {
+            activityLogService.logActivity(user.id, 'dashboard', 'view_dashboard', {
+              planId,
+              cached: true,
+              path: req.path
+            });
+          } catch (logError) {
+            logger.warn('Activity log error (non-critical)', { error: logError.message });
+          }
+          return res.json(ResponseFormatter.success({
             ...cached,
             cached: true,
             planId
-          });
+          }, 'Dashboard verileri alındı (cache)'));
         }
       }
 
@@ -111,7 +130,11 @@ class DashboardController {
         activeAlerts,
         onlineMembers: activeWorkers,
         totalMembers,
-        subscription: subscription,
+        subscription: subscription ? {
+          planId: subscription.planId,
+          status: subscription.status,
+          expiresAt: subscription.expiresAt
+        } : null,
         lastUpdated: new Date().toISOString(),
         planId,
         performance: {
@@ -121,18 +144,33 @@ class DashboardController {
       };
 
       if (config.cacheEnabled) {
-        cacheService.set(cacheKey, response, config.cacheTTL, user.id);
+        try {
+          cacheService.set(cacheKey, response, config.cacheTTL, user.id);
+        } catch (cacheError) {
+          logger.warn('Cache set error (non-critical)', { error: cacheError.message });
+        }
       }
 
-      return res.json(response);
+      return res.json(ResponseFormatter.success(response, 'Dashboard verileri başarıyla alındı'));
     } catch (e) {
-      console.error('getDashboard error:', e);
-      return res.status(200).json({
+      logger.error('getDashboard error', e);
+      
+      // Operational error ise direkt döndür
+      if (e.isOperational) {
+        return res.status(e.statusCode).json(ResponseFormatter.error(e.message, e.code, e.details));
+      }
+      
+      // Fallback response
+      return res.status(200).json(ResponseFormatter.success({
         activeWorkers: 0,
         totalGroups: 0,
         todayDistance: 0,
-        activeAlerts: 0
-      });
+        activeAlerts: 0,
+        onlineMembers: 0,
+        totalMembers: 0,
+        subscription: null,
+        planId: 'free'
+      }, 'Dashboard verileri alındı (fallback)'));
     }
   }
 
@@ -142,7 +180,22 @@ class DashboardController {
       const user = this.resolveUser(req);
       
       if (!user) {
-        return res.json([]);
+        return res.json(ResponseFormatter.success([
+          {
+            id: 'sample_1',
+            type: 'system',
+            message: 'Sisteme hoş geldiniz! İlk aktiviteleriniz burada görünecek.',
+            timestamp: Date.now() - 3600000,
+            read: false
+          },
+          {
+            id: 'sample_2',
+            type: 'info',
+            message: 'Grup oluşturarak takımınızı organize edebilirsiniz.',
+            timestamp: Date.now() - 7200000,
+            read: false
+          }
+        ], 'Aktiviteler alındı'));
       }
 
       const subscription = db.getUserSubscription(user.id);
@@ -163,7 +216,7 @@ class DashboardController {
       if (config.cacheEnabled) {
         const cached = cacheService.get(cacheKey);
         if (cached) {
-          return res.json(cached);
+          return res.json(ResponseFormatter.success(cached, 'Aktiviteler alındı (cache)'));
         }
       }
 
@@ -211,7 +264,7 @@ class DashboardController {
         });
         }
       } catch (notifError) {
-        console.warn('getActivities: notifications error (non-critical):', notifError.message);
+        logger.warn('getActivities: notifications error (non-critical)', { error: notifError.message });
       }
 
       // Zamana göre sırala ve limitle
@@ -220,13 +273,22 @@ class DashboardController {
       const result = activities.slice(0, limit);
       
       if (config.cacheEnabled) {
-        cacheService.set(cacheKey, result, config.cacheTTL, user.id);
+        try {
+          cacheService.set(cacheKey, result, config.cacheTTL, user.id);
+        } catch (cacheError) {
+          logger.warn('Cache set error (non-critical)', { error: cacheError.message });
+        }
       }
       
-      return res.json(result);
+      return res.json(ResponseFormatter.success(result, 'Aktiviteler başarıyla alındı'));
     } catch (e) {
-      console.error('getActivities error:', e);
-      return res.json([]);
+      logger.error('getActivities error', e);
+      
+      if (e.isOperational) {
+        return res.status(e.statusCode).json(ResponseFormatter.error(e.message, e.code, e.details));
+      }
+      
+      return res.json(ResponseFormatter.success([], 'Aktiviteler alındı (fallback)'));
     }
   }
 
@@ -235,7 +297,12 @@ class DashboardController {
     try {
       const user = this.resolveUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Kimlik doğrulaması gerekli' });
+        return res.json(ResponseFormatter.success({
+          daily: { distance: 0, activeTime: 0, locations: 0 },
+          weekly: { distance: 0, avgSpeed: 0, maxSpeed: 0 },
+          groups: [],
+          topWorkers: []
+        }, 'İstatistikler alındı'));
       }
 
       const groups = db.getUserGroups(user.id) || [];
@@ -327,10 +394,15 @@ class DashboardController {
       stats.weekly.distance = Math.round(stats.weekly.distance * 10) / 10;
       stats.weekly.maxSpeed = Math.round(stats.weekly.maxSpeed);
 
-      return res.json(stats);
+      return res.json(ResponseFormatter.success(stats, 'İstatistikler başarıyla alındı'));
     } catch (e) {
-      console.error('getStats error:', e);
-      return res.status(500).json({ error: 'İstatistikler alınamadı' });
+      logger.error('getStats error', e);
+      
+      if (e.isOperational) {
+        return res.status(e.statusCode).json(ResponseFormatter.error(e.message, e.code, e.details));
+      }
+      
+      return res.status(500).json(ResponseFormatter.error('İstatistikler alınamadı', 'STATS_ERROR'));
     }
   }
 

@@ -1,4 +1,14 @@
 const apiGatewayService = require('../services/apiGateway.service');
+const db = require('../config/database');
+const activityLogService = require('../services/activityLogService');
+
+function getUserIdFromToken(req) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return null;
+  const TokenModel = require('../core/database/models/token.model');
+  const tokenData = TokenModel.get(token);
+  return tokenData ? tokenData.userId : null;
+}
 
 class MicroservicesController {
   async getServiceStatus(req, res) {
@@ -22,6 +32,15 @@ class MicroservicesController {
       const { userId } = req.params;
       const dateRange = req.query.date_range || req.headers['x-date-range'] || '7d';
       
+      const requestUserId = getUserIdFromToken(req);
+      if (requestUserId) {
+        activityLogService.logActivity(requestUserId, 'analytics', 'view_microservice_analytics', {
+          targetUserId: userId,
+          dateRange,
+          path: req.path
+        });
+      }
+      
       const analytics = await apiGatewayService.getAnalytics(userId, dateRange);
       
       res.json({
@@ -40,9 +59,20 @@ class MicroservicesController {
   async generateReport(req, res) {
     try {
       const { userId } = req.params;
-      const { reportType } = req.body;
+      const { reportType, dateRange, format } = req.body;
       
-      const report = await apiGatewayService.getReports(userId, reportType);
+      const requestUserId = getUserIdFromToken(req);
+      if (requestUserId) {
+        activityLogService.logActivity(requestUserId, 'report', 'generate_report', {
+          targetUserId: userId,
+          reportType,
+          dateRange,
+          format,
+          path: req.path
+        });
+      }
+      
+      const report = await apiGatewayService.generateReport(userId, reportType, dateRange, format);
       
       res.json({
         success: true,

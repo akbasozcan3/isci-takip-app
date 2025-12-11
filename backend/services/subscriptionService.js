@@ -1,6 +1,7 @@
 // Subscription Service - Abonelik işlemleri için merkezi servis
 const db = require('../config/database');
 const SubscriptionModel = require('../core/database/models/subscription.model');
+const activityLogService = require('./activityLogService');
 
 class SubscriptionService {
   // Aboneliği aktifleştir
@@ -67,6 +68,16 @@ class SubscriptionService {
 
     console.log(`[SubscriptionService] Subscription activated: User ${userId}, Plan ${planId} (${plan.name}), Amount ${plan.price} TRY, Payment ${paymentData.paymentId || 'N/A'}`);
     
+    activityLogService.logActivity(userId, 'billing', isUpgrade ? 'upgrade_subscription' : 'activate_subscription', {
+      planId,
+      previousPlanId: currentSubscription?.planId,
+      amount: plan.price,
+      currency: 'TRY',
+      paymentId: paymentData.paymentId,
+      transactionId: paymentData.transactionId,
+      gateway: paymentData.gateway
+    });
+    
     const notificationService = require('./notificationService');
     try {
       await notificationService.send(userId, {
@@ -89,6 +100,11 @@ class SubscriptionService {
     if (!subscription || subscription.planId === 'free') {
       return null;
     }
+
+    activityLogService.logActivity(userId, 'billing', 'cancel_subscription', {
+      planId: subscription.planId,
+      reason
+    });
 
     const updatedSubscription = {
       ...subscription,

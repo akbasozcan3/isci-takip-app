@@ -215,7 +215,8 @@ class BillingController {
         }
       });
 
-      return res.json(ResponseFormatter.success({
+      const response = {
+        success: true,
         plans: enrichedPlans,
         currentPlan: subscription?.planId || 'free',
         subscription: subscription ? {
@@ -226,7 +227,17 @@ class BillingController {
           createdAt: subscription.createdAt
         } : null,
         history: Array.isArray(history) ? history.slice(0, 10) : []
-      }));
+      };
+      
+      const activityLogService = require('../services/activityLogService');
+      if (user) {
+        activityLogService.logActivity(user.id, 'billing', 'view_plans', {
+          planId: subscription?.planId || 'free',
+          path: req.path
+        });
+      }
+
+      return res.json(response);
     } catch (error) {
       console.error('[BillingController] getPlans error:', error);
       const fallbackPlans = this.plans.map(plan => {
@@ -246,12 +257,13 @@ class BillingController {
         };
       });
       
-      return res.json(ResponseFormatter.success({
+      return res.json({
+        success: true,
         plans: fallbackPlans,
         currentPlan: 'free',
         subscription: null,
         history: []
-      }));
+      });
     }
   }
 
@@ -272,6 +284,12 @@ class BillingController {
 
       const SubscriptionModel = require('../core/database/models/subscription.model');
       const limits = SubscriptionModel.getPlanLimits(subscription.planId);
+
+      const activityLogService = require('../services/activityLogService');
+      activityLogService.logActivity(user.id, 'billing', 'view_subscription', {
+        planId: subscription.planId,
+        path: req.path
+      });
 
       return res.json(ResponseFormatter.success({
         subscription: {

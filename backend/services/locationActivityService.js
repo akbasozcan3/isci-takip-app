@@ -1,6 +1,15 @@
-const { createLogger } = require('../core/utils/logger');
-
-const logger = createLogger('LocationActivityService');
+let logger;
+try {
+  const { getLogger } = require('../core/utils/loggerHelper');
+  logger = getLogger('LocationActivityService');
+} catch (err) {
+  logger = {
+    warn: (...args) => console.warn('[LocationActivityService]', ...args),
+    error: (...args) => console.error('[LocationActivityService]', ...args),
+    info: (...args) => console.log('[LocationActivityService]', ...args),
+    debug: (...args) => console.debug('[LocationActivityService]', ...args)
+  };
+}
 
 const ACTIVITY_THRESHOLDS = {
   stationary: { maxSpeed: 2, maxAccuracy: 50 },

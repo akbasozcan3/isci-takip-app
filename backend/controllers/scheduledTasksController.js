@@ -1,15 +1,31 @@
 const scheduledTasksService = require('../services/scheduledTasksService');
 const dailyActivityService = require('../services/dailyActivityService');
 const pushNotificationService = require('../services/pushNotificationService');
-const { createLogger } = require('../core/utils/logger');
+const activityLogService = require('../services/activityLogService');
+let logger;
+try {
+  const { getLogger } = require('../core/utils/loggerHelper');
+  logger = getLogger('ScheduledTasksController');
+} catch (err) {
+  logger = {
+    warn: (...args) => console.warn('[ScheduledTasksController]', ...args),
+    error: (...args) => console.error('[ScheduledTasksController]', ...args),
+    info: (...args) => console.log('[ScheduledTasksController]', ...args),
+    debug: (...args) => console.debug('[ScheduledTasksController]', ...args)
+  };
+}
 const ResponseFormatter = require('../core/utils/responseFormatter');
-
-const logger = createLogger('ScheduledTasksController');
 
 class ScheduledTasksController {
   async triggerManualCheck(req, res) {
     try {
+      const userId = req.user?.id;
       await scheduledTasksService.triggerManualCheck();
+      
+      if (userId) {
+        activityLogService.logActivity(userId, 'scheduled', 'trigger_manual_check', { path: req.path });
+      }
+      
       return res.json(ResponseFormatter.success({
         message: 'Manual activity check triggered',
         timestamp: new Date().toISOString()
@@ -22,11 +38,19 @@ class ScheduledTasksController {
 
   async getUserActivity(req, res) {
     try {
-      const { userId } = req.params;
-      const activity = dailyActivityService.getUserDailyActivity(userId);
+      const { userId: targetUserId } = req.params;
+      const requestUserId = req.user?.id;
+      const activity = dailyActivityService.getUserDailyActivity(targetUserId);
       const checks = dailyActivityService.checkActivityThresholds(activity, {
         minDistance: 5
       });
+
+      if (requestUserId) {
+        activityLogService.logActivity(requestUserId, 'scheduled', 'view_user_activity', {
+          targetUserId,
+          path: req.path
+        });
+      }
 
       return res.json(ResponseFormatter.success({
         activity,
@@ -63,6 +87,11 @@ class ScheduledTasksController {
       });
 
       if (result.success) {
+        activityLogService.logActivity(userId, 'scheduled', 'send_test_notification', {
+          notificationId: result.notificationId,
+          path: req.path
+        });
+        
         return res.json(ResponseFormatter.success({
           message: 'Test notification sent',
           notificationId: result.notificationId
@@ -78,7 +107,16 @@ class ScheduledTasksController {
 
   async getAllActivities(req, res) {
     try {
+      const userId = req.user?.id;
       const activities = dailyActivityService.getAllUsersDailyActivity();
+      
+      if (userId) {
+        activityLogService.logActivity(userId, 'scheduled', 'view_all_activities', {
+          activityCount: activities.length,
+          path: req.path
+        });
+      }
+      
       return res.json(ResponseFormatter.success({
         activities,
         count: activities.length,

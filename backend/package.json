@@ -4,33 +4,10 @@
   "description": "Professional İşçi Takip Backend API",
   "main": "server.js",
   "scripts": {
-    "start:node": "node server.js",
-    "start": "node scripts/start-pm2.js",
-    "start:dev": "pm2 start ecosystem.config.js --env development",
-    "start:prod": "pm2 start ecosystem.config.js --env production",
-    "pm2:start": "pm2 start ecosystem.config.js",
-    "pm2:stop": "pm2 stop all",
-    "pm2:restart": "pm2 restart all",
-    "pm2:delete": "pm2 delete all",
-    "pm2:logs": "pm2 logs",
-    "pm2:status": "pm2 status",
-    "stop": "pm2 stop ecosystem.config.js",
-    "restart": "pm2 restart ecosystem.config.js",
-    "reload": "pm2 reload ecosystem.config.js",
-    "delete": "pm2 delete ecosystem.config.js",
-    "logs": "pm2 logs",
-    "status": "pm2 status",
-    "monit": "pm2 monit",
+    "start": "node server.js",
     "dev": "nodemon server.js",
-    "email": "node scripts/run-email-service.js",
-    "start:all": "pm2 start ecosystem.config.js",
-    "dev:all": "npx concurrently -n node,email -c green,cyan \"npm run dev\" \"npm run email\"",
-    "seed:articles": "node scripts/seed-articles.js",
-    "init": "node scripts/init-backend.js",
-    "setup:startup": "node scripts/setup-pm2-startup.js",
-    "ensure:running": "node scripts/ensure-pm2-running.js",
-    "save": "pm2 save",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "deploy-check": "node deploy-check.js",
+    "test": "node deploy-check.js"
   },
   "keywords": [
     "api",
@@ -56,7 +33,9 @@
     "node-fetch": "^2.6.7",
     "nodemailer": "^6.9.15",
     "pm2": "^5.4.0",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.0"
   },
   "devDependencies": {
     "nodemon": "^2.0.22"

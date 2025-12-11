@@ -1,6 +1,15 @@
-const { createLogger } = require('../core/utils/logger');
-
-const logger = createLogger('Security');
+let logger;
+try {
+  const { getLogger } = require('../utils/loggerHelper');
+  logger = getLogger('Security');
+} catch (err) {
+  logger = {
+    warn: (...args) => console.warn('[Security]', ...args),
+    error: (...args) => console.error('[Security]', ...args),
+    info: (...args) => console.log('[Security]', ...args),
+    debug: (...args) => console.debug('[Security]', ...args)
+  };
+}
 
 const suspiciousPatterns = [
   /\.\./, // Path traversal
@@ -35,19 +44,25 @@ function securityMiddleware(req, res, next) {
   
   for (const pattern of suspiciousPatterns) {
     if (pattern.test(suspiciousContent)) {
-      const count = suspiciousIPs.get(ip) || 0;
-      suspiciousIPs.set(ip, count + 1);
+      const existing = suspiciousIPs.get(ip) || { count: 0, timestamp: Date.now() };
+      const count = typeof existing === 'number' ? existing : existing.count;
+      const newCount = count + 1;
       
-      logger.error('Suspicious activity detected', null, {
+      suspiciousIPs.set(ip, { 
+        count: newCount, 
+        timestamp: typeof existing === 'object' ? existing.timestamp : Date.now() 
+      });
+      
+      logger.error('Suspicious activity detected', {
         ip,
         path: req.path,
         pattern: pattern.toString(),
-        count: count + 1
+        count: newCount
       });
       
-      if (count + 1 >= 5) {
+      if (newCount >= 5) {
         blockedIPs.add(ip);
-        logger.error('IP blocked due to suspicious activity', null, { ip });
+        logger.error('IP blocked due to suspicious activity', { ip });
         return res.status(403).json({
           success: false,
           error: 'Suspicious activity detected',
@@ -77,8 +92,10 @@ function securityMiddleware(req, res, next) {
 
 setInterval(() => {
   const now = Date.now();
-  for (const [ip, timestamp] of suspiciousIPs.entries()) {
-    if (now - timestamp > 3600000) {
+  for (const [ip, data] of suspiciousIPs.entries()) {
+    if (typeof data === 'object' && data.timestamp && now - data.timestamp > 3600000) {
+      suspiciousIPs.delete(ip);
+    } else if (typeof data === 'number' && data < 3) {
       suspiciousIPs.delete(ip);
     }
   }

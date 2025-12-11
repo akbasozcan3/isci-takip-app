@@ -35,7 +35,9 @@ class Database {
       familyMembers: {},
       deliveries: {},
       routes: {},
-      pageShares: {}
+      pageShares: {},
+      steps: {},
+      activities: []
     };
   }
 
@@ -47,12 +49,42 @@ class Database {
           console.warn(`[DB] Large database file detected: ${(stats.size / 1024 / 1024).toFixed(2)}MB`);
         }
         
-        const content = fs.readFileSync(DATA_FILE, 'utf8');
-        if (!content || content.trim().length === 0) {
+        if (stats.size === 0) {
+          console.warn('[DB] Database file is empty, using default data');
           return this.getDefaultData();
         }
         
-        const parsed = JSON.parse(content);
+        const content = fs.readFileSync(DATA_FILE, 'utf8');
+        if (!content || content.trim().length === 0) {
+          console.warn('[DB] Database file content is empty, using default data');
+          return this.getDefaultData();
+        }
+        
+        let parsed;
+        try {
+          parsed = JSON.parse(content);
+        } catch (parseError) {
+          console.error('[DB] JSON parse error:', parseError.message);
+          if (fs.existsSync(DATA_FILE + '.backup')) {
+            console.log('[DB] Attempting to load from backup...');
+            try {
+              const backupContent = fs.readFileSync(DATA_FILE + '.backup', 'utf8');
+              parsed = JSON.parse(backupContent);
+              console.log('[DB] Successfully loaded from backup');
+            } catch (backupError) {
+              console.error('[DB] Backup load also failed:', backupError.message);
+              return this.getDefaultData();
+            }
+          } else {
+            return this.getDefaultData();
+          }
+        }
+        
+        if (!parsed || typeof parsed !== 'object') {
+          console.warn('[DB] Invalid database structure, using default data');
+          return this.getDefaultData();
+        }
+        
         const defaultData = this.getDefaultData();
         
         const requiredFields = [
@@ -60,11 +92,11 @@ class Database {
           'groupMembers', 'groupRequests', 'articles', 'store',
           'emailVerifications', 'emailResets', 'passwordResetTokens',
           'resendMeta', 'locationShares', 'liveLocations',
-          'familyMembers', 'deliveries', 'routes', 'pageShares'
+          'familyMembers', 'deliveries', 'routes', 'pageShares', 'steps'
         ];
         
         for (const field of requiredFields) {
-          if (!parsed[field]) {
+          if (!parsed[field] || typeof parsed[field] !== 'object') {
             parsed[field] = {};
           }
         }
@@ -72,33 +104,41 @@ class Database {
         return { ...defaultData, ...parsed };
       }
     } catch (error) {
-      console.error('Error loading database:', error);
+      console.error('[DB] Error loading database:', error.message);
       if (fs.existsSync(DATA_FILE + '.backup')) {
         console.log('[DB] Attempting to load from backup...');
         try {
           const backupContent = fs.readFileSync(DATA_FILE + '.backup', 'utf8');
           const parsed = JSON.parse(backupContent);
+          console.log('[DB] Successfully loaded from backup');
           return { ...this.getDefaultData(), ...parsed };
         } catch (backupError) {
-          console.error('[DB] Backup load also failed:', backupError);
+          console.error('[DB] Backup load also failed:', backupError.message);
         }
       }
     }
     
+    console.log('[DB] Using default database structure');
     return this.getDefaultData();
   }
 
   async save() {
     if (this.saving) {
-      return Promise.resolve();
+      return new Promise((resolve) => {
+        this.saveQueue.push(resolve);
+      });
     }
     
     this.saving = true;
-    const dataToSave = JSON.stringify(this.data, null, 2);
     const tempFile = DATA_FILE + '.tmp';
     const backupFile = DATA_FILE + '.backup';
     
     try {
+      const dataToSave = JSON.stringify(this.data, null, 2);
+      if (!dataToSave || dataToSave.length === 0) {
+        throw new Error('Cannot save empty database');
+      }
+      
       if (fs.existsSync(DATA_FILE)) {
         try {
           await fsPromises.copyFile(DATA_FILE, backupFile);
@@ -116,6 +156,12 @@ class Database {
       }
       
       this.saving = false;
+      
+      while (this.saveQueue.length > 0) {
+        const resolve = this.saveQueue.shift();
+        if (resolve) resolve();
+      }
+      
       return Promise.resolve();
     } catch (error) {
       this.saving = false;
@@ -127,6 +173,12 @@ class Database {
       } catch (unlinkErr) {
         console.error('[DB] Error removing temp file:', unlinkErr);
       }
+      
+      while (this.saveQueue.length > 0) {
+        const resolve = this.saveQueue.shift();
+        if (resolve) resolve();
+      }
+      
       throw error;
     }
   }
@@ -151,11 +203,30 @@ class Database {
       createdAt: Date.now(),
       email_verified: '0', // Email verification required - starts as unverified
       phone_verified: '1',
+      onesignalPlayerId: userData.onesignalPlayerId || null,
       subscription: this.getDefaultSubscription()
     };
     this.data.users[id] = user;
     this.scheduleSave();
     return user;
+  }
+
+  updateUserOnesignalPlayerId(userId, playerId) {
+    const user = this.findUserById(userId);
+    if (user) {
+      user.onesignalPlayerId = playerId;
+      if (user.updatedAt !== undefined) {
+        user.updatedAt = new Date().toISOString();
+      }
+      this.scheduleSave();
+      return user;
+    }
+    return null;
+  }
+
+  getUserOnesignalPlayerId(userId) {
+    const user = this.findUserById(userId);
+    return user?.onesignalPlayerId || null;
   }
 
   getDefaultSubscription() {
@@ -376,15 +447,71 @@ class Database {
 
   // Store operations (for location tracking)
   getStore(deviceId) {
-    return this.data.store[deviceId] || [];
+    try {
+      if (!deviceId || typeof deviceId !== 'string') {
+        console.warn('[DB] Invalid deviceId in getStore:', deviceId);
+        return [];
+      }
+      
+      if (!this.data.store) {
+        this.data.store = {};
+      }
+      
+      const store = this.data.store[deviceId];
+      if (!Array.isArray(store)) {
+        return [];
+      }
+      
+      return store;
+    } catch (error) {
+      console.error('[DB] Error in getStore:', error);
+      return [];
+    }
   }
 
   addToStore(deviceId, locationData) {
-    if (!this.data.store[deviceId]) {
-      this.data.store[deviceId] = [];
+    try {
+      if (!deviceId || typeof deviceId !== 'string') {
+        throw new Error('Invalid deviceId');
+      }
+      
+      if (!locationData || typeof locationData !== 'object') {
+        throw new Error('Invalid locationData');
+      }
+      
+      if (!this.data.store) {
+        this.data.store = {};
+      }
+      
+      if (!this.data.store[deviceId]) {
+        this.data.store[deviceId] = [];
+      }
+      
+      if (!Array.isArray(this.data.store[deviceId])) {
+        this.data.store[deviceId] = [];
+      }
+      
+      const validatedLocation = {
+        timestamp: locationData.timestamp || Date.now(),
+        coords: {
+          latitude: typeof locationData.coords?.latitude === 'number' ? locationData.coords.latitude : null,
+          longitude: typeof locationData.coords?.longitude === 'number' ? locationData.coords.longitude : null,
+          accuracy: typeof locationData.coords?.accuracy === 'number' ? locationData.coords.accuracy : null,
+          heading: typeof locationData.coords?.heading === 'number' ? locationData.coords.heading : null,
+          speed: typeof locationData.coords?.speed === 'number' ? locationData.coords.speed : null
+        },
+        metadata: locationData.metadata || {},
+        geocode: locationData.geocode || null,
+        ip: locationData.ip || null,
+        userAgent: locationData.userAgent || null
+      };
+      
+      this.data.store[deviceId].push(validatedLocation);
+      this.scheduleSave();
+    } catch (error) {
+      console.error('[DB] Error in addToStore:', error, { deviceId });
+      throw error;
     }
-    this.data.store[deviceId].push(locationData);
-    this.scheduleSave();
   }
 
   resetAllData() {
@@ -499,10 +626,17 @@ class Database {
     if (!this.data.articles) {
       this.data.articles = {};
     }
-    return Object.values(this.data.articles).sort((a, b) => {
-      const at = String(a.title || '').toLocaleLowerCase('tr');
-      const bt = String(b.title || '').toLocaleLowerCase('tr');
-      return at.localeCompare(bt, 'tr');
+    if (!this.data.articleViews) {
+      this.data.articleViews = {};
+    }
+    return Object.values(this.data.articles).map(article => ({
+      ...article,
+      views: this.data.articleViews[article.id] || 0,
+      viewCount: this.data.articleViews[article.id] || 0
+    })).sort((a, b) => {
+      const dateA = new Date(a.createdAt || a.updatedAt).getTime();
+      const dateB = new Date(b.createdAt || b.updatedAt).getTime();
+      return dateB - dateA;
     });
   }
 
@@ -517,16 +651,58 @@ class Database {
     if (!this.data.articles) {
       this.data.articles = {};
     }
+    if (!this.data.articleViews) {
+      this.data.articleViews = {};
+    }
     const id = this.generateId();
     const article = {
       id,
       ...articleData,
+      views: 0,
+      viewCount: 0,
+      seoTitle: articleData.seoTitle || articleData.title,
+      seoDescription: articleData.seoDescription || articleData.excerpt,
+      seoKeywords: articleData.seoKeywords || (articleData.tags || []).join(', '),
+      slug: articleData.slug || this.generateSlug(articleData.title),
+      status: articleData.status || 'published',
+      featured: articleData.featured || false,
       createdAt: articleData.createdAt || new Date().toISOString(),
       updatedAt: articleData.updatedAt || new Date().toISOString()
     };
     this.data.articles[id] = article;
+    this.data.articleViews[id] = 0;
     this.scheduleSave();
     return article;
+  }
+
+  generateSlug(title) {
+    return String(title || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  incrementArticleView(id) {
+    if (!this.data.articles || !this.data.articles[id]) {
+      return false;
+    }
+    if (!this.data.articleViews) {
+      this.data.articleViews = {};
+    }
+    this.data.articleViews[id] = (this.data.articleViews[id] || 0) + 1;
+    this.data.articles[id].views = this.data.articleViews[id];
+    this.data.articles[id].viewCount = this.data.articleViews[id];
+    this.scheduleSave();
+    return true;
+  }
+
+  getArticleViews(id) {
+    if (!this.data.articleViews) {
+      return 0;
+    }
+    return this.data.articleViews[id] || 0;
   }
 
   updateArticle(id, updates) {
@@ -581,7 +757,20 @@ class Database {
   }
 
   getGroupById(id) {
-    return (this.data.groups || {})[id] || null;
+    try {
+      if (!id || typeof id !== 'string') {
+        return null;
+      }
+      
+      if (!this.data.groups) {
+        this.data.groups = {};
+      }
+      
+      return this.data.groups[id] || null;
+    } catch (error) {
+      console.error('[DB] Error in getGroupById:', error);
+      return null;
+    }
   }
 
   getGroupByCode(code) {
@@ -612,8 +801,25 @@ class Database {
   }
 
   getMembers(groupId) {
-    const members = (this.data.groupMembers || {})[groupId] || {};
-    return Object.entries(members).map(([userId, role]) => ({ userId, role }));
+    try {
+      if (!groupId || typeof groupId !== 'string') {
+        return [];
+      }
+      
+      if (!this.data.groupMembers) {
+        this.data.groupMembers = {};
+      }
+      
+      const members = this.data.groupMembers[groupId];
+      if (!members || typeof members !== 'object') {
+        return [];
+      }
+      
+      return Object.entries(members).map(([userId, role]) => ({ userId, role }));
+    } catch (error) {
+      console.error('[DB] Error in getMembers:', error);
+      return [];
+    }
   }
 
   removeMember(groupId, userId) {

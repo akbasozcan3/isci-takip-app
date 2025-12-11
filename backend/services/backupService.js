@@ -106,10 +106,21 @@ class BackupService {
 }
 
 const backupService = new BackupService();
+const activityLogService = require('./activityLogService');
 
 setInterval(() => {
-  backupService.createBackup();
-  backupService.cleanupOldBackups(10);
+  try {
+    const result = backupService.createBackup();
+    if (result.success) {
+      activityLogService.logActivity('system', 'system', 'auto_backup_created', {
+        file: result.file,
+        size: result.size
+      });
+    }
+    backupService.cleanupOldBackups(10);
+  } catch (error) {
+    console.error('[BackupService] Auto-backup error:', error);
+  }
 }, 3600000);
 
 module.exports = backupService;

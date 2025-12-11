@@ -20,6 +20,11 @@ function getPlanBasedLimits(userId) {
 
 function rateLimiter(windowMs = 60000, maxRequests = 100) {
   return (req, res, next) => {
+    const isStepsNotification = req.path.includes('/steps/start-tracking') || req.path.includes('/steps/stop-tracking');
+    if (isStepsNotification) {
+      return next();
+    }
+    
     const isAnalyticsEndpoint = req.path.includes('/analytics') || req.path.includes('/location/analytics');
     
     if (isAnalyticsEndpoint) {
@@ -63,7 +68,19 @@ function rateLimiter(windowMs = 60000, maxRequests = 100) {
       return next();
     }
     
-    const userId = req.user?.id || req.subscription?.userId || null;
+    let userId = req.user?.id || req.subscription?.userId || null;
+    
+    if (!userId) {
+      const token = req.headers.authorization?.replace('Bearer ', '');
+      if (token) {
+        const TokenModel = require('../database/models/token.model');
+        const tokenData = TokenModel.get(token);
+        if (tokenData) {
+          userId = tokenData.userId;
+        }
+      }
+    }
+    
     const planLimits = getPlanBasedLimits(userId);
     const effectiveWindowMs = planLimits.windowMs;
     const effectiveMaxRequests = planLimits.maxRequests;

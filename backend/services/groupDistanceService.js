@@ -2,6 +2,7 @@
 // 30 km eşiğini aşan grup üyeleri için bildirim gönderir
 const db = require('../config/database');
 const notificationService = require('./notificationService');
+const activityLogService = require('./activityLogService');
 
 // Haversine formülü ile mesafe hesaplama (km cinsinden)
 function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -127,6 +128,13 @@ class GroupDistanceService {
                   userName: userName
                 }
               }, ['database', 'onesignal']);
+              
+              activityLogService.logActivity(member.userId, 'group', 'distance_alert', {
+                groupId,
+                userId,
+                distance: distanceKm,
+                threshold: this.DISTANCE_THRESHOLD_KM
+              });
               
               console.log(`[GroupDistanceService] ✅ Bildirim gönderildi: ${member.userId} - "${userName} 30 km'yi geçti (${distanceKm} km)"`);
             } catch (error) {

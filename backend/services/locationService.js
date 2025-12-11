@@ -1,4 +1,5 @@
 const db = require('../config/database');
+const activityLogService = require('./activityLogService');
 
 class LocationService {
   haversineDistance(lat1, lon1, lat2, lon2) {

@@ -1,77 +1,62 @@
-const fs = require('fs');
-const path = require('path');
+/**
+ * Professional Logger Utility
+ * Centralized logging with levels and formatting
+ */
 
-const LOG_DIR = path.join(__dirname, '../../logs');
+const LOG_LEVELS = {
+  ERROR: 0,
+  WARN: 1,
+  INFO: 2,
+  DEBUG: 3
+};
 
-if (!fs.existsSync(LOG_DIR)) {
-  fs.mkdirSync(LOG_DIR, { recursive: true });
-}
+const CURRENT_LOG_LEVEL = process.env.LOG_LEVEL 
+  ? LOG_LEVELS[process.env.LOG_LEVEL.toUpperCase()] 
+  : (process.env.NODE_ENV === 'production' ? LOG_LEVELS.WARN : LOG_LEVELS.DEBUG);
 
 class Logger {
   constructor(context = 'App') {
     this.context = context;
   }
 
-  formatMessage(level, message, data = {}) {
+  formatMessage(level, message, meta = {}) {
     const timestamp = new Date().toISOString();
-    const logEntry = {
-      timestamp,
-      level,
-      context: this.context,
-      message,
-      pid: process.pid,
-      ...data
-    };
+    const metaStr = Object.keys(meta).length > 0 ? ` ${JSON.stringify(meta)}` : '';
+    return `[${timestamp}] [${level}] [${this.context}] ${message}${metaStr}`;
+  }
 
-    if (process.env.NODE_ENV === 'production') {
-      const logFile = path.join(LOG_DIR, `${level.toLowerCase()}-${new Date().toISOString().split('T')[0]}.log`);
-      const logLine = JSON.stringify(logEntry) + '\n';
-      try {
-        fs.appendFileSync(logFile, logLine, 'utf8');
-      } catch (err) {
-        console.error('Failed to write log:', err);
-      }
+  error(message, error = null, meta = {}) {
+    if (CURRENT_LOG_LEVEL >= LOG_LEVELS.ERROR) {
+      const errorMeta = error ? { 
+        error: error.message, 
+        stack: error.stack,
+        ...meta 
+      } : meta;
+      console.error(this.formatMessage('ERROR', message, errorMeta));
     }
-
-    return logEntry;
   }
 
-  info(message, data = {}) {
-    const entry = this.formatMessage('INFO', message, data);
-    console.log(`[${entry.timestamp}] [${this.context}] ${message}`, data && Object.keys(data).length > 0 ? data : '');
+  warn(message, meta = {}) {
+    if (CURRENT_LOG_LEVEL >= LOG_LEVELS.WARN) {
+      console.warn(this.formatMessage('WARN', message, meta));
+    }
   }
 
-  error(message, error = null, data = {}) {
-    const entry = this.formatMessage('ERROR', message, {
-      ...data,
-      ...(error && {
-        error: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-      })
-    });
-    console.error(`[${entry.timestamp}] [${this.context}] ${message}`, error || data);
+  info(message, meta = {}) {
+    if (CURRENT_LOG_LEVEL >= LOG_LEVELS.INFO) {
+      console.log(this.formatMessage('INFO', message, meta));
+    }
   }
 
-  warn(message, data = {}) {
-    const entry = this.formatMessage('WARN', message, data);
-    console.warn(`[${entry.timestamp}] [${this.context}] ${message}`, data && Object.keys(data).length > 0 ? data : '');
-  }
-
-  debug(message, data = {}) {
-    if (process.env.NODE_ENV === 'development') {
-      const entry = this.formatMessage('DEBUG', message, data);
-      console.debug(`[${entry.timestamp}] [${this.context}] ${message}`, data && Object.keys(data).length > 0 ? data : '');
+  debug(message, meta = {}) {
+    if (CURRENT_LOG_LEVEL >= LOG_LEVELS.DEBUG) {
+      console.log(this.formatMessage('DEBUG', message, meta));
     }
   }
 }
 
-function createLogger(context) {
-  return new Logger(context);
-}
+// Export singleton instance
+const logger = new Logger();
 
-module.exports = {
-  Logger,
-  createLogger,
-  default: new Logger('App')
-};
-
+// Export class for custom loggers
+module.exports = { Logger, logger };
