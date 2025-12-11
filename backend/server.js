@@ -283,6 +283,8 @@ class ServerApp {
       }
     }
     
+    // Make io available to routes and controllers
+    this.app.set('io', this.io);
     this.app.use('/api', routes);
   }
 
