@@ -119,12 +119,12 @@ class ServerApp {
         }
       }, 40);
       
-      // Initialize asynchronously
-      startupService.initialize().catch(err => {
+      // Initialize asynchronously (don't block server start)
+      startupService.initializationPromise = startupService.initialize().catch(err => {
         console.error('[Server] Startup service initialization error:', err);
       });
       
-      console.log('[Server] ✅ Startup service initialized');
+      console.log('[Server] ✅ Startup service registration completed');
     } catch (error) {
       console.warn('[Server] ⚠️  Startup service not available:', error.message);
     }

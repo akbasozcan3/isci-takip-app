@@ -10,6 +10,7 @@ class StartupService {
     this.initialized = false;
     this.services = [];
     this.startTime = Date.now();
+    this.initializationPromise = null;
   }
 
   /**
