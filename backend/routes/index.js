@@ -200,6 +200,16 @@ router.put('/location/delivery/:deliveryId/status', requireAuth, validateDeliver
 router.post('/location/route/save', requireAuth, locationController.saveRoute.bind(locationController));
 router.get('/location/routes', requireAuth, locationController.listRoutes.bind(locationController));
 router.post('/location/validate-input', requireAuth, locationController.validateInput.bind(locationController));
+// Messaging Controller
+const messagingController = require('../controllers/messagingController');
+router.post('/messages/send', requireAuth, asyncHandler(messagingController.sendMessage.bind(messagingController)));
+router.get('/messages', requireAuth, asyncHandler(messagingController.getMessages.bind(messagingController)));
+router.get('/messages/conversations', requireAuth, asyncHandler(messagingController.getConversations.bind(messagingController)));
+router.put('/messages/:messageId/read', requireAuth, asyncHandler(messagingController.markAsRead.bind(messagingController)));
+router.put('/messages/read-all', requireAuth, asyncHandler(messagingController.markAllAsRead.bind(messagingController)));
+router.delete('/messages/:messageId', requireAuth, asyncHandler(messagingController.deleteMessage.bind(messagingController)));
+
+// Legacy location message endpoints (kept for backward compatibility)
 router.post('/location/message/send', requireAuth, locationController.sendMessage.bind(locationController));
 router.get('/location/messages', requireAuth, locationController.getMessages.bind(locationController));
 router.post('/location/message/location', requireAuth, locationController.sendLocationMessage.bind(locationController));

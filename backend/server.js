@@ -372,6 +372,147 @@ class ServerApp {
         socket.join(`group-${groupId}`);
         console.log(`Socket ${socket.id} joined group: ${groupId}`);
       });
+
+      // Join user room for direct messaging
+      if (socket.data.authenticated && socket.data.userId) {
+        socket.join(`user-${socket.data.userId}`);
+        console.log(`Socket ${socket.id} joined user room: ${socket.data.userId}`);
+      }
+
+      // Messaging events
+      socket.on('send_message', async (data) => {
+        if (!socket.data.authenticated) {
+          socket.emit('message_error', { error: 'Unauthenticated' });
+          return;
+        }
+
+        try {
+          const { recipientId, groupId, message, type = 'text', metadata = {} } = data;
+          
+          if (!message || message.trim().length === 0) {
+            socket.emit('message_error', { error: 'Message is required' });
+            return;
+          }
+
+          if (!recipientId && !groupId) {
+            socket.emit('message_error', { error: 'Either recipientId or groupId is required' });
+            return;
+          }
+
+          const db = require('./config/database');
+          const notificationService = require('./services/notificationService');
+          const userId = socket.data.userId;
+          const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+          const timestamp = Date.now();
+
+          const messageData = {
+            id: messageId,
+            senderId: userId,
+            recipientId: recipientId || null,
+            groupId: groupId || null,
+            message: message.trim(),
+            type: type,
+            status: 'sent',
+            read: false,
+            createdAt: timestamp
+          };
+
+          // Save to database
+          if (!db.data.messages) db.data.messages = {};
+          if (!db.data.messages[userId]) db.data.messages[userId] = [];
+          db.data.messages[userId].push(messageData);
+          
+          if (groupId) {
+            const group = db.findGroupById(groupId);
+            if (group && group.members) {
+              for (const memberId of group.members) {
+                if (memberId !== userId) {
+                  if (!db.data.messages[memberId]) db.data.messages[memberId] = [];
+                  db.data.messages[memberId].push({ ...messageData, status: 'received' });
+                }
+              }
+            }
+            // Broadcast to group
+            this.io.to(`group-${groupId}`).emit('new_message', {
+              ...messageData,
+              sender: { id: userId, name: socket.data.user?.name || 'Unknown' }
+            });
+          } else if (recipientId) {
+            if (!db.data.messages[recipientId]) db.data.messages[recipientId] = [];
+            db.data.messages[recipientId].push({ ...messageData, status: 'received' });
+            
+            // Send to recipient
+            this.io.to(`user-${recipientId}`).emit('new_message', {
+              ...messageData,
+              sender: { id: userId, name: socket.data.user?.name || 'Unknown' }
+            });
+
+            // Send push notification
+            try {
+              await notificationService.send(recipientId, {
+                title: socket.data.user?.name || 'Yeni Mesaj',
+                message: message.trim().substring(0, 100),
+                type: 'message',
+                data: { messageId, senderId: userId, type: 'direct_message' }
+              }, ['database', 'onesignal']);
+            } catch (notifError) {
+              console.warn('[Socket.IO] Message notification error:', notifError.message);
+            }
+          }
+
+          db.scheduleSave();
+          socket.emit('message_sent', { messageId, ...messageData });
+        } catch (error) {
+          console.error('[Socket.IO] Send message error:', error);
+          socket.emit('message_error', { error: error.message });
+        }
+      });
+
+      socket.on('typing', (data) => {
+        if (!socket.data.authenticated) return;
+        
+        const { recipientId, groupId, isTyping } = data;
+        const userId = socket.data.userId;
+
+        if (groupId) {
+          socket.to(`group-${groupId}`).emit('user_typing', {
+            userId,
+            groupId,
+            isTyping,
+            userName: socket.data.user?.name || 'Unknown'
+          });
+        } else if (recipientId) {
+          this.io.to(`user-${recipientId}`).emit('user_typing', {
+            userId,
+            isTyping,
+            userName: socket.data.user?.name || 'Unknown'
+          });
+        }
+      });
+
+      socket.on('message_read', (data) => {
+        if (!socket.data.authenticated) return;
+        
+        const { messageId } = data;
+        const userId = socket.data.userId;
+
+        // Update message read status
+        const db = require('./config/database');
+        if (db.data.messages && db.data.messages[userId]) {
+          const message = db.data.messages[userId].find(msg => msg.id === messageId);
+          if (message && message.senderId) {
+            message.read = true;
+            message.readAt = Date.now();
+            db.scheduleSave();
+            
+            // Notify sender
+            this.io.to(`user-${message.senderId}`).emit('message_read_receipt', {
+              messageId,
+              readAt: message.readAt
+            });
+          }
+        }
+      });
       
       socket.on('location-update', (data) => {
         if (!socket.data.authenticated) {
