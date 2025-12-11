@@ -15,6 +15,7 @@ interface NetworkStatusIconProps {
 
 export function NetworkStatusIcon({ size = 20, showIndicator = true }: NetworkStatusIconProps) {
   const [isConnected, setIsConnected] = React.useState(true);
+  const [isBackendReachable, setIsBackendReachable] = React.useState(false);
   const [isChecking, setIsChecking] = React.useState(true);
   const pulseAnim = React.useRef(new Animated.Value(1)).current;
 
@@ -22,15 +23,16 @@ export function NetworkStatusIcon({ size = 20, showIndicator = true }: NetworkSt
     // Initial check
     checkStatus();
 
-    // Check every 5 seconds
-    const interval = setInterval(checkStatus, 5000);
+    // Check every 15 seconds (reduced frequency to prevent spam)
+    const interval = setInterval(checkStatus, 15000);
     return () => clearInterval(interval);
   }, []);
 
   const checkStatus = async () => {
     try {
       const status = await checkNetworkStatus(true);
-      setIsConnected(status.isConnected && status.isBackendReachable);
+      setIsConnected(status.isConnected);
+      setIsBackendReachable(status.isBackendReachable);
       setIsChecking(false);
     } catch (error: any) {
       // Silently handle network errors - don't spam console
@@ -38,6 +40,7 @@ export function NetworkStatusIcon({ size = 20, showIndicator = true }: NetworkSt
         console.warn('[NetworkStatusIcon] Status check error:', error);
       }
       setIsConnected(false);
+      setIsBackendReachable(false);
       setIsChecking(false);
     }
   };
@@ -72,15 +75,29 @@ export function NetworkStatusIcon({ size = 20, showIndicator = true }: NetworkSt
     );
   }
 
+  // Professional network status display
+  // Green: Internet + Backend connected
+  // Yellow: Internet connected but backend unreachable
+  // Red: No internet
+  let iconName = 'wifi-outline';
+  let iconColor = '#ef4444'; // Red - no connection
+  
+  if (isConnected && isBackendReachable) {
+    iconName = 'wifi';
+    iconColor = '#10b981'; // Green - all good
+  } else if (isConnected && !isBackendReachable) {
+    iconName = 'wifi-outline';
+    iconColor = '#f59e0b'; // Yellow/Amber - internet but no backend
+  }
+
   return (
     <Animated.View style={[styles.container, { opacity: pulseAnim }]}>
-      {isConnected ? (
-        <Ionicons name="wifi" size={size} color="#10b981" />
-      ) : (
-        <Ionicons name="wifi-outline" size={size} color="#ef4444" />
-      )}
+      <Ionicons name={iconName as any} size={size} color={iconColor} />
       {!isConnected && showIndicator && (
-        <View style={styles.indicator} />
+        <View style={[styles.indicator, { backgroundColor: '#ef4444' }]} />
+      )}
+      {isConnected && !isBackendReachable && showIndicator && (
+        <View style={[styles.indicator, { backgroundColor: '#f59e0b' }]} />
       )}
     </Animated.View>
   );

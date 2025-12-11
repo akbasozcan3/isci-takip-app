@@ -45,10 +45,9 @@ export async function checkInternetConnectivity(): Promise<boolean> {
 export async function checkBackendReachability(): Promise<boolean> {
   try {
     const apiBase = getApiBase();
-    console.log('[Network] Checking backend at:', `${apiBase}/api/health`);
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // Increased timeout to 5 seconds
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 seconds timeout
     
     const response = await fetch(`${apiBase}/api/health`, {
       method: 'GET',
@@ -60,22 +59,15 @@ export async function checkBackendReachability(): Promise<boolean> {
     clearTimeout(timeoutId);
     
     if (response.ok) {
-      console.log('[Network] Backend is reachable');
       return true;
     } else {
-      console.warn('[Network] Backend returned status:', response.status);
       return false;
     }
   } catch (error: any) {
-    // Log error details for debugging
-    if (error?.name === 'AbortError') {
-      console.warn('[Network] Backend check timeout (5s)');
-      return false;
-    }
-    // Log connection errors
-    if (error?.message) {
-      console.warn('[Network] Backend reachability check failed:', error.message);
-      console.warn('[Network] API Base URL:', getApiBase());
+    // Silently handle timeout/connection errors - don't spam console
+    // Only log in development mode
+    if (__DEV__ && error?.name !== 'AbortError' && error?.message && !error.message.includes('Aborted')) {
+      console.warn('[Network] Backend unreachable:', error.message);
     }
     return false;
   }

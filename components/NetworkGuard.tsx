@@ -8,7 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { checkNetworkStatus, waitForNetwork } from '../utils/network';
+import { checkNetworkStatus } from '../utils/network';
 
 interface NetworkGuardProps {
   children: React.ReactNode;
@@ -22,53 +22,33 @@ export function NetworkGuard({ children }: NetworkGuardProps) {
   React.useEffect(() => {
     checkConnection();
     
-    // Only check periodically if connected, otherwise stop checking
-    // This prevents infinite loop when backend is unreachable
-    let interval: ReturnType<typeof setInterval> | null = null;
-    
-    const startPeriodicCheck = () => {
-      if (interval) clearInterval(interval);
-      interval = setInterval(() => {
-        // Only check if we think we're connected, otherwise user needs to retry manually
-        if (isConnected) {
-          checkConnection();
-        }
-      }, 30000); // Check every 30 seconds when connected
-    };
-    
-    // Start periodic check only after initial connection is established
-    if (isConnected) {
-      startPeriodicCheck();
-    }
-    
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isConnected]);
+    // Only check once on mount, then let NetworkStatusIcon handle periodic checks
+    // This prevents infinite refresh loop
+  }, []);
 
   const checkConnection = async () => {
     try {
       setIsChecking(true);
       const status = await checkNetworkStatus(true);
       
-      if (status.isConnected && status.isBackendReachable) {
-        setIsConnected(true);
-        setIsChecking(false);
-      } else {
-        setIsConnected(false);
-        setIsChecking(false);
-        // Log for debugging
-        console.log('[NetworkGuard] Connection failed:', {
-          isConnected: status.isConnected,
-          isBackendReachable: status.isBackendReachable
-        });
+      setIsConnected(status.isConnected);
+      setIsChecking(false);
+      
+      // In development, allow app to work even if backend is unreachable
+      // Only block if there's no internet at all
+      if (!status.isConnected) {
+        console.warn('[NetworkGuard] No internet connection');
+      } else if (!status.isBackendReachable) {
+        // Backend unreachable but internet exists - allow app to continue in dev mode
+        // Status will be shown in header via NetworkStatusIcon
       }
     } catch (error: any) {
       // Silently handle timeout errors
       if (error?.name !== 'AbortError' && error?.message && !error.message.includes('Aborted')) {
         console.error('[NetworkGuard] Connection check error:', error);
       }
-      setIsConnected(false);
+      // In development, allow app to continue even on errors
+      setIsConnected(true); // Assume connected to allow app usage
       setIsChecking(false);
     }
   };
@@ -76,35 +56,33 @@ export function NetworkGuard({ children }: NetworkGuardProps) {
   const handleRetry = async () => {
     setIsRetrying(true);
     try {
-      const connected = await waitForNetwork(5, 2000);
-      if (connected) {
-        setIsConnected(true);
-        await checkConnection();
-      } else {
-        setIsConnected(false);
-      }
+      await checkConnection();
     } catch (error) {
       console.error('[NetworkGuard] Retry error:', error);
-      setIsConnected(false);
     } finally {
       setIsRetrying(false);
     }
   };
 
+  // Show loading only on initial check
   if (isChecking) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <LinearGradient colors={['#0f172a', '#1e293b']} style={styles.gradient}>
           <View style={styles.content}>
             <ActivityIndicator size="large" color="#06b6d4" />
-            <Text style={styles.checkingText}>İnternet bağlantısı kontrol ediliyor...</Text>
+            <Text style={styles.checkingText}>Bağlantı kontrol ediliyor...</Text>
           </View>
         </LinearGradient>
       </SafeAreaView>
     );
   }
 
-  if (!isConnected) {
+  // In development, allow app to work even if backend is unreachable
+  // Only block if there's absolutely no internet connection
+  // Backend status will be shown in header via NetworkStatusIcon
+  if (!isConnected && __DEV__ === false) {
+    // Only block in production if no internet
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <LinearGradient colors={['#0f172a', '#1e293b']} style={styles.gradient}>
@@ -118,16 +96,6 @@ export function NetworkGuard({ children }: NetworkGuardProps) {
             </Text>
             <Text style={styles.subDescription}>
               Lütfen Wi-Fi veya mobil veri bağlantınızı kontrol edin ve tekrar deneyin.
-            </Text>
-            <Text style={styles.debugText}>
-              Backend: {(() => {
-                try {
-                  const { getApiBase } = require('../utils/api');
-                  return getApiBase();
-                } catch {
-                  return 'N/A';
-                }
-              })()}
             </Text>
             
             <Pressable
@@ -158,6 +126,7 @@ export function NetworkGuard({ children }: NetworkGuardProps) {
     );
   }
 
+  // Allow app to continue - backend status shown in header
   return <>{children}</>;
 }
 
