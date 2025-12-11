@@ -722,6 +722,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
   headerTextBlock: {
     flex: 1
   },

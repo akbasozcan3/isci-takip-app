@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState } from '../../components/EmptyState';
+import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
 import { authFetch } from '../../utils/auth';
 
 interface Notification {
