@@ -22,10 +22,29 @@ export function NetworkGuard({ children }: NetworkGuardProps) {
   React.useEffect(() => {
     checkConnection();
     
-    // Check connection every 10 seconds
-    const interval = setInterval(checkConnection, 10000);
-    return () => clearInterval(interval);
-  }, []);
+    // Only check periodically if connected, otherwise stop checking
+    // This prevents infinite loop when backend is unreachable
+    let interval: ReturnType<typeof setInterval> | null = null;
+    
+    const startPeriodicCheck = () => {
+      if (interval) clearInterval(interval);
+      interval = setInterval(() => {
+        // Only check if we think we're connected, otherwise user needs to retry manually
+        if (isConnected) {
+          checkConnection();
+        }
+      }, 30000); // Check every 30 seconds when connected
+    };
+    
+    // Start periodic check only after initial connection is established
+    if (isConnected) {
+      startPeriodicCheck();
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isConnected]);
 
   const checkConnection = async () => {
     try {
@@ -38,6 +57,11 @@ export function NetworkGuard({ children }: NetworkGuardProps) {
       } else {
         setIsConnected(false);
         setIsChecking(false);
+        // Log for debugging
+        console.log('[NetworkGuard] Connection failed:', {
+          isConnected: status.isConnected,
+          isBackendReachable: status.isBackendReachable
+        });
       }
     } catch (error: any) {
       // Silently handle timeout errors
@@ -94,6 +118,16 @@ export function NetworkGuard({ children }: NetworkGuardProps) {
             </Text>
             <Text style={styles.subDescription}>
               Lütfen Wi-Fi veya mobil veri bağlantınızı kontrol edin ve tekrar deneyin.
+            </Text>
+            <Text style={styles.debugText}>
+              Backend: {(() => {
+                try {
+                  const { getApiBase } = require('../utils/api');
+                  return getApiBase();
+                } catch {
+                  return 'N/A';
+                }
+              })()}
             </Text>
             
             <Pressable
@@ -203,6 +237,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     fontFamily: 'Poppins-SemiBold',
+  },
+  debugText: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 16,
+    textAlign: 'center',
+    fontFamily: 'Poppins-Regular',
   },
 });
 
