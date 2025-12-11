@@ -90,9 +90,9 @@
       "typedRoutes": true
     },
     "extra": {
-      "apiBase": "http://10.0.2.2:4000",
-      "apiBaseDev": "http://10.0.2.2:4000",
-      "apiBaseIOS": "http://localhost:4000",
+      "apiBase": "http://192.168.1.102:4000",
+      "apiBaseDev": "http://192.168.1.102:4000",
+      "apiBaseIOS": "http://192.168.1.102:4000",
       "apiBaseWeb": "http://localhost:4000",
       "router": {},
       "eas": {
