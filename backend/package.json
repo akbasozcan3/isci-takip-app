@@ -7,7 +7,8 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "deploy-check": "node deploy-check.js",
-    "test": "node deploy-check.js"
+    "test": "node deploy-check.js",
+    "verify-onesignal": "node scripts/verify-onesignal-key.js"
   },
   "keywords": [
     "api",

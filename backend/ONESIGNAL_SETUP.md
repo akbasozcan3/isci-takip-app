@@ -64,7 +64,19 @@ Backend başladığında şu mesajları görmelisiniz:
 
 ### Test:
 
-API key'in çalıştığını test etmek için:
+**Option 1: Verification Script (Recommended)**
+```bash
+cd backend
+npm run verify-onesignal
+```
+
+Bu script:
+- API key'in formatını kontrol eder
+- Key formatını test eder
+- Basic Auth formatını test eder
+- Detaylı hata mesajları verir
+
+**Option 2: API Endpoint**
 ```bash
 curl http://localhost:4000/api/notifications/onesignal-status
 ```
@@ -80,4 +92,19 @@ Başarılı yanıt:
   }
 }
 ```
+
+### API Key Sorun Giderme:
+
+**403 Forbidden Hatası:**
+1. OneSignal dashboard'dan yeni bir REST API Key oluşturun
+2. Eski key'i silin (güvenlik için)
+3. Yeni key'i `.env` dosyasına ekleyin
+4. Backend'i yeniden başlatın
+5. `npm run verify-onesignal` ile test edin
+
+**Key Eksik Görünüyorsa:**
+- Key'in tamamını kopyaladığınızdan emin olun
+- Key genellikle 100+ karakter uzunluğundadır
+- Key'in başında `os_v2_app_` olmalı
+- Key'in sonunda karakter eksik olmamalı
 
