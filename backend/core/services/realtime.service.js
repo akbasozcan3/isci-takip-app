@@ -76,7 +76,7 @@ class RealtimeService {
         socket.userEmail = decoded.email;
         next();
       } catch (error) {
-        logger.warn('Socket authentication failed', { error: error.message });
+        logger.warn(`Socket authentication failed: ${error.message || error}`);
         next(new Error('Invalid token'));
       }
     });
@@ -139,7 +139,7 @@ class RealtimeService {
       this.connectionStats.peakConnections = this.connectionStats.activeConnections;
     }
 
-    logger.info('Socket connected', { userId, socketId, activeConnections: this.connectionStats.activeConnections });
+    logger.info(`Socket connected - userId: ${userId}, socketId: ${socketId}, activeConnections: ${this.connectionStats.activeConnections}`);
 
     // Send queued messages
     this.deliverQueuedMessages(userId, socket);
