@@ -24,8 +24,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { io, Socket } from 'socket.io-client';
 import { AnalyticsCard } from '../../components/AnalyticsCard';
+import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
 import { OnboardingModal } from '../../components/OnboardingModal';
 import { Toast, useToast } from '../../components/Toast';
+import { LoadingState } from '../../components/ui/LoadingState';
 import { getApiBase } from '../../utils/api';
 import { authFetch, getToken } from '../../utils/auth';
 import { shareCurrentLocation } from '../../utils/locationShare';
@@ -103,7 +105,7 @@ const QUICK_ACTIONS = [
   { id: 'location-features', title: 'Konum Özellikleri', icon: 'location', route: '/(tabs)/location-features', color: '#10b981' },
   { id: 'analytics', title: 'Analitik', icon: 'stats-chart', route: '/(tabs)/analytics', color: '#8b5cf6' },
   { id: 'admin', title: 'Yönetim', icon: 'shield-checkmark-outline', route: '/(tabs)/admin', color: '#f59e0b' },
-  { id: 'settings', title: 'Ayarlar', icon: 'settings-outline', route: '/(tabs)/settings', color: '#64748b' },
+  { id: 'settings', title: 'Ayarlar', icon: 'person-outline', route: '/(tabs)/profile', color: '#64748b' },
 ];
 export default function HomeScreen(): React.JSX.Element {
   const router = useRouter();
@@ -111,9 +113,11 @@ export default function HomeScreen(): React.JSX.Element {
 
   const [isAuthenticated, setIsAuthenticated] = React.useState(false);
   const [refreshing, setRefreshing] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
   const [userName, setUserName] = React.useState('Ekip Üyesi');
   const [userId, setUserId] = React.useState('');
   const [stats, setStats] = React.useState<DashboardStats>({ activeWorkers: 0, totalGroups: 0, todayDistance: 0, activeAlerts: 0 });
+  const [stepData, setStepData] = React.useState({ steps: 0, goal: null as number | null, progress: 0 });
   const [activities, setActivities] = React.useState<RecentActivity[]>([]);
   const [hasLocationPermission, setHasLocationPermission] = React.useState(false);
   const [hidePermissionBanner, setHidePermissionBanner] = React.useState(true);
@@ -190,7 +194,10 @@ export default function HomeScreen(): React.JSX.Element {
   const loadDashboardData = React.useCallback(async (workerIdParam?: string) => {
     try {
       const worker = workerIdParam || userId;
-      if (!worker) return;
+      if (!worker) {
+        setLoading(false);
+        return;
+      }
 
       // Token al
       let authHeaders: Record<string, string> = {};
@@ -221,20 +228,25 @@ export default function HomeScreen(): React.JSX.Element {
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
-        const [statsRes, activitiesRes] = await Promise.all([
+        const [statsRes, activitiesRes, stepsRes] = await Promise.all([
           authFetch(`/dashboard/${worker}`, { 
             signal: controller.signal 
           }).catch(() => ({ ok: false, status: 404, json: async () => ({}) } as Response)),
           authFetch(`/activities?limit=${activitiesLimit}`, { 
             signal: controller.signal 
-          }).catch(() => ({ ok: false, status: 404, json: async () => ([]) } as Response)),
+          }).catch(() => ({ ok: false, status: 404, json: async () => ({ data: { activities: [] } }) } as Response)),
+          authFetch(`/steps/today`, { 
+            signal: controller.signal 
+          }).catch(() => ({ ok: false, status: 404, json: async () => ({ success: false, data: {} }) } as Response)),
         ]);
 
         clearTimeout(timeoutId);
 
         // Stats güncelle
         if (statsRes.ok) {
-          const data = await statsRes.json();
+          const response = await statsRes.json();
+          // Backend ResponseFormatter kullanıyor: { success: true, data: {...} }
+          const data = response.success && response.data ? response.data : response;
           setStats({
             activeWorkers: data.activeWorkers || 0,
             totalGroups: data.totalGroups || 0,
@@ -247,21 +259,35 @@ export default function HomeScreen(): React.JSX.Element {
           }
         } else {
           if (statsRes.status !== 429) {
-          console.warn('Stats fetch failed:', statsRes.status);
+            console.warn('Stats fetch failed:', statsRes.status);
           }
           setStats({ activeWorkers: 0, totalGroups: 0, todayDistance: 0, activeAlerts: 0 });
         }
 
         // Activities güncelle
         if (activitiesRes.ok) {
-          const data = await activitiesRes.json();
-          setActivities(Array.isArray(data) ? data : []);
-          console.log(`Activities loaded: ${Array.isArray(data) ? data.length : 0} (Plan: ${subscriptionPlan}, Limit: ${activitiesLimit})`);
+          const response = await activitiesRes.json();
+          // Backend ResponseFormatter kullanıyor: { success: true, data: [...] }
+          const responseData = response.success && response.data ? response.data : response;
+          const activities = Array.isArray(responseData) ? responseData : (responseData.activities || []);
+          setActivities(Array.isArray(activities) ? activities : []);
+          console.log(`Activities loaded: ${Array.isArray(activities) ? activities.length : 0} (Plan: ${subscriptionPlan}, Limit: ${activitiesLimit})`);
         } else {
           if (activitiesRes.status !== 429) {
-          console.warn('Activities fetch failed:', activitiesRes.status);
+            console.warn('Activities fetch failed:', activitiesRes.status);
           }
           setActivities([]);
+        }
+
+        // Steps güncelle
+        if (stepsRes.ok) {
+          const stepsData = await stepsRes.json();
+          if (stepsData.success && stepsData.data) {
+            const steps = stepsData.data.steps || 0;
+            const goal = stepsData.data.goal || null;
+            const progress = goal && goal > 0 ? Math.min(steps / goal, 1) : 0;
+            setStepData({ steps, goal, progress });
+          }
         }
       } catch (e: unknown) {
         clearTimeout(timeoutId);
@@ -271,17 +297,21 @@ export default function HomeScreen(): React.JSX.Element {
         // Fallback - backend yoksa bile çalışsın
         setStats({ activeWorkers: 0, totalGroups: 0, todayDistance: 0, activeAlerts: 0 });
         setActivities([]);
+      } finally {
+        setLoading(false);
       }
     } catch (e) {
       console.error('Dashboard outer error:', e);
       setStats({ activeWorkers: 0, totalGroups: 0, todayDistance: 0, activeAlerts: 0 });
       setActivities([]);
+      setLoading(false);
     }
   }, [userId]);
 
   // checkAuth loadDashboardData'yı kullandığı için loadDashboardData'dan sonra tanımlanmalı
   const checkAuth = React.useCallback(async () => {
     try {
+      setLoading(true);
       const workerId = await SecureStore.getItemAsync('workerId');
       const displayName = await SecureStore.getItemAsync('displayName');
 
@@ -290,7 +320,7 @@ export default function HomeScreen(): React.JSX.Element {
         setUserId(workerId);
         if (displayName) setUserName(displayName);
         
-        loadDashboardData(workerId).catch(e => console.error('Dashboard load failed:', e));
+        await loadDashboardData(workerId);
 
         try {
           const { status } = await Location.getForegroundPermissionsAsync();
@@ -311,10 +341,12 @@ export default function HomeScreen(): React.JSX.Element {
         }
       } else {
         setIsAuthenticated(false);
+        setLoading(false);
       }
     } catch (err) {
       console.error('Auth check failed:', err);
       setIsAuthenticated(false);
+      setLoading(false);
     }
   }, [loadDashboardData]);
 
@@ -433,25 +465,21 @@ export default function HomeScreen(): React.JSX.Element {
   }, [fadeAnim, headerScale]);
 
   React.useEffect(() => {
-    let mounted = true;
-    
     const init = async () => {
       try {
         await checkAuth();
         
-        if (mounted) {
-          // İlk yüklemede fadeAnim'i 1'e set et - blur sorununu önlemek için
-          fadeAnim.setValue(1);
-          resetAnimations();
-          
-          setTimeout(() => {
-            if (mounted && plans.length > 0) {
-              Animated.stagger(150, statsAnimRef.current.map((anim: Animated.Value) => 
-                Animated.spring(anim, { toValue: 1, tension: 50, friction: 8, useNativeDriver: true })
-              )).start();
-            }
-          }, 300);
-        }
+        // İlk yüklemede fadeAnim'i 1'e set et - blur sorununu önlemek için
+        fadeAnim.setValue(1);
+        resetAnimations();
+        
+        setTimeout(() => {
+          if (plans.length > 0) {
+            Animated.stagger(150, statsAnimRef.current.map((anim: Animated.Value) => 
+              Animated.spring(anim, { toValue: 1, tension: 50, friction: 8, useNativeDriver: true })
+            )).start();
+          }
+        }, 300);
       } catch (e) {
         console.error('Init error:', e);
       }
@@ -464,7 +492,6 @@ export default function HomeScreen(): React.JSX.Element {
     });
     
     return () => {
-      mounted = false;
       sub.remove?.();
     }; 
   }, [checkAuth, resetAnimations]);
@@ -577,11 +604,8 @@ export default function HomeScreen(): React.JSX.Element {
 
   // Realtime: listen for group deletion and refresh dashboard
   React.useEffect(() => {
-    let mounted = true;
-    
     // Cleanup function - her zaman tanımlanmalı
     const cleanup = () => {
-      mounted = false;
       if (socketRef.current) {
         try { socketRef.current.off(); socketRef.current.disconnect(); } catch {}
         socketRef.current = null;
@@ -647,22 +671,12 @@ export default function HomeScreen(): React.JSX.Element {
     return cleanup;
   }, [isAuthenticated, userId, onRefresh, showWarning]);
 
-
-  const handleLogin = () => router.push('/auth/login');
-  const  handleRegister = () => router.push('/auth/register');
-
   const handleQuickAction = (route: string) => {
     Animated.sequence([
       Animated.timing(cardScale, { toValue: 0.96, duration: 90, useNativeDriver: true }),
       Animated.timing(cardScale, { toValue: 1, duration: 120, useNativeDriver: true }),
     ]).start();
     router.push(route as any);
-  };
-
-  const openLightbox = (imageUrl: string) => {
-    setLightboxImage(imageUrl);
-    setShowLightbox(true);
-    Animated.spring(lightboxScale, { toValue: 1, useNativeDriver: true, tension: 50 }).start();
   };
 
   const closeLightbox = () => {
@@ -811,26 +825,15 @@ export default function HomeScreen(): React.JSX.Element {
     }
   };
 
-  // Map Home static blog cards to backend article ids (component scope)
-  const mapCardToArticleId = (cardId: string): string => {
-    const map: Record<string, string> = {
-      a1: 'getting-started',
-      a2: 'privacy-security',
-      a3: 'battery-optimization',
-      a4: 'group-management',
-      a5: 'realtime-tracking',
-      a6: 'reports-analytics',
-      a7: 'offline-sync',
-      a8: 'android-ios-tips',
-      a9: 'security-checklist',
-      a10: 'deployment',
-      a11: 'monitoring-alerting',
-      a12: 'getting-started',
-    };
-    return map[cardId] || 'getting-started';
-  };
-
-
+  // --- Loading State ---
+  if (loading && !isAuthenticated) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <StatusBar barStyle="light-content" />
+        <LoadingState fullScreen message="Yükleniyor..." />
+      </SafeAreaView>
+    );
+  }
 
   // --- Authenticated UI ---
   return (
@@ -848,6 +851,7 @@ export default function HomeScreen(): React.JSX.Element {
           </View>
 
           <View style={styles.headerActions}>
+            <NetworkStatusIcon size={20} />
             <Pressable 
               onPress={() => router.push('/blog')} 
               style={({ pressed }) => [
@@ -899,14 +903,14 @@ export default function HomeScreen(): React.JSX.Element {
               <Ionicons name="share-social-outline" size={20} color="#fff" />
             </Pressable>
             <Pressable 
-              onPress={() => router.push('/(tabs)/settings')} 
+              onPress={() => router.push('/(tabs)/profile')} 
               style={({ pressed }) => [
                 styles.headerIconButton,
                 styles.headerIconButtonSettings,
                 pressed && styles.headerIconButtonPressed
               ]}
             >
-              <Ionicons name="settings-outline" size={20} color="#fff" />
+              <Ionicons name="person-outline" size={20} color="#fff" />
             </Pressable>
           </View>
         </View>
@@ -925,6 +929,12 @@ export default function HomeScreen(): React.JSX.Element {
           />
         }
       >
+        {/* Hero Video - Temporarily disabled until expo-av is properly configured */}
+        {/* <HeroVideo
+          videoSource={require('../../Adsız (1920 x 400 piksel).mp4')}
+          height={200}
+          showOverlay={false}
+        /> */}
 
         {/* Slider at top */}
         <View style={styles.topSlider}>
@@ -976,48 +986,78 @@ export default function HomeScreen(): React.JSX.Element {
         )}
 
         {/* Stats */}
-        <View style={styles.statsGrid}>
-          {[
-            { icon: 'people', value: stats.activeWorkers, label: 'Aktif İşçi', color: '#06b6d4', gradient: ['#06b6d4', '#0891b2'] as [string, string] },
-            { icon: 'albums', value: stats.totalGroups, label: 'Toplam Grup', color: '#7c3aed', gradient: ['#7c3aed', '#6d28d9'] as [string, string] },
-            { icon: 'navigate', value: `${stats.todayDistance.toFixed(1)} km`, label: 'Bugün', color: '#10b981', gradient: ['#10b981', '#059669'] as [string, string] },
-            { icon: 'warning', value: stats.activeAlerts, label: 'Uyarılar', color: '#f59e0b', gradient: ['#f59e0b', '#d97706'] as [string, string] }
-          ].map((stat, idx) => (
-            <Animated.View
-              key={idx}
-              style={[
-                styles.statCard,
-                {
-                  opacity: statsAnimRef.current[idx] || new Animated.Value(0),
-                  transform: [
-                    {
-                      scale: (statsAnimRef.current[idx] || new Animated.Value(0)).interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.85, 1]
-                      })
-                    },
-                    {
-                      translateY: (statsAnimRef.current[idx] || new Animated.Value(0)).interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [25, 0]
-                      })
-                    }
-                  ]
-                }
-              ]}
-            >
-              <LinearGradient
-                colors={stat.gradient}
-                start={[0, 0]}
-                end={[1, 1]}
-                style={styles.statIconWrapper}
+        <View style={styles.statsContainer}>
+          <View style={styles.statsGrid}>
+            {[
+              { icon: 'footsteps', value: stepData.steps.toLocaleString(), label: 'Adım', color: '#14b8a6', gradient: ['#14b8a6', '#0d9488'] as [string, string], route: '/(tabs)/steps', hasProgress: true, progress: stepData.progress, goal: stepData.goal },
+              { icon: 'people', value: stats.activeWorkers, label: 'Aktif İşçi', color: '#06b6d4', gradient: ['#06b6d4', '#0891b2'] as [string, string] },
+              { icon: 'albums', value: stats.totalGroups, label: 'Toplam Grup', color: '#7c3aed', gradient: ['#7c3aed', '#6d28d9'] as [string, string] },
+              { icon: 'navigate', value: `${stats.todayDistance.toFixed(1)} km`, label: 'Bugün', color: '#10b981', gradient: ['#10b981', '#059669'] as [string, string] }
+            ].map((stat, idx) => (
+              <Pressable
+                key={idx}
+                onPress={() => {
+                  if ((stat as any).route) {
+                    router.push((stat as any).route as any);
+                  }
+                }}
+                style={({ pressed }) => [
+                  { opacity: pressed ? 0.9 : 1 }
+                ]}
               >
-                <Ionicons name={stat.icon as any} size={24} color="#fff" />
-              </LinearGradient>
-              <Text style={styles.statValue}>{stat.value}</Text>
-              <Text style={styles.statLabel}>{stat.label}</Text>
-            </Animated.View>
-          ))}
+                <Animated.View
+                  style={[
+                    styles.statCard,
+                    {
+                      opacity: statsAnimRef.current[idx] || new Animated.Value(0),
+                      transform: [
+                        {
+                          scale: (statsAnimRef.current[idx] || new Animated.Value(0)).interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.85, 1]
+                          })
+                        },
+                        {
+                          translateY: (statsAnimRef.current[idx] || new Animated.Value(0)).interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [25, 0]
+                          })
+                        }
+                      ]
+                    }
+                  ]}
+                >
+                  <LinearGradient
+                    colors={stat.gradient}
+                    start={[0, 0]}
+                    end={[1, 1]}
+                    style={styles.statIconWrapper}
+                  >
+                    <Ionicons name={stat.icon as any} size={24} color="#fff" />
+                  </LinearGradient>
+                  <Text style={styles.statValue} numberOfLines={1}>{stat.value}</Text>
+                  <Text style={styles.statLabel} numberOfLines={1}>{stat.label}</Text>
+                  {(stat as any).hasProgress && (stat as any).goal && (
+                    <View style={styles.statProgressContainer}>
+                      <View style={styles.statProgressBar}>
+                        <View
+                          style={[
+                            styles.statProgressFill,
+                            {
+                              width: `${((stat as any).progress * 100)}%`
+                            }
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.statProgressText} numberOfLines={1}>
+                        {Math.round((stat as any).progress * 100)}%
+                      </Text>
+                    </View>
+                  )}
+                </Animated.View>
+              </Pressable>
+            ))}
+          </View>
         </View>
 
         {/* Advanced Analytics */}
@@ -1077,13 +1117,13 @@ export default function HomeScreen(): React.JSX.Element {
                     start={[0, 0]}
                     end={[1, 1]}
                   >
-                    <Ionicons name={q.icon as any} size={24} color="#fff" />
+                    <Ionicons name={q.icon as any} size={26} color="#fff" />
                   </LinearGradient>
                 </View>
                 <View style={styles.quickActionContent}>
                   <Text style={styles.quickActionTitle}>{q.title}</Text>
                   <View style={styles.quickActionArrow}>
-                    <Ionicons name="arrow-forward" size={14} color="#64748b" />
+                    <Ionicons name="arrow-forward" size={16} color="#64748b" />
                   </View>
                 </View>
               </Pressable>
@@ -1410,24 +1450,52 @@ export default function HomeScreen(): React.JSX.Element {
           </View>
           <View style={styles.servicesGrid}>
             <View style={styles.serviceCard}>
-              <Ionicons name="location" size={32} color="#06b6d4" />
-              <Text style={styles.serviceTitle}>Canlı Takip</Text>
-              <Text style={styles.serviceDesc}>Gerçek zamanlı konum</Text>
+              <LinearGradient
+                colors={['#06b6d4', '#0891b2']}
+                style={styles.serviceIconWrapper}
+              >
+                <Ionicons name="location" size={28} color="#fff" />
+              </LinearGradient>
+              <View style={styles.serviceContent}>
+                <Text style={styles.serviceTitle}>Canlı Takip</Text>
+                <Text style={styles.serviceDesc}>Gerçek zamanlı konum</Text>
+              </View>
             </View>
             <View style={styles.serviceCard}>
-              <Ionicons name="stats-chart" size={32} color="#7c3aed" />
-              <Text style={styles.serviceTitle}>Raporlama</Text>
-              <Text style={styles.serviceDesc}>Detaylı analizler</Text>
+              <LinearGradient
+                colors={['#7c3aed', '#6d28d9']}
+                style={styles.serviceIconWrapper}
+              >
+                <Ionicons name="stats-chart" size={28} color="#fff" />
+              </LinearGradient>
+              <View style={styles.serviceContent}>
+                <Text style={styles.serviceTitle}>Raporlama</Text>
+                <Text style={styles.serviceDesc}>Detaylı analizler</Text>
+              </View>
             </View>
             <View style={styles.serviceCard}>
-              <Ionicons name="people" size={32} color="#10b981" />
-              <Text style={styles.serviceTitle}>Grup Yönetimi</Text>
-              <Text style={styles.serviceDesc}>Ekip organizasyonu</Text>
+              <LinearGradient
+                colors={['#10b981', '#059669']}
+                style={styles.serviceIconWrapper}
+              >
+                <Ionicons name="people" size={28} color="#fff" />
+              </LinearGradient>
+              <View style={styles.serviceContent}>
+                <Text style={styles.serviceTitle}>Grup Yönetimi</Text>
+                <Text style={styles.serviceDesc}>Ekip organizasyonu</Text>
+              </View>
             </View>
             <View style={styles.serviceCard}>
-              <Ionicons name="shield-checkmark" size={32} color="#f59e0b" />
-              <Text style={styles.serviceTitle}>Güvenlik</Text>
-              <Text style={styles.serviceDesc}>KVKK uyumlu</Text>
+              <LinearGradient
+                colors={['#f59e0b', '#d97706']}
+                style={styles.serviceIconWrapper}
+              >
+                <Ionicons name="shield-checkmark" size={28} color="#fff" />
+              </LinearGradient>
+              <View style={styles.serviceContent}>
+                <Text style={styles.serviceTitle}>Güvenlik</Text>
+                <Text style={styles.serviceDesc}>KVKK uyumlu</Text>
+              </View>
             </View>
           </View>
         </View>
@@ -1476,7 +1544,7 @@ export default function HomeScreen(): React.JSX.Element {
           </Pressable>
         </View>
 
-        <View style={{ height: 120 }} />
+        <View style={{ height: 140 }} />
       </Animated.ScrollView>
 
       {/* Lightbox Modal */}
@@ -1565,10 +1633,10 @@ const styles = StyleSheet.create({
   },
 
   // Scroll
-  scrollContent: { paddingBottom: 10 },
+  scrollContent: { paddingBottom: 32 },
   
   // Top Slider
-  topSlider: { marginBottom: 20 },
+  topSlider: { marginBottom: 28 },
 
   // Auth header
   authHeader: { alignItems: 'center', paddingTop: 60, paddingBottom: 36, paddingHorizontal: 20, borderBottomLeftRadius: 32, borderBottomRightRadius: 32 },
@@ -1592,15 +1660,15 @@ const styles = StyleSheet.create({
 
   // Slider
   sliderWrapper: { marginTop: 18, marginBottom: 16 },
-  slideCard: { backgroundColor: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', marginHorizontal: 0, borderRadius: 20, padding: 24, alignItems: 'flex-start', justifyContent: 'center' },
-  slideBadge: { width: 80, height: 80, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  slideTitle: { fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: 8, letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
-  slideDesc: { color: 'rgba(255,255,255,0.9)', fontSize: 15, lineHeight: 22, fontFamily: 'Poppins-Regular' },
-  slideCTA: { marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
+  slideCard: { backgroundColor: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', marginHorizontal: 0, borderRadius: 24, padding: 28, alignItems: 'flex-start', justifyContent: 'center' },
+  slideBadge: { width: 88, height: 88, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  slideTitle: { fontSize: 24, fontWeight: '900', color: '#fff', marginBottom: 12, letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
+  slideDesc: { color: 'rgba(255,255,255,0.9)', fontSize: 16, lineHeight: 24, fontFamily: 'Poppins-Regular' },
+  slideCTA: { marginTop: 20, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 14 },
   slideCTAText: { color: '#fff', fontWeight: '900', marginRight: 8, fontFamily: 'Poppins-Bold' },
-  dotsRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 16 },
+  dotsRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 20, paddingHorizontal: 20 },
   smallDot: { width: 8, height: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.3)', marginHorizontal: 6 },
-  smallDotActive: { width: 32, backgroundColor: '#06b6d4' },
+  smallDotActive: { width: 36, backgroundColor: '#06b6d4' },
 
   // About
   aboutCard: { backgroundColor: '#fff', borderRadius: 16, padding: 18, marginTop: 8, marginBottom: 14 },
@@ -1620,68 +1688,94 @@ const styles = StyleSheet.create({
   articleExcerpt: { color: '#64748b', marginTop: 6 },
   articleMeta: { fontSize: 12, color: '#94a3b8', marginTop: 6 },
   // Stats
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 20, paddingHorizontal: 20 },
-  statCard: {
-    flexBasis: '48%',
-    maxWidth: '48%',
-    backgroundColor: '#1e293b',
-    borderRadius: 20,
-    paddingVertical: 20,
-    paddingHorizontal: 18,
-    alignItems: 'flex-start',
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: '#334155',
+  statsContainer: { marginBottom: 32, paddingHorizontal: 20 },
+  statsGrid: { 
+    flexDirection: 'row', 
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 12,
   },
-  statIconWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+  statCard: {
+    width: (width - 40 - 12) / 2,
+    backgroundColor: '#1e293b',
+    borderRadius: 24,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
     marginBottom: 12,
   },
-  statValue: { fontSize: 26, fontWeight: '900', color: '#fff', marginTop: 4, letterSpacing: 0.3, fontFamily: 'Poppins-Bold' },
-  statLabel: { color: '#94a3b8', marginTop: 8, fontSize: 13, fontWeight: '700', fontFamily: 'Poppins-SemiBold' },
+  statIconWrapper: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  statValue: { 
+    fontSize: 26, 
+    fontWeight: '900', 
+    color: '#fff', 
+    marginTop: 10, 
+    letterSpacing: 0.3, 
+    fontFamily: 'Poppins-Bold',
+    textAlign: 'center',
+  },
+  statLabel: { 
+    color: '#94a3b8', 
+    marginTop: 8, 
+    fontSize: 14, 
+    fontWeight: '700', 
+    fontFamily: 'Poppins-SemiBold',
+    textAlign: 'center',
+  },
+  statCardWithProgress: { paddingBottom: 16 },
+  statProgressContainer: { marginTop: 10, width: '100%', alignItems: 'center' },
+  statProgressBar: { height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.15)', overflow: 'hidden', marginBottom: 4, width: '100%' },
+  statProgressFill: { height: '100%', backgroundColor: '#fff', borderRadius: 2 },
+  statProgressText: { fontSize: 9, color: 'rgba(255,255,255,0.8)', fontWeight: '700', fontFamily: 'Poppins-Bold' },
 
   // Quick Actions - Professional
-  section: { marginBottom: 20, paddingHorizontal: 20 },
-  sectionTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
+  section: { marginBottom: 32, paddingHorizontal: 20 },
+  sectionTitle: { fontSize: 24, fontWeight: '900', color: '#fff', letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
   sectionBadge: { 
     flexDirection: 'row', 
     alignItems: 'center', 
     gap: 4, 
     backgroundColor: 'rgba(6,182,212,0.1)', 
-    paddingHorizontal: 8, 
-    paddingVertical: 4, 
-    borderRadius: 8,
+    paddingHorizontal: 10, 
+    paddingVertical: 6, 
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(6,182,212,0.2)',
   },
   sectionBadgeText: { fontSize: 12, fontWeight: '800', color: '#06b6d4', fontFamily: 'Poppins-ExtraBold' },
-  quickGrid: { gap: 12 },
+  quickGrid: { gap: 14 },
   quickActionCard: { 
     backgroundColor: '#1e293b', 
-    borderRadius: 16, 
-    padding: 16, 
+    borderRadius: 20, 
+    padding: 20, 
     flexDirection: 'row', 
     alignItems: 'center', 
     borderWidth: 1, 
     borderColor: '#334155',
-    marginBottom: 10,
+    marginBottom: 0,
   },
   quickActionIconWrapper: { 
-    width: 60, 
-    height: 60, 
-    borderRadius: 14, 
+    width: 64, 
+    height: 64, 
+    borderRadius: 16, 
     alignItems: 'center', 
     justifyContent: 'center', 
-    marginRight: 16,
+    marginRight: 18,
   },
   quickActionIcon: { 
-    width: 44, 
-    height: 44, 
-    borderRadius: 10, 
+    width: 48, 
+    height: 48, 
+    borderRadius: 12, 
     alignItems: 'center', 
     justifyContent: 'center',
   },
@@ -1692,16 +1786,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   quickActionTitle: { 
-    fontSize: 17, 
+    fontSize: 18, 
     fontWeight: '900', 
     color: '#fff', 
     letterSpacing: 0.3,
     fontFamily: 'Poppins-Bold',
   },
   quickActionArrow: { 
-    width: 28, 
-    height: 28, 
-    borderRadius: 8, 
+    width: 32, 
+    height: 32, 
+    borderRadius: 10, 
     backgroundColor: '#334155', 
     alignItems: 'center', 
     justifyContent: 'center',
@@ -1711,22 +1805,27 @@ const styles = StyleSheet.create({
   activityRow: { 
     flexDirection: 'row', 
     alignItems: 'center', 
-    marginBottom: 14, 
+    marginBottom: 16, 
     backgroundColor: '#1e293b', 
-    borderRadius: 14, 
-    padding: 14, 
+    borderRadius: 18, 
+    padding: 18, 
     borderWidth: 1, 
     borderColor: '#334155',
   },
-  activityCircle: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
-  activityMsg: { fontWeight: '900', color: '#fff', fontSize: 15, fontFamily: 'Poppins-Bold' },
-  activityTime: { color: '#64748b', marginTop: 6, fontSize: 13, fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
+  activityCircle: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', marginRight: 18 },
+  activityMsg: { fontWeight: '900', color: '#fff', fontSize: 16, fontFamily: 'Poppins-Bold' },
+  activityTime: { color: '#64748b', marginTop: 8, fontSize: 13, fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
 
-  emptyState: { alignItems: 'center', padding: 40, backgroundColor: '#1e293b', borderRadius: 16, borderWidth: 1, borderColor: '#334155' },
-  emptyText: { color: '#64748b', marginTop: 12, fontSize: 14, fontFamily: 'Poppins-Regular' },
+  emptyState: { alignItems: 'center', padding: 48, backgroundColor: '#1e293b', borderRadius: 20, borderWidth: 1, borderColor: '#334155' },
+  emptyText: { color: '#64748b', marginTop: 16, fontSize: 15, fontFamily: 'Poppins-Regular' },
 
+  // Error Banner
+  errorBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e293b', borderRadius: 20, padding: 20, marginBottom: 24, marginHorizontal: 20, borderWidth: 1, borderColor: '#ef4444' },
+  errorTitle: { fontSize: 15, fontWeight: '900', color: '#fff', marginBottom: 6, fontFamily: 'Poppins-Bold' },
+  errorText: { fontSize: 13, color: '#fca5a5', fontFamily: 'Poppins-Regular' },
+  
   // Permission
-  permissionBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e293b', borderRadius: 16, padding: 16, marginBottom: 18, marginHorizontal: 20, borderWidth: 1, borderColor: '#f59e0b' },
+  permissionBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e293b', borderRadius: 20, padding: 20, marginBottom: 24, marginHorizontal: 20, borderWidth: 1, borderColor: '#f59e0b' },
   permissionTitle: { fontSize: 15, fontWeight: '900', color: '#fff', marginBottom: 6, fontFamily: 'Poppins-Bold' },
   permissionText: { fontSize: 13, color: '#94a3b8', fontFamily: 'Poppins-Regular' },
   permissionButton: { backgroundColor: '#f59e0b', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
@@ -1736,12 +1835,12 @@ const styles = StyleSheet.create({
   articleCard: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 12, alignItems: 'center' },
 
   // Blog Layout
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  seeAllText: { color: '#06b6d4', fontWeight: '900', fontSize: 14, fontFamily: 'Poppins-Bold' },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+  seeAllText: { color: '#06b6d4', fontWeight: '900', fontSize: 15, fontFamily: 'Poppins-Bold' },
   blogCard: { 
     backgroundColor: '#1e293b', 
-    borderRadius: 20, 
-    marginBottom: 18, 
+    borderRadius: 24, 
+    marginBottom: 20, 
     overflow: 'hidden', 
     borderWidth: 1, 
     borderColor: '#334155',
@@ -1750,9 +1849,9 @@ const styles = StyleSheet.create({
   blogImagePlaceholder: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   blogBadge: { position: 'absolute', top: 16, right: 16, backgroundColor: '#10b981', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
   blogBadgeText: { color: '#fff', fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
-  blogContent: { padding: 20 },
-  blogTitle: { fontSize: 20, fontWeight: '900', color: '#fff', marginBottom: 10, letterSpacing: 0.3, fontFamily: 'Poppins-Bold' },
-  blogExcerpt: { fontSize: 14, color: '#94a3b8', lineHeight: 22, marginBottom: 14, fontFamily: 'Poppins-Regular' },
+  blogContent: { padding: 24 },
+  blogTitle: { fontSize: 21, fontWeight: '900', color: '#fff', marginBottom: 12, letterSpacing: 0.3, fontFamily: 'Poppins-Bold' },
+  blogExcerpt: { fontSize: 15, color: '#94a3b8', lineHeight: 24, marginBottom: 16, fontFamily: 'Poppins-Regular' },
   blogMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   blogAuthor: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   authorAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#334155', alignItems: 'center', justifyContent: 'center' },
@@ -1779,32 +1878,49 @@ const styles = StyleSheet.create({
   // Info sections
   infoSection: { 
     marginHorizontal: 20, 
-    marginBottom: 20, 
+    marginBottom: 32, 
     backgroundColor: '#1e293b', 
-    borderRadius: 20, 
-    padding: 24, 
+    borderRadius: 24, 
+    padding: 28, 
     borderWidth: 1, 
     borderColor: '#334155',
   },
-  infoTitle: { fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: 14, letterSpacing: 0.5 },
-  infoCard: { backgroundColor: '#1e293b', borderRadius: 16, padding: 20, marginBottom: 14, borderWidth: 1, borderColor: '#334155' },
-  infoText: { fontSize: 15, color: '#94a3b8', lineHeight: 24, fontFamily: 'Poppins-Regular' },
+  infoTitle: { fontSize: 24, fontWeight: '900', color: '#fff', marginBottom: 20, letterSpacing: 0.5 },
+  infoCard: { backgroundColor: '#1e293b', borderRadius: 20, padding: 24, marginBottom: 0, borderWidth: 1, borderColor: '#334155' },
+  infoText: { fontSize: 16, color: '#94a3b8', lineHeight: 26, fontFamily: 'Poppins-Regular' },
 
   // Services
-  servicesSection: { marginHorizontal: 20, marginBottom: 20 },
-  servicesGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  servicesSection: { marginHorizontal: 20, marginBottom: 32 },
+  servicesGrid: { flexDirection: 'column', gap: 14 },
   serviceCard: { 
-    width: '48%', 
+    width: '100%', 
     backgroundColor: '#1e293b', 
-    borderRadius: 18, 
-    padding: 20, 
-    marginBottom: 14, 
-    alignItems: 'center', 
+    borderRadius: 24, 
+    padding: 24, 
+    marginBottom: 0, 
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1, 
     borderColor: '#334155',
+    shadowColor: '#06b6d4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  serviceTitle: { fontSize: 16, fontWeight: '900', color: '#fff', marginTop: 10, textAlign: 'center', letterSpacing: 0.3, fontFamily: 'Poppins-Bold' },
-  serviceDesc: { fontSize: 13, color: '#94a3b8', marginTop: 6, textAlign: 'center', fontFamily: 'Poppins-Regular' },
+  serviceIconWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 18,
+  },
+  serviceContent: {
+    flex: 1,
+  },
+  serviceTitle: { fontSize: 18, fontWeight: '900', color: '#fff', textAlign: 'left', letterSpacing: 0.3, fontFamily: 'Poppins-Bold' },
+  serviceDesc: { fontSize: 14, color: '#94a3b8', marginTop: 6, textAlign: 'left', fontFamily: 'Poppins-Regular' },
 
   // Contact - Modern Design
   contactSection: { marginHorizontal: 20, marginBottom: 30 },
@@ -1843,21 +1959,21 @@ const styles = StyleSheet.create({
   },
   modernContactCard: {
     backgroundColor: '#1e293b',
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 14,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#334155',
   },
   modernContactIconWrapper: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+    width: 60,
+    height: 60,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
+    marginRight: 18,
   },
   modernContactContent: {
     flex: 1,
@@ -1872,15 +1988,15 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-SemiBold',
   },
   modernContactValue: {
-    fontSize: 15,
+    fontSize: 16,
     color: '#fff',
     fontWeight: '800',
     fontFamily: 'Poppins-ExtraBold',
   },
   modernContactArrow: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 14,
     backgroundColor: '#334155',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2019,8 +2135,8 @@ const styles = StyleSheet.create({
   },
   planCard: {
     backgroundColor: '#1e293b',
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: 24,
+    padding: 24,
     borderWidth: 1,
     borderColor: '#334155',
     position: 'relative',

@@ -27,12 +27,12 @@ import type { Region } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState } from '../../components/EmptyState';
 import LeafletMap from '../../components/leaflet-map';
+import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
 import ProfileBadge from '../../components/ProfileBadge';
 import { SkeletonList } from '../../components/SkeletonLoader';
-import { getApiBase } from '../../utils/api';
 import { authFetch } from '../../utils/auth';
 
-const API_BASE = getApiBase();
+// API_BASE removed - using authFetch which handles base URL
 
 /* ---------- Types ---------- */
 interface Group {
@@ -541,8 +541,12 @@ export default function GroupsScreen() {
   }, []);
 
   React.useEffect(() => {
-    if (userId) loadGroups();
-    else setLoading(false);
+    if (userId) {
+      loadGroups();
+    } else {
+      // userId yoksa hemen loading'i false yap
+      setLoading(false);
+    }
   }, [userId]);
 
   // Ekran odaklandığında (tab'a geri dönüldüğünde) grupları yenile
@@ -556,11 +560,20 @@ export default function GroupsScreen() {
     }, [userId])
   );
 
-  const loadGroups = async () => {
-    if (!userId) return setLoading(false);
+  const loadGroups = React.useCallback(async () => {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
+      // Timeout ekle (10 saniye)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
       const response = await authFetch(`/groups/user/${userId}/active`);
+      clearTimeout(timeoutId);
+      
       if (response.ok) {
         const data = await response.json();
         const userGroups = data.data || data;
@@ -571,13 +584,19 @@ export default function GroupsScreen() {
     } catch (error) {
       console.error('[GroupsScreen] loadGroups error', error);
       setGroups([]);
-      if (error instanceof Error && error.message.includes('fetch')) {
-        showMessage('error', 'Ağ hatası: Gruplar yüklenemedi');
-      }
-    } finally {
+      // Hata durumunda loading'i hemen false yap
       setLoading(false);
+      if (error instanceof Error) {
+        if (error.message.includes('Network request failed') || error.message.includes('Failed to fetch') || error.name === 'AbortError') {
+          showMessage('error', 'Bağlantı hatası. Lütfen internet bağlantınızı kontrol edin.');
+        } else if (error.message.includes('fetch')) {
+          showMessage('error', 'Ağ hatası: Gruplar yüklenemedi');
+        }
+      }
+      return;
     }
-  };
+    setLoading(false);
+  }, [userId, showMessage]);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -675,28 +694,6 @@ export default function GroupsScreen() {
     }
   };
 
-  const doDelete = async (group: Group) => {
-    try {
-      const res = await authFetch(`/groups/${group.id}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminUserId: userId }),
-      });
-      if (res.ok) {
-        setGroups(prev => prev.filter(g => g.id !== group.id));
-        showMessage('success', 'Grup silindi');
-      } else {
-        const err = await res.json().catch(() => ({} as any));
-        let msg = (err as any).error || 'Silme işlemi başarısız oldu';
-        if (String(msg).toLowerCase().includes('admin access')) msg = 'Bu işlemi yalnızca yöneticiler yapabilir.';
-        showMessage('error', msg);
-      }
-    } catch (e) {
-      console.error('[GroupsScreen] doDelete error', e);
-      showMessage('error', 'Ağ hatası: Silinemedi');
-    }
-  };
-
   // open confirm modal wrappers
   const leaveGroup = (group: Group) => {
     setConfirmState({
@@ -711,18 +708,7 @@ export default function GroupsScreen() {
     });
   };
 
-  const deleteGroup = (group: Group) => {
-    setConfirmState({
-      visible: true,
-      title: `"${group.name}" grubunu sil?`,
-      description: 'Grubu kalıcı olarak silmek istiyor musunuz? Tüm üyeler çıkarılacak.',
-      destructive: true,
-      onConfirm: async () => {
-        setConfirmState(s => ({ ...s, visible: false }));
-        await doDelete(group);
-      }
-    });
-  };
+  // deleteGroup removed - not used (doDelete is called directly)
 
   const handleGroupCreated = (group: Group) => {
     console.log('[Groups] Group created:', group);
@@ -747,9 +733,44 @@ export default function GroupsScreen() {
             <Text style={styles.subtitle}>Konum paylaşım gruplarını yönetin</Text>
           </View>
           <View style={styles.headerButtons}>
-            {profileName ? (<ProfileBadge name={profileName} size={48} />) : null}
-            <Pressable onPress={() => setShowJoinModal(true)} style={[styles.headerButton, styles.headerJoinButton]}><Ionicons name="person-add" size={20} color="#fff" /></Pressable>
-            <Pressable onPress={() => setShowCreateModal(true)} style={[styles.headerButton, styles.headerCreateButton]}><Ionicons name="add" size={24} color="#fff" /></Pressable>
+            <NetworkStatusIcon size={22} />
+            <Pressable 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push('/(tabs)/profile');
+              }}
+              style={({ pressed }) => [
+                styles.profileButton,
+                pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }
+              ]}
+              android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true }}
+            >
+              {profileName ? (
+                <ProfileBadge name={profileName} size={48} />
+              ) : (
+                <View style={[styles.profileButtonFallback, { width: 48, height: 48, borderRadius: 24 }]}>
+                  <Ionicons name="person" size={24} color="#fff" />
+                </View>
+              )}
+            </Pressable>
+            <Pressable 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowJoinModal(true);
+              }} 
+              style={[styles.headerButton, styles.headerJoinButton]}
+            >
+              <Ionicons name="person-add" size={20} color="#fff" />
+            </Pressable>
+            <Pressable 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowCreateModal(true);
+              }} 
+              style={[styles.headerButton, styles.headerCreateButton]}
+            >
+              <Ionicons name="add" size={24} color="#fff" />
+            </Pressable>
           </View>
         </View>
       </LinearGradient>
@@ -821,17 +842,79 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
   subtitle: { fontSize: 12, color: 'rgba(255,255,255,0.9)', marginTop: 2, fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
 
-  messageBar: { position: 'absolute', top: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 80 : 100, left: 16, right: 16, zIndex: 999, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  messageText: { color: '#fff', fontWeight: '600', textAlign: 'center', fontFamily: 'Poppins-SemiBold' },
-  messageSuccess: { backgroundColor: '#16a34a' },
-  messageError: { backgroundColor: '#dc2626' },
-  messageInfo: { backgroundColor: '#2563eb' },
+  messageBar: { 
+    position: 'absolute', 
+    top: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 80 : 100, 
+    left: 20,
+    right: 20,
+    width: '90%',
+    maxWidth: 400,
+    alignSelf: 'center',
+    zIndex: 999, 
+    paddingVertical: 14, 
+    paddingHorizontal: 16, 
+    borderRadius: 16, 
+    alignItems: 'center', 
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 18,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  messageText: { 
+    color: '#fff', 
+    fontWeight: '700', 
+    textAlign: 'center', 
+    fontFamily: 'Poppins-SemiBold',
+    fontSize: 14,
+    letterSpacing: 0.3,
+    lineHeight: 20,
+  },
+  messageSuccess: { 
+    backgroundColor: '#16a34a',
+    shadowColor: '#16a34a',
+    borderTopWidth: 2,
+    borderTopColor: 'rgba(22, 163, 74, 0.5)',
+  },
+  messageError: { 
+    backgroundColor: '#dc2626',
+    shadowColor: '#dc2626',
+    borderTopWidth: 2,
+    borderTopColor: 'rgba(220, 38, 38, 0.5)',
+  },
+  messageInfo: { 
+    backgroundColor: '#2563eb',
+    shadowColor: '#2563eb',
+    borderTopWidth: 2,
+    borderTopColor: 'rgba(37, 99, 235, 0.5)',
+  },
 
-  headerButtons: { flexDirection: 'row', gap: 6 },
+  headerButtons: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  profileButton: {
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+  profileButtonFallback: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
   profileBadge: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
   profileBadgeText: { color: '#fff', fontWeight: '900', fontSize: 14, fontFamily: 'Poppins-Bold' },
-  headerButton: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
-  headerCreateButton: { backgroundColor: 'rgba(255,255,255,0.2)' }, headerJoinButton: { backgroundColor: 'rgba(255,255,255,0.15)' },
+  headerButton: { 
+    width: 50, 
+    height: 50, 
+    borderRadius: 25, 
+    alignItems: 'center', 
+    justifyContent: 'center',
+  },
+  headerCreateButton: { backgroundColor: 'rgba(255,255,255,0.2)' }, 
+  headerJoinButton: { backgroundColor: 'rgba(255,255,255,0.15)' },
 
   content: { flex: 1, padding: 12, backgroundColor: '#0f172a' },
 
@@ -839,16 +922,11 @@ const styles = StyleSheet.create({
 
   groupCard: { 
     backgroundColor: '#1e293b', 
-    borderRadius: 20, 
-    padding: 20, 
-    marginBottom: 14, 
+    borderRadius: 24, 
+    padding: 24, 
+    marginBottom: 16, 
     borderWidth: 1, 
     borderColor: '#334155',
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
   },
   groupHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   groupName: { fontSize: 18, fontWeight: '900', color: '#fff', flex: 1, letterSpacing: 0.4, fontFamily: 'Poppins-Bold' },

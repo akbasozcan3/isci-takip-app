@@ -21,6 +21,7 @@ public class RestTemplateConfig {
         connectionManager.setMaxTotal(20);
         connectionManager.setDefaultMaxPerRoute(10);
 
+        @SuppressWarnings("deprecation")
         RequestConfig requestConfig = RequestConfig.custom()
             .setConnectTimeout(Timeout.of(5, TimeUnit.SECONDS))
             .setResponseTimeout(Timeout.of(5, TimeUnit.SECONDS))

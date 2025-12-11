@@ -96,10 +96,9 @@ public class ApiController {
         try {
             String url = nodejsServiceUrl + "/api/billing/history?user_id=" + user_id;
             @SuppressWarnings("unchecked")
-            ResponseEntity<Map> response = restTemplate.getForEntity(url, Map.class);
+            ResponseEntity<Map<String, Object>> response = (ResponseEntity<Map<String, Object>>) (ResponseEntity<?>) restTemplate.getForEntity(url, Map.class);
             
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                @SuppressWarnings("unchecked")
                 Map<String, Object> body = (Map<String, Object>) response.getBody();
                 Map<String, Object> result = new HashMap<>();
                 result.put("user_id", user_id);

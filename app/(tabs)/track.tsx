@@ -28,6 +28,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { io, Socket } from 'socket.io-client';
+import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
 import { Toast, useToast } from '../../components/Toast';
 import TrackLeafletMap from '../../components/TrackLeafletMap';
 import mapTheme from '../../components/ui/mapTheme';
@@ -147,7 +148,6 @@ export default function TrackScreen(): React.JSX.Element {
   const [mapError, setMapError] = React.useState<Error | null>(null);
   // --- state & refs (kept your logic) ---
   const [hasPermission, setHasPermission] = React.useState<boolean | null>(null);
-  const [bgPermission, setBgPermission] = React.useState<boolean>(false);
   const [isTracking, setIsTracking] = React.useState(false);
   const [coords, setCoords] = React.useState<Coord | null>(null);
   const [accuracyMeters, setAccuracyMeters] = React.useState<number | null>(null);
@@ -167,8 +167,7 @@ export default function TrackScreen(): React.JSX.Element {
   const [searchModalVisible, setSearchModalVisible] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [searchResults, setSearchResults] = React.useState<Array<{ workerId: string; name?: string | null; phone?: string | null; coords: Coord }>>([]);
-  const [activeCount, setActiveCount] = React.useState<number>(0);
-  const [zoomSlider, setZoomSlider] = React.useState<number>(0.6);
+  const [zoomSlider] = React.useState<number>(0.6);
   const [currentRegion, setCurrentRegion] = React.useState({
     latitude: 39.0,
     longitude: 35.2433,
@@ -196,7 +195,7 @@ export default function TrackScreen(): React.JSX.Element {
     reason?: string;
   } | null>(null);
   const [vehicleMode, setVehicleMode] = React.useState(false);
-  const [groupVehicles, setGroupVehicles] = React.useState<Array<{
+  const [groupVehicles] = React.useState<Array<{
     userId: string;
     name: string;
     isInVehicle: boolean;
@@ -216,7 +215,12 @@ export default function TrackScreen(): React.JSX.Element {
     color: string;
     location?: { lat: number; lng: number; timestamp: number };
   } | null>(null);
-  const [loadingActivity, setLoadingActivity] = React.useState(false);
+  const [currentGeocode, setCurrentGeocode] = React.useState<{
+    city: string;
+    province: string;
+    district?: string;
+    fullAddress?: string;
+  } | null>(null);
   
   const socketRef = React.useRef<Socket | null>(null);
 
@@ -233,7 +237,7 @@ export default function TrackScreen(): React.JSX.Element {
     () => ({ latitude: TURKEY_CENTER.latitude, longitude: TURKEY_CENTER.longitude, latitudeDelta: 13.0, longitudeDelta: 20.0 }),
     [TURKEY_CENTER]
   );
-  const clamp = React.useCallback((value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value)), []);
+  // clamp removed - not used
   const MIN_DELTA = 0.004;
   const MAX_DELTA = 0.12;
   const computedDelta = MIN_DELTA + (1 - zoomSlider) * (MAX_DELTA - MIN_DELTA);
@@ -247,7 +251,6 @@ export default function TrackScreen(): React.JSX.Element {
     };
   }, [coords, currentRegion, TURKEY_REGION, computedDelta]);
 
-  const headerY = React.useRef(new Animated.Value(0)).current;
   const pulse = React.useRef(new Animated.Value(0)).current;
   const fabScale = React.useRef(new Animated.Value(1)).current;
 
@@ -304,12 +307,9 @@ export default function TrackScreen(): React.JSX.Element {
       }
 
       try {
-        const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
-        if (!mounted) return;
-        setBgPermission(bgStatus === 'granted');
+        await Location.requestBackgroundPermissionsAsync();
       } catch {
-        if (!mounted) return;
-        setBgPermission(false);
+        // Background permission request failed
       }
 
       try {
@@ -324,7 +324,12 @@ export default function TrackScreen(): React.JSX.Element {
         try {
           const trackInfoSeen = await SecureStore.getItemAsync('trackInfoSeen');
           if (!trackInfoSeen) {
-            setTimeout(() => setShowTrackInfo(true), 2000);
+            // Modal'ı daha sonra göster, hemen değil
+            setTimeout(() => {
+              if (mounted) {
+                setShowTrackInfo(true);
+              }
+            }, 3000);
           }
         } catch {}
         try {
@@ -410,7 +415,6 @@ export default function TrackScreen(): React.JSX.Element {
     if (!workerId) return;
     
     try {
-      setLoadingActivity(true);
       const params = new URLSearchParams({ deviceId: workerId });
       if (selectedGroup) {
         params.append('groupId', selectedGroup.id);
@@ -440,8 +444,6 @@ export default function TrackScreen(): React.JSX.Element {
       }
     } catch (error: any) {
       console.error('[Track] Activity status check error:', error);
-    } finally {
-      setLoadingActivity(false);
     }
   }, [workerId, selectedGroup, activityStatus, showInfo]);
 
@@ -479,21 +481,7 @@ export default function TrackScreen(): React.JSX.Element {
     }
   }, [workerId, selectedGroup, vehicleMode, showInfo]);
 
-  const loadGroupVehicles = React.useCallback(async (groupId: string) => {
-    if (!groupId || !vehicleMode) return;
-    
-    try {
-      const res = await authFetch(`/api/location/vehicle/group?groupId=${groupId}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.data && data.data.vehicles) {
-          setGroupVehicles(data.data.vehicles);
-        }
-      }
-    } catch (error: any) {
-      console.error('[Track] Load group vehicles error:', error);
-    }
-  }, [vehicleMode]);
+  // loadGroupVehicles removed - not used
 
   const loadGroupMembers = React.useCallback(async (groupId: string) => {
     if (!groupId) {
@@ -940,7 +928,7 @@ export default function TrackScreen(): React.JSX.Element {
 
       const sub = await Location.watchPositionAsync(
         { accuracy: accuracyRef.current, timeInterval, distanceInterval },
-        (pos) => {
+        async (pos) => {
           console.log('[Track] Location update:', pos.coords.latitude, pos.coords.longitude);
           LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
           const next = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
@@ -975,7 +963,19 @@ export default function TrackScreen(): React.JSX.Element {
 
           pushLocationToServer({ workerId, timestamp: pos.timestamp, coords: { latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy ?? undefined, heading: pos.coords.heading ?? undefined, speed: pos.coords.speed ?? undefined } });
           
-          // Gruba da paylaş
+          SecureStore.getItemAsync('token').then(token => {
+            return fetch(`${API_BASE}/api/location/geocode?lat=${pos.coords.latitude}&lng=${pos.coords.longitude}`, {
+              headers: { 'Authorization': `Bearer ${token || ''}` }
+            });
+          })
+            .then(res => res.json())
+            .then(data => {
+              if (data.data?.geocode) {
+                setCurrentGeocode(data.data.geocode);
+              }
+            })
+            .catch(err => console.warn('[Track] Geocoding fetch error:', err));
+          
           shareLocationToGroup(pos);
         }
       );
@@ -1190,8 +1190,7 @@ export default function TrackScreen(): React.JSX.Element {
           }
         }
         if (r2.ok) {
-          const data2: { count: number } = await r2.json();
-          setActiveCount(data2.count || 0);
+          await r2.json();
         } else {
           if (r2.status !== 429) {
             console.warn('[Track] Fetch active count failed:', r2.status);
@@ -1223,16 +1222,7 @@ export default function TrackScreen(): React.JSX.Element {
     return `${kmh.toFixed(1)} km/s`;
   }
 
-  const fitToTurkey = React.useCallback(() => {
-    if (!mapRef.current) return;
-    const resetRegion = { ...TURKEY_REGION, latitudeDelta: 5.5, longitudeDelta: 7 };
-    mapRef.current.animateToRegion(resetRegion, 700);
-    setCurrentRegion(resetRegion);
-    setZoomSlider(0.35);
-    setFollow(false);
-    Animated.sequence([Animated.timing(fabScale, { toValue: 1.06, duration: 120, useNativeDriver: true }), Animated.spring(fabScale, { toValue: 1, friction: 6, useNativeDriver: true })]).start();
-    showInfo('Türkiye haritasına odaklanıldı');
-  }, [showInfo, TURKEY_REGION]);
+  // fitToTurkey removed - not used
 
   const centerOnUser = React.useCallback((u: RemoteUser) => {
     if (!mapRef.current) return;
@@ -1242,28 +1232,6 @@ export default function TrackScreen(): React.JSX.Element {
     setFollow(false);
   }, []);
 
-  const zoomMap = React.useCallback((direction: 'in' | 'out') => {
-    setZoomSlider((prev) => {
-      const shift = direction === 'in' ? 0.12 : -0.12;
-      const next = clamp(prev + shift);
-      const delta = MIN_DELTA + (1 - next) * (MAX_DELTA - MIN_DELTA);
-      const center = coords || currentRegion || TURKEY_CENTER;
-      if (mapRef.current) {
-        mapRef.current.animateToRegion(
-          {
-            latitude: center.latitude,
-            longitude: center.longitude,
-            latitudeDelta: delta,
-            longitudeDelta: delta,
-          },
-          350
-        );
-      }
-      showInfo(direction === 'in' ? 'Yakınlaştırıldı' : 'Uzaklaştırıldı');
-      return next;
-    });
-  }, [clamp, coords, currentRegion, showInfo, TURKEY_CENTER]);
-
   // --- UI ---
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -1272,9 +1240,20 @@ export default function TrackScreen(): React.JSX.Element {
       <LinearGradient colors={["#06b6d4", "#0ea5a4"]} style={styles.headerWrap} start={[0, 0]} end={[1, 1]}>
         <View style={styles.headerRow}>
           <View style={styles.brandRow}>
-            <View style={styles.headerAvatar}>
+            <NetworkStatusIcon size={20} />
+            <Pressable 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push('/(tabs)/profile');
+              }}
+              style={({ pressed }) => [
+                styles.headerAvatar,
+                pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }
+              ]}
+              android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true }}
+            >
               <Ionicons name="navigate-circle" size={24} color="#fff" />
-            </View>
+            </Pressable>
             <View style={{ marginLeft: 10, flex: 1, minWidth: 0 }}>
               <Text style={styles.title} numberOfLines={1}>GPS Canlı Takip</Text>
               <View style={styles.headerStats}>
@@ -1292,6 +1271,16 @@ export default function TrackScreen(): React.JSX.Element {
           </View>
 
           <View style={styles.headerActions}>
+            <Pressable 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push('/(tabs)/profile');
+              }}
+              style={[styles.iconBtn, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+              accessibilityLabel="Profil"
+            >
+              <Ionicons name="person" size={16} color="#fff" />
+            </Pressable>
             <Pressable 
               style={[styles.iconBtn, selectedGroup && { backgroundColor: 'rgba(16, 185, 129, 0.3)' }]} 
               onPress={() => setShowGroupSelector(true)} 
@@ -1435,7 +1424,7 @@ export default function TrackScreen(): React.JSX.Element {
                   style={[styles.permissionWarningButton, styles.permissionWarningButtonSecondary]}
                   android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
                 >
-                  <Ionicons name="settings" size={18} color="#06b6d4" style={{ marginRight: 6 }} />
+                  <Ionicons name="person" size={18} color="#06b6d4" style={{ marginRight: 6 }} />
                   <Text style={styles.permissionWarningButtonTextSecondary}>Ayarlar</Text>
                 </Pressable>
               )}
@@ -1477,8 +1466,8 @@ export default function TrackScreen(): React.JSX.Element {
                     activityIcon: m.activity?.icon || null
                   })),
                 ...(vehicleMode && groupVehicles.length > 0 ? groupVehicles
-                  .filter(v => v.isInVehicle && v.userId !== workerId)
-                  .map(v => ({
+                  .filter((v: { isInVehicle: boolean; userId: string }) => v.isInVehicle && v.userId !== workerId)
+                  .map((v: { userId: string; name: string; location: { lat: number; lng: number }; status: string; speed: number }) => ({
                     id: `vehicle_${v.userId}`,
                     lat: v.location.lat,
                     lng: v.location.lng,
@@ -1748,9 +1737,17 @@ export default function TrackScreen(): React.JSX.Element {
                             </Text>
                           </View>
                           {member.location && isFinite(member.location.lat) && isFinite(member.location.lng) && (
-                            <Text style={styles.memberCalloutLocation}>
-                              {member.location.lat.toFixed(5)}, {member.location.lng.toFixed(5)}
-                            </Text>
+                            <>
+                              {(member.location as any).geocode && (
+                                <Text style={[styles.memberCalloutLocation, { color: '#06b6d4', fontWeight: '700', marginBottom: 4 }]}>
+                                  {(member.location as any).geocode.city || ''}
+                                  {(member.location as any).geocode.province ? `, ${(member.location as any).geocode.province}` : ''}
+                                </Text>
+                              )}
+                              <Text style={styles.memberCalloutLocation}>
+                                {member.location.lat.toFixed(5)}, {member.location.lng.toFixed(5)}
+                              </Text>
+                            </>
                           )}
                         </View>
                       </View>
@@ -1917,6 +1914,37 @@ export default function TrackScreen(): React.JSX.Element {
             </Pressable>
           </View>
 
+          {currentGeocode && (
+            <View style={{ backgroundColor: '#1e293b', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#334155' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <Ionicons name="location" size={18} color="#06b6d4" style={{ marginRight: 8 }} />
+                <Text style={{ color: '#06b6d4', fontWeight: '700', fontSize: 14 }}>Konum Bilgisi</Text>
+              </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {currentGeocode.city && (
+                  <View style={{ backgroundColor: '#334155', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
+                    <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>Şehir</Text>
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{currentGeocode.city}</Text>
+                  </View>
+                )}
+                {currentGeocode.province && (
+                  <View style={{ backgroundColor: '#334155', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
+                    <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>İl</Text>
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{currentGeocode.province}</Text>
+                  </View>
+                )}
+                {currentGeocode.district && (
+                  <View style={{ backgroundColor: '#334155', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
+                    <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>İlçe</Text>
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{currentGeocode.district}</Text>
+                  </View>
+                )}
+              </View>
+              {currentGeocode.fullAddress && (
+                <Text style={{ color: '#64748b', fontSize: 12, marginTop: 8 }} numberOfLines={2}>{currentGeocode.fullAddress}</Text>
+              )}
+            </View>
+          )}
           <View style={styles.metricsRow}>
             <View style={styles.metricItem}><Text style={styles.metricLabel}>Lat</Text><Text style={styles.metricVal}>{coords?.latitude != null ? coords.latitude.toFixed(6) : '-'}</Text></View>
             <View style={styles.metricItem}><Text style={styles.metricLabel}>Lng</Text><Text style={styles.metricVal}>{coords?.longitude != null ? coords.longitude.toFixed(6) : '-'}</Text></View>
@@ -2036,22 +2064,32 @@ export default function TrackScreen(): React.JSX.Element {
         onHide={hideToast}
       />
 
-      {showTrackInfo && (
-        <Modal visible={showTrackInfo} transparent animationType="fade" onRequestClose={() => setShowTrackInfo(false)}>
+      <Modal 
+        visible={showTrackInfo} 
+        transparent={true}
+        animationType="fade" 
+        onRequestClose={() => {
+          setShowTrackInfo(false);
+        }}
+        statusBarTranslucent={false}
+        presentationStyle="overFullScreen"
+      >
+        <Pressable 
+          style={styles.trackInfoOverlay} 
+          onPress={() => {
+            setShowTrackInfo(false);
+          }}
+        >
           <Pressable 
-            style={styles.trackInfoOverlay} 
-            onPress={() => setShowTrackInfo(false)}
+            style={styles.trackInfoModal} 
+            onPress={(e) => e.stopPropagation()}
           >
-            <Pressable 
-              style={styles.trackInfoModal} 
-              onPress={(e) => e.stopPropagation()}
+            <LinearGradient
+              colors={['#0f172a', '#1e293b', '#0f172a']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.trackInfoGradient}
             >
-              <LinearGradient
-                colors={['#0f172a', '#1e293b', '#0f172a']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.trackInfoGradient}
-              >
                 {/* Header with animated icon */}
                 <View style={styles.trackInfoHeader}>
                   <Animated.View 
@@ -2264,7 +2302,6 @@ export default function TrackScreen(): React.JSX.Element {
             </Pressable>
           </Pressable>
         </Modal>
-      )}
     </SafeAreaView>
   );
 }
@@ -2301,7 +2338,7 @@ const styles = StyleSheet.create({
   statText: { color: 'rgba(255,255,255,0.95)', fontWeight: '700', fontSize: 11, fontFamily: 'Poppins-Bold' },
   headerStatusRow: { paddingTop: 4, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.15)' },
 
-  mapCard: { height: 420, marginHorizontal: 14, borderRadius: 18, overflow: 'hidden', backgroundColor: '#1e293b', marginTop: 12, marginBottom: 12, borderWidth: 1, borderColor: '#334155', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
+  mapCard: { height: 420, marginHorizontal: 14, borderRadius: 18, overflow: 'hidden', backgroundColor: '#1e293b', marginTop: 12, marginBottom: 12, borderWidth: 1, borderColor: '#334155' },
   map: { width: '100%', height: '100%' },
   // Profesyonel GPS Marker Stilleri - Optimize Edilmiş ve Stabil
   professionalMarkerWrapper: {
@@ -2336,11 +2373,6 @@ const styles = StyleSheet.create({
     borderColor: mapTheme.markers.user.borderColor,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: mapTheme.colors.gps.marker,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 8,
   },
   markerSpeedBadge: {
     position: 'absolute',
@@ -2352,11 +2384,6 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderWidth: 2,
     borderColor: mapTheme.colors.gps.marker,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 4,
     minWidth: 22,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2377,11 +2404,6 @@ const styles = StyleSheet.create({
     backgroundColor: mapTheme.colors.gps.active,
     borderWidth: 2,
     borderColor: '#fff',
-    shadowColor: mapTheme.colors.gps.active,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.5,
-    shadowRadius: 2,
-    elevation: 4,
   },
   // Profesyonel Callout - Zengin Bilgi Gösterimi
   professionalCallout: {
@@ -2390,7 +2412,6 @@ const styles = StyleSheet.create({
     padding: mapTheme.callout.padding,
     minWidth: 240,
     maxWidth: 280,
-    ...mapTheme.callout.shadow,
     borderWidth: 1,
     borderColor: mapTheme.callout.borderColor,
   },
@@ -2475,7 +2496,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: mapTheme.markers.group.borderWidth,
     borderColor: mapTheme.markers.group.borderColor,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
   },
   memberOnlineDot: {
     position: 'absolute',
@@ -2503,7 +2523,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: mapTheme.markers.other.borderWidth,
     borderColor: mapTheme.markers.other.color,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2, elevation: 2,
   },
   
   // Grup Merkezi Marker Stilleri
@@ -2522,11 +2541,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: mapTheme.markers.center.borderWidth,
     borderColor: mapTheme.markers.center.borderColor,
-    shadowColor: mapTheme.markers.center.color,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 8,
     zIndex: 2,
   },
   groupCenterMarkerShadow: {
@@ -2545,11 +2559,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     minWidth: 200,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
   },
   memberCalloutHeader: {
     flexDirection: 'row',
@@ -2596,11 +2605,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     minWidth: 180,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
   },
   otherUserCalloutHeader: {
     flexDirection: 'row',
@@ -2641,11 +2645,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     minWidth: 220,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
   },
   groupCenterCalloutHeader: {
     flexDirection: 'row',
@@ -2733,11 +2732,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 14,
     borderRadius: 14,
     overflow: 'hidden',
-    shadowColor: '#7c3aed',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
   },
   groupInfoGradient: {
     flexDirection: 'row',
@@ -2767,11 +2761,6 @@ const styles = StyleSheet.create({
     padding: 18,
     borderWidth: 1.5,
     borderColor: '#f59e0b',
-    shadowColor: '#f59e0b',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8,
   },
   permissionWarningHeader: {
     flexDirection: 'row',
@@ -2806,11 +2795,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 12,
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
   },
   permissionWarningButtonSecondary: {
     backgroundColor: 'transparent',
@@ -2833,7 +2817,7 @@ const styles = StyleSheet.create({
   // Track Info Modal Styles
   trackInfoOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
+    backgroundColor: 'rgba(0,0,0,0.75)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
@@ -2846,14 +2830,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(6,182,212,0.3)',
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.5,
-    shadowRadius: 40,
-    elevation: 20,
+    backgroundColor: 'transparent',
   },
   trackInfoGradient: {
-    flex: 1,
+    minHeight: 400,
+    maxHeight: '90%',
   },
   trackInfoHeader: {
     flexDirection: 'row',
@@ -2872,11 +2853,6 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 8,
   },
   trackInfoHeaderText: {
     flex: 1,
@@ -2924,11 +2900,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
   },
   trackInfoStepNumberText: {
     color: '#fff',
@@ -3088,11 +3059,6 @@ const styles = StyleSheet.create({
   trackInfoButton: {
     borderRadius: 14,
     overflow: 'hidden',
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 8,
   },
   trackInfoButtonGradient: {
     flexDirection: 'row',
@@ -3113,11 +3079,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderRadius: 12,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   vehicleStatusGradient: {
     padding: 12,
