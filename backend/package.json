@@ -10,7 +10,8 @@
     "test": "node deploy-check.js",
     "verify-onesignal": "node scripts/verify-onesignal-key.js",
     "fix-onesignal": "node scripts/fix-onesignal-env.js",
-    "test-onesignal-auth": "node scripts/test-onesignal-auth.js"
+    "test-onesignal-auth": "node scripts/test-onesignal-auth.js",
+    "diagnose-onesignal": "node scripts/diagnose-onesignal.js"
   },
   "keywords": [
     "api",
