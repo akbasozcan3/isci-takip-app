@@ -116,13 +116,13 @@ export default function AnalyticsScreen() {
   });
 
   const [refreshing, setRefreshing] = React.useState(false);
-  const [userId, setUserId] = React.useState('');
+  const [, setUserId] = React.useState('');
   const [deviceId, setDeviceId] = React.useState('');
   const [dateRange, setDateRange] = React.useState<'7d' | '30d' | '90d' | 'all'>('30d');
   const [analytics, setAnalytics] = React.useState<AnalyticsData | null>(null);
   const [selectedTab, setSelectedTab] = React.useState<'overview' | 'routes' | 'patterns' | 'quality'>('overview');
   const [userName, setUserName] = React.useState('Kullanıcı');
-  const [planName, setPlanName] = React.useState('Free');
+  const [, setPlanName] = React.useState('Free');
   
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const slideAnim = React.useRef(new Animated.Value(20)).current;
