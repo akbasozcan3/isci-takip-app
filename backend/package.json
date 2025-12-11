@@ -32,6 +32,7 @@
     "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",
     "iyzipay": "^2.0.64",
+    "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.2",
     "node-fetch": "^2.6.7",
     "nodemailer": "^6.9.15",

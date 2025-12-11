@@ -161,8 +161,19 @@ router.get('/users/me', requireAuth, require('../modules/auth/auth.controller').
 router.post('/users/update-onesignal-id', requireAuth, require('../modules/auth/auth.controller').updateOnesignalPlayerId.bind(require('../modules/auth/auth.controller')));
 
 const locationController = require('../controllers/locationController');
-router.post('/location/store', requireAuth, validateCoordinates, asyncHandler(locationController.storeLocation.bind(locationController)));
-router.post('/locations', requireAuth, validateCoordinates, asyncHandler(locationController.storeLocation.bind(locationController)));
+// Import validation schemas
+const { schemas, validate } = require('../core/schemas/apiSchemas');
+
+router.post('/location/store', 
+  requireAuth, 
+  validate(schemas.storeLocation), 
+  asyncHandler(locationController.storeLocation.bind(locationController))
+);
+router.post('/locations', 
+  requireAuth, 
+  validate(schemas.storeLocation), 
+  asyncHandler(locationController.storeLocation.bind(locationController))
+);
 router.get('/location/analytics/advanced', locationController.getAdvancedAnalytics.bind(locationController));
 router.post('/location/share', requireAuth, locationController.createShareLink.bind(locationController));
 router.get('/location/find-by-phone', requireAuth, locationController.findLocationByPhone.bind(locationController));
@@ -202,7 +213,11 @@ router.get('/location/routes', requireAuth, locationController.listRoutes.bind(l
 router.post('/location/validate-input', requireAuth, locationController.validateInput.bind(locationController));
 // Messaging Controller
 const messagingController = require('../controllers/messagingController');
-router.post('/messages/send', requireAuth, asyncHandler(messagingController.sendMessage.bind(messagingController)));
+router.post('/messages/send', 
+  requireAuth, 
+  validate(schemas.sendMessage), 
+  asyncHandler(messagingController.sendMessage.bind(messagingController))
+);
 router.get('/messages', requireAuth, asyncHandler(messagingController.getMessages.bind(messagingController)));
 router.get('/messages/conversations', requireAuth, asyncHandler(messagingController.getConversations.bind(messagingController)));
 router.put('/messages/:messageId/read', requireAuth, asyncHandler(messagingController.markAsRead.bind(messagingController)));
@@ -296,7 +311,12 @@ router.post('/webhook/payment', billingController.handleWebhook.bind(billingCont
 
 const { checkLimit } = require('../core/middleware/subscriptionCheck');
 const groupController = require('../controllers/groupController');
-router.post('/groups', requireAuth, checkLimit('maxGroups'), groupController.createGroup.bind(groupController));
+router.post('/groups', 
+  requireAuth, 
+  checkLimit('maxGroups'), 
+  validate(schemas.createGroup), 
+  asyncHandler(groupController.createGroup.bind(groupController))
+);
 router.get('/groups/user/:userId/admin', requireAuth, validateUserId, groupController.getGroupsByAdmin.bind(groupController));
 router.get('/groups/user/:userId/active', requireAuth, validateUserId, groupController.getActiveGroupsForUser.bind(groupController));
 router.get('/groups/:groupId/requests', requireAuth, groupController.getRequests.bind(groupController));
