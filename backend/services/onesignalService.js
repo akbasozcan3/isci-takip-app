@@ -457,15 +457,28 @@ class OneSignalService {
               // Special handling for 403 errors (authentication issues)
               if (res.statusCode === 403) {
                 console.error('[OneSignalService] ❌ 403 Forbidden - Authentication failed');
-                console.error('[OneSignalService] 💡 Troubleshooting Steps:');
-                console.error('[OneSignalService]   1. Go to OneSignal Dashboard → Settings → Keys & IDs');
-                console.error('[OneSignalService]   2. Copy the REST API Key (starts with "os_v2_app_" or similar)');
-                console.error('[OneSignalService]   3. Set environment variable: ONESIGNAL_REST_API_KEY=your_key_here');
-                console.error('[OneSignalService]   4. Restart backend server');
-                console.error('[OneSignalService]   5. Verify App ID matches: ' + this.appId);
-                console.error('[OneSignalService]   6. Current API Key prefix:', this.apiKey.substring(0, 30) + '...');
-                console.error('[OneSignalService]   7. API Key length:', this.apiKey.length);
-                console.error('[OneSignalService]   8. Make sure API Key is NOT wrapped in quotes in .env file');
+                console.error('[OneSignalService]');
+                console.error('[OneSignalService] 🔍 Debugging Information:');
+                console.error('[OneSignalService]   - Endpoint:', endpoint);
+                console.error('[OneSignalService]   - Method:', method);
+                console.error('[OneSignalService]   - Auth Format Used: Key <api_key>');
+                console.error('[OneSignalService]   - App ID:', this.appId);
+                console.error('[OneSignalService]   - API Key Length:', cleanApiKey.length);
+                console.error('[OneSignalService]   - API Key Prefix:', cleanApiKey.substring(0, 20) + '...');
+                console.error('[OneSignalService]');
+                console.error('[OneSignalService] 💡 IMPORTANT: Verify API Key in OneSignal Dashboard');
+                console.error('[OneSignalService]   1. Go to https://onesignal.com → Your App');
+                console.error('[OneSignalService]   2. Settings → Keys & IDs');
+                console.error('[OneSignalService]   3. Check "REST API Key" - it should match your .env file');
+                console.error('[OneSignalService]   4. If key is different, copy the CORRECT key from dashboard');
+                console.error('[OneSignalService]   5. Update backend/.env: ONESIGNAL_REST_API_KEY=correct_key');
+                console.error('[OneSignalService]   6. Make sure App ID matches: ' + this.appId);
+                console.error('[OneSignalService]   7. Restart backend server');
+                console.error('[OneSignalService]');
+                console.error('[OneSignalService] ⚠️  If problem persists:');
+                console.error('[OneSignalService]   - Generate a NEW REST API Key in OneSignal dashboard');
+                console.error('[OneSignalService]   - Delete old key and create new one');
+                console.error('[OneSignalService]   - Update .env with the new key');
               }
               
               reject(new Error(`OneSignal API error (${res.statusCode}): ${errorMsg}`));
