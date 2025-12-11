@@ -22,11 +22,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
 import { useToast } from '../../components/Toast';
-import { getApiBase } from '../../utils/api';
 import { authFetch } from '../../utils/auth';
 import { shareLocation } from '../../utils/locationShare';
-
-const API_BASE = getApiBase();
 
 interface ActiveGroup {
   id: string;
@@ -65,7 +62,7 @@ interface Delivery {
 
 export default function LocationFeaturesScreen() {
   const router = useRouter();
-  const { showError, showSuccess, showWarning, showInfo } = useToast();
+  const { showError, showSuccess, showWarning } = useToast();
   
   const [fontsLoaded] = useFonts({
     'Poppins-Black': require('../assets/Poppins-Black.ttf'),

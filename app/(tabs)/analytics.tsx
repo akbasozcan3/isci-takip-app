@@ -92,7 +92,7 @@ interface AnalyticsData {
 
 export default function AnalyticsScreen() {
   const router = useRouter();
-  const { showError, showSuccess } = useToast();
+  const { showError } = useToast();
   
   const [fontsLoaded] = useFonts({
     'Poppins-Black': require('../assets/Poppins-Black.ttf'),
@@ -155,6 +155,7 @@ export default function AnalyticsScreen() {
       }, 300);
       return () => clearTimeout(timeoutId);
     }
+    return undefined;
   }, [deviceId, dateRange]);
 
   const loadUserData = React.useCallback(async () => {

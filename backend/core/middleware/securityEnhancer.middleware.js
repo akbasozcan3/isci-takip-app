@@ -169,12 +169,31 @@ function securityEnhancerMiddleware(req, res, next) {
       });
     }
 
-    // Sanitize request body
-    req.body = securityEnhancer.sanitizeInput(JSON.stringify(req.body));
-    try {
-      req.body = JSON.parse(req.body);
-    } catch (e) {
-      // If parsing fails, keep original body
+    // Sanitize request body (only if it's a string)
+    if (typeof req.body === 'string') {
+      req.body = securityEnhancer.sanitizeInput(req.body);
+      try {
+        req.body = JSON.parse(req.body);
+      } catch (e) {
+        // If parsing fails, keep original body
+      }
+    } else if (typeof req.body === 'object' && req.body !== null) {
+      // Recursively sanitize object properties
+      const sanitizeObject = (obj) => {
+        if (typeof obj === 'string') {
+          return securityEnhancer.sanitizeInput(obj);
+        } else if (Array.isArray(obj)) {
+          return obj.map(sanitizeObject);
+        } else if (typeof obj === 'object' && obj !== null) {
+          const sanitized = {};
+          for (const [key, value] of Object.entries(obj)) {
+            sanitized[key] = sanitizeObject(value);
+          }
+          return sanitized;
+        }
+        return obj;
+      };
+      req.body = sanitizeObject(req.body);
     }
   }
 

@@ -56,11 +56,16 @@ class PerformanceOptimizer {
   }
 
   /**
-   * Add select fields to query
+   * Add select fields to query (for SQL-like queries)
+   * Note: This is a placeholder - actual implementation depends on your database
    */
   addSelectFields(query, fields) {
-    if (Array.isArray(fields) && fields.length > 0) {
-      return `${query} SELECT ${fields.join(', ')}`;
+    // This is a simplified example - adjust based on your actual query structure
+    if (Array.isArray(fields) && fields.length > 0 && typeof query === 'string') {
+      // Only modify if query doesn't already have SELECT
+      if (!query.toUpperCase().includes('SELECT')) {
+        return `${query} SELECT ${fields.join(', ')}`;
+      }
     }
     return query;
   }
