@@ -38,6 +38,17 @@ for (let i = 0; i < lines.length; i++) {
     const match = lines[i].match(/ONESIGNAL_REST_API_KEY=(.+)/);
     if (match) {
       currentKey = match[1].trim().replace(/^["']|["']$/g, '');
+      
+      // Detect if key is clearly wrong (contains commands, spaces, etc.)
+      if (currentKey.includes('npm') || currentKey.includes('run') || 
+          currentKey.includes('test') || currentKey.includes(' ') ||
+          currentKey.length < 20) {
+        console.warn('⚠️  DETECTED INVALID KEY FORMAT!');
+        console.warn('   Current value appears to be a command or invalid key');
+        console.warn(`   Found: "${currentKey.substring(0, 50)}${currentKey.length > 50 ? '...' : ''}"`);
+        console.warn('   This will be replaced with the correct key.\n');
+        currentKey = ''; // Treat as empty to force replacement
+      }
     }
     break;
   }
@@ -83,7 +94,23 @@ console.log('4. Paste the key below (Ctrl+V, then Enter)');
 console.log('5. Press Enter twice when done\n');
 
 rl.question('Paste your OneSignal REST API Key here: ', (newKey) => {
-  const cleanedKey = newKey.trim().replace(/^["']|["']$/g, '').trim();
+  let cleanedKey = newKey.trim().replace(/^["']|["']$/g, '').trim();
+  
+  // Remove any accidental command text
+  if (cleanedKey.includes('npm') || cleanedKey.includes('run')) {
+    console.warn('\n⚠️  WARNING: Detected command text in key. Cleaning...');
+    // Try to extract just the key part
+    const keyMatch = cleanedKey.match(/os_v2_app_[a-zA-Z0-9_]+/);
+    if (keyMatch) {
+      cleanedKey = keyMatch[0];
+      console.warn(`   Extracted key: ${cleanedKey.substring(0, 30)}...`);
+    } else {
+      console.error('\n❌ Could not extract valid key from input.');
+      console.error('   Please paste ONLY the API key (starts with os_v2_app_)');
+      rl.close();
+      process.exit(1);
+    }
+  }
   
   if (!cleanedKey) {
     console.error('\n❌ No key provided. Exiting...');
@@ -93,10 +120,22 @@ rl.question('Paste your OneSignal REST API Key here: ', (newKey) => {
   
   if (cleanedKey.length < 50) {
     console.warn('\n⚠️  WARNING: Key seems too short. Make sure you copied the FULL key.');
+    console.warn('   Expected: 100+ characters');
+    console.warn(`   Got: ${cleanedKey.length} characters`);
   }
   
   if (!cleanedKey.startsWith('os_v2_app_')) {
-    console.warn('\n⚠️  WARNING: Key does not start with "os_v2_app_" - this may be incorrect.');
+    console.error('\n❌ ERROR: Key does not start with "os_v2_app_"');
+    console.error('   This is likely not a valid OneSignal REST API Key.');
+    console.error('   Please check OneSignal dashboard and copy the correct key.');
+    rl.close();
+    process.exit(1);
+  }
+  
+  // Additional validation
+  if (cleanedKey.includes(' ') || cleanedKey.includes('\n') || cleanedKey.includes('\t')) {
+    console.warn('\n⚠️  WARNING: Key contains whitespace. Cleaning...');
+    cleanedKey = cleanedKey.replace(/\s+/g, '');
   }
   
   // Update the line
