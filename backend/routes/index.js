@@ -51,6 +51,12 @@ router.use(activityLogger);
 const { healthCheckMiddleware } = require('../core/middleware/healthCheck.middleware');
 router.get('/health', healthCheckMiddleware);
 
+// System Status Controller
+const systemStatusController = require('../controllers/systemStatusController');
+router.get('/system/status', require('../core/middleware/auth.middleware').requireAuth, systemStatusController.getSystemStatus.bind(systemStatusController));
+router.get('/system/health', systemStatusController.getHealthCheck.bind(systemStatusController));
+router.get('/system/version', systemStatusController.getApiVersion.bind(systemStatusController));
+
 // Import requireAuth early to avoid hoisting issues
 const { requireAuth } = require('../core/middleware/auth.middleware');
 
