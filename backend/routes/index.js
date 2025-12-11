@@ -6,6 +6,9 @@ const helmet = require('helmet');
 
 const router = express.Router();
 
+// API Versioning Middleware (optional, can be enabled per route)
+const { apiVersionMiddleware } = require('../core/middleware/apiVersion.middleware');
+
 router.use(helmet());
 router.use(compression());
 router.use(cors({
@@ -14,6 +17,9 @@ router.use(cors({
 }));
 router.use(bodyParser.json({ limit: '10mb' }));
 router.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
+
+// API Versioning (optional - can be enabled for specific routes)
+// router.use(apiVersionMiddleware);
 
 const requestLogger = require('../core/middleware/requestLogger');
 const performanceMiddleware = require('../core/middleware/performance.middleware');
@@ -39,6 +45,11 @@ router.use(require('../core/middleware/auditLog.middleware'));
 router.use(require('../core/middleware/responseOptimizer.middleware'));
 router.use(requestLogger);
 router.use(responseMiddleware);
+
+// API Response Caching (for GET requests)
+const apiResponseCache = require('../core/middleware/apiResponseCache.middleware');
+router.use(apiResponseCache());
+
 router.use(rateLimiter());
 
 const { attachSubscription } = require('../core/middleware/subscriptionCheck');
@@ -50,6 +61,7 @@ router.use(activityLogger);
 // Professional Health Check
 const { healthCheckMiddleware } = require('../core/middleware/healthCheck.middleware');
 router.get('/health', healthCheckMiddleware);
+router.get('/api/health', healthCheckMiddleware); // Alias for consistency
 
 // System Status Controller
 const systemStatusController = require('../controllers/systemStatusController');
