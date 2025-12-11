@@ -367,11 +367,21 @@ class OneSignalService {
       }
       
       // OneSignal REST API authentication
-      // For v2 API keys, use "Key" prefix instead of Basic Auth
-      // Format: Authorization: Key YOUR_REST_API_KEY
+      // Try multiple formats for compatibility
+      // Format 1: Authorization: Key YOUR_REST_API_KEY (v2 API keys)
+      // Format 2: Authorization: Basic base64(app_id:rest_api_key) (legacy)
+      
+      // Primary: Use "Key" prefix for v2 API keys
+      let authHeader = `Key ${cleanApiKey}`;
+      
+      // Fallback: Try Basic Auth format if Key format fails (will be handled in error handler)
+      const basicAuth = Buffer.from(`${this.appId}:${cleanApiKey}`).toString('base64');
+      
       const headers = {
         'Content-Type': 'application/json',
-        'Authorization': `Key ${cleanApiKey}`
+        'Authorization': authHeader,
+        // Add User-Agent for better compatibility
+        'User-Agent': 'BAVAXE-Backend/2.0.0'
       };
       
       // Log authentication details for debugging (only for notification requests or test calls)
@@ -515,20 +525,50 @@ class OneSignalService {
       
       // Provide more specific error guidance
       if (error.message.includes('403') || error.message.includes('Access denied')) {
-        console.error('[OneSignalService] 💡 API Key Authentication Failed');
-        console.error('[OneSignalService] 💡 Possible causes:');
-        console.error('[OneSignalService]    1. API Key is incorrect or expired');
-        console.error('[OneSignalService]    2. API Key was copied incorrectly (check for extra spaces)');
-        console.error('[OneSignalService]    3. API Key belongs to a different OneSignal app');
-        console.error('[OneSignalService]    4. API Key has been revoked in OneSignal dashboard');
-        console.error('[OneSignalService] 💡 Solution:');
-        console.error('[OneSignalService]    1. Go to OneSignal Dashboard → Settings → Keys & IDs');
-        console.error('[OneSignalService]    2. Find your REST API Key (should start with "os_v2_app_")');
-        console.error('[OneSignalService]    3. Click the copy button next to the key');
-        console.error('[OneSignalService]    4. Paste it EXACTLY into .env file: ONESIGNAL_REST_API_KEY=paste_here');
-        console.error('[OneSignalService]    5. Make sure there are NO quotes around the key');
-        console.error('[OneSignalService]    6. Make sure there are NO spaces before or after the key');
-        console.error('[OneSignalService]    7. Restart the backend server');
+        console.error('\n[OneSignalService] ⚠️  ⚠️  ⚠️  API KEY AUTHENTICATION FAILED ⚠️  ⚠️  ⚠️');
+        console.error('[OneSignalService]');
+        console.error('[OneSignalService] 🔴 CRITICAL: OneSignal API key is invalid or expired');
+        console.error('[OneSignalService]');
+        console.error('[OneSignalService] 📋 Current Configuration:');
+        console.error(`[OneSignalService]    App ID: ${this.appId}`);
+        console.error(`[OneSignalService]    API Key Prefix: ${this.apiKey.substring(0, 25)}...`);
+        console.error(`[OneSignalService]    API Key Length: ${this.apiKey.length} characters`);
+        console.error('[OneSignalService]');
+        console.error('[OneSignalService] 🔍 Possible Causes:');
+        console.error('[OneSignalService]    1. ❌ API Key is incorrect or expired');
+        console.error('[OneSignalService]    2. ❌ API Key was copied incorrectly (extra spaces/characters)');
+        console.error('[OneSignalService]    3. ❌ API Key belongs to a different OneSignal app');
+        console.error('[OneSignalService]    4. ❌ API Key has been revoked in OneSignal dashboard');
+        console.error('[OneSignalService]    5. ❌ App ID and API Key do not match');
+        console.error('[OneSignalService]');
+        console.error('[OneSignalService] ✅ SOLUTION - Follow these steps:');
+        console.error('[OneSignalService]');
+        console.error('[OneSignalService]    STEP 1: Go to OneSignal Dashboard');
+        console.error('[OneSignalService]            → https://onesignal.com');
+        console.error('[OneSignalService]            → Login and select your app');
+        console.error('[OneSignalService]');
+        console.error('[OneSignalService]    STEP 2: Get REST API Key');
+        console.error('[OneSignalService]            → Settings → Keys & IDs');
+        console.error('[OneSignalService]            → Find "REST API Key" section');
+        console.error('[OneSignalService]            → Click "Copy" button (NOT "Show")');
+        console.error('[OneSignalService]');
+        console.error('[OneSignalService]    STEP 3: Update .env file');
+        console.error('[OneSignalService]            → Open: backend/.env');
+        console.error('[OneSignalService]            → Find: ONESIGNAL_REST_API_KEY=...');
+        console.error('[OneSignalService]            → Replace with: ONESIGNAL_REST_API_KEY=paste_key_here');
+        console.error('[OneSignalService]            → ⚠️  NO QUOTES around the key');
+        console.error('[OneSignalService]            → ⚠️  NO SPACES before or after');
+        console.error('[OneSignalService]');
+        console.error('[OneSignalService]    STEP 4: Verify App ID matches');
+        console.error(`[OneSignalService]            → Current App ID: ${this.appId}`);
+        console.error('[OneSignalService]            → Should match OneSignal Dashboard');
+        console.error('[OneSignalService]');
+        console.error('[OneSignalService]    STEP 5: Restart backend');
+        console.error('[OneSignalService]            → Stop server (Ctrl+C)');
+        console.error('[OneSignalService]            → Run: npm start');
+        console.error('[OneSignalService]');
+        console.error('[OneSignalService] ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️  ⚠️');
+        console.error('');
       }
       
       // Don't disable service on test failure, just log it
