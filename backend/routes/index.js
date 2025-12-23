@@ -901,6 +901,12 @@ router.get('/groups/:groupId/members-with-locations', requireAuth, validateGroup
 router.get('/groups/:groupId/members', requireAuth, validateGroupId, asyncHandler(groupController.getMembers.bind(groupController)));
 router.post('/groups/:groupId/locations', requireAuth, validateGroupId, validateCoordinates, asyncHandler(groupController.recordGroupLocation.bind(groupController)));
 router.get('/groups/:groupId/locations', requireAuth, validateGroupId, asyncHandler(groupController.getGroupLocations.bind(groupController)));
+
+// Group messages
+router.get('/groups/:groupId/messages', requireAuth, validateGroupId, asyncHandler(groupController.getMessages.bind(groupController)));
+router.post('/groups/:groupId/messages', requireAuth, validateGroupId, asyncHandler(groupController.sendMessage.bind(groupController)));
+router.delete('/groups/:groupId/messages/:messageId', requireAuth, validateGroupId, asyncHandler(groupController.deleteMessage.bind(groupController)));
+
 router.post('/groups/:groupId/leave', requireAuth, groupController.leaveGroup.bind(groupController));
 router.post('/groups/:groupId/transfer-admin', requireAuth, groupController.transferAdmin.bind(groupController));
 router.delete('/groups/:groupId', requireAuth, groupController.deleteGroup.bind(groupController));
