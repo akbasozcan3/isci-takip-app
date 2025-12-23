@@ -14,6 +14,7 @@ import {
     StyleSheet,
     Text,
     View,
+    Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChatInput } from '../../../components/chat/ChatInput';
@@ -30,6 +31,7 @@ interface Message {
     messageText: string;
     createdAt: string;
     isOwn: boolean;
+    deleted?: boolean;
 }
 
 interface ChatScreenParams {
@@ -42,6 +44,7 @@ export default function GroupChatScreen() {
     const router = useRouter();
     const { showError, showSuccess } = useToast();
     const flatListRef = useRef<FlatList>(null);
+    const scrollY = useRef(new Animated.Value(0)).current;
 
     const groupId = params.id;
     const groupName = params.name || 'Grup Sohbet';
@@ -52,10 +55,12 @@ export default function GroupChatScreen() {
     const [sending, setSending] = useState(false);
     const [userId, setUserId] = useState('');
     const [hasMore, setHasMore] = useState(true);
+    const [memberCount, setMemberCount] = useState(0);
 
     // Load user ID
     useEffect(() => {
         loadUserId();
+        loadGroupInfo();
     }, []);
 
     // Load messages on mount
@@ -87,6 +92,18 @@ export default function GroupChatScreen() {
         }
     };
 
+    const loadGroupInfo = async () => {
+        try {
+            const response = await authFetch(`/groups/${groupId}`);
+            if (response.ok) {
+                const data = await response.json();
+                setMemberCount(data.group?.memberCount || 0);
+            }
+        } catch (error) {
+            console.error('[Chat] Failed to load group info:', error);
+        }
+    };
+
     const loadMessages = async (silent = false) => {
         if (!groupId) return;
 
@@ -96,11 +113,10 @@ export default function GroupChatScreen() {
             const response = await authFetch(`/groups/${groupId}/messages?limit=50`);
 
             if (!response.ok) {
-                // If endpoint doesn't exist (404), keep existing messages (including optimistic ones)
                 if (response.status === 404) {
                     console.log('[Chat] Messages endpoint not yet implemented');
                     if (!silent) setLoading(false);
-                    return; // Don't clear messages - keep optimistic ones
+                    return;
                 }
                 throw new Error('Failed to load messages');
             }
@@ -108,22 +124,17 @@ export default function GroupChatScreen() {
             const data = await response.json();
 
             if (data.success && data.messages) {
-                // Mark own messages
                 const messagesWithOwn = data.messages.map((msg: any) => ({
                     ...msg,
                     isOwn: msg.senderId === userId,
                 }));
 
-                // Preserve temporary/optimistic messages (those starting with 'temp-')
                 const tempMessages = messages.filter(msg => msg.id.startsWith('temp-'));
-
-                // Merge: backend messages + optimistic messages
                 const mergedMessages = [...messagesWithOwn, ...tempMessages];
 
                 setMessages(mergedMessages);
                 setHasMore(data.pagination?.hasMore || false);
 
-                // Auto-scroll to bottom on first load or new message
                 if (!silent || mergedMessages.length > messages.length) {
                     setTimeout(() => {
                         flatListRef.current?.scrollToEnd({ animated: true });
@@ -133,12 +144,9 @@ export default function GroupChatScreen() {
         } catch (error: any) {
             console.error('[Chat] Load messages error:', error);
 
-            // Don't show error for missing endpoint or during silent refresh
             if (!error.message?.includes('404') && !silent) {
                 showError(error.message || 'Mesajlar yüklenemedi');
             }
-
-            // Don't clear messages on error - keep existing ones
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -151,7 +159,6 @@ export default function GroupChatScreen() {
         try {
             setSending(true);
 
-            // Optimistic UI update
             const optimisticMessage: Message = {
                 id: `temp-${Date.now()}`,
                 senderId: userId,
@@ -163,12 +170,10 @@ export default function GroupChatScreen() {
 
             setMessages((prev) => [...prev, optimisticMessage]);
 
-            // Scroll to bottom
             setTimeout(() => {
                 flatListRef.current?.scrollToEnd({ animated: true });
             }, 50);
 
-            // Send to backend
             const response = await authFetch(`/groups/${groupId}/messages`, {
                 method: 'POST',
                 headers: {
@@ -178,7 +183,6 @@ export default function GroupChatScreen() {
             });
 
             if (!response.ok) {
-                // If endpoint doesn't exist, keep optimistic message with info
                 if (response.status === 404) {
                     console.log('[Chat] Send endpoint not yet implemented, keeping optimistic message');
                     showError('Backend API henüz hazır değil - mesaj lokal olarak gösteriliyor');
@@ -190,7 +194,6 @@ export default function GroupChatScreen() {
             const data = await response.json();
 
             if (data.success && data.message) {
-                // Replace optimistic message with real one
                 setMessages((prev) =>
                     prev.map((msg) =>
                         msg.id === optimisticMessage.id
@@ -204,10 +207,8 @@ export default function GroupChatScreen() {
         } catch (error: any) {
             console.error('[Chat] Send message error:', error);
 
-            // Don't remove optimistic message if endpoint missing
             if (!error.message?.includes('404')) {
                 showError(error.message || 'Mesaj gönderilemedi');
-                // Remove optimistic message on real error
                 setMessages((prev) => prev.filter((msg) => !msg.id.startsWith('temp-')));
             }
         } finally {
@@ -220,17 +221,50 @@ export default function GroupChatScreen() {
         loadMessages();
     }, []);
 
+    const handleDeleteMessage = async (messageId: string) => {
+        try {
+            // Optimistic UI update
+            setMessages(prev => prev.map(msg =>
+                msg.id === messageId ? { ...msg, deleted: true } : msg
+            ));
+
+            // Send delete request to backend
+            const response = await authFetch(`/groups/${groupId}/messages/${messageId}`, {
+                method: 'DELETE',
+            });
+
+            if (!response.ok) {
+                // Revert on error
+                setMessages(prev => prev.map(msg =>
+                    msg.id === messageId ? { ...msg, deleted: false } : msg
+                ));
+                showError('Mesaj silinemedi');
+            }
+        } catch (error) {
+            console.error('[Chat] Delete message error:', error);
+            // Revert on error
+            setMessages(prev => prev.map(msg =>
+                msg.id === messageId ? { ...msg, deleted: false } : msg
+            ));
+            showError('Mesaj silinemedi');
+        }
+    };
+
     const renderMessage = ({ item }: { item: Message }) => (
-        <MessageBubble message={item} />
+        <MessageBubble message={item} onDelete={handleDeleteMessage} />
     );
 
-    return (
-        <SafeAreaView style={styles.container} edges={['top']}>
-            <StatusBar barStyle="light-content" />
+    // Header opacity based on scroll
+    const headerOpacity = scrollY.interpolate({
+        inputRange: [0, 50],
+        outputRange: [1, 0.95],
+        extrapolate: 'clamp',
+    });
 
-            {/* Header */}
-            <LinearGradient colors={['#6366f1', '#8b5cf6']} style={styles.header}>
-                <View style={styles.headerContent}>
+    const renderHeader = () => (
+        <Animated.View style={[styles.headerInList, { opacity: headerOpacity }]}>
+            <LinearGradient colors={['#6366f1', '#8b5cf6']} style={styles.headerGradient}>
+                <View style={styles.headerTop}>
                     <Pressable
                         onPress={() => router.back()}
                         style={({ pressed }) => [
@@ -243,7 +277,12 @@ export default function GroupChatScreen() {
 
                     <View style={styles.headerCenter}>
                         <Text style={styles.groupName}>{groupName}</Text>
-                        <Text style={styles.participantCount}>Grup Sohbeti</Text>
+                        <View style={styles.statusRow}>
+                            <View style={styles.onlineIndicator} />
+                            <Text style={styles.participantCount}>
+                                {memberCount > 0 ? `${memberCount} üye` : 'Grup Sohbeti'}
+                            </Text>
+                        </View>
                     </View>
 
                     <Pressable
@@ -257,19 +296,22 @@ export default function GroupChatScreen() {
                     </Pressable>
                 </View>
             </LinearGradient>
+        </Animated.View>
+    );
 
-            {/* Messages */}
+    return (
+        <SafeAreaView style={styles.container} edges={['top']}>
+            <StatusBar barStyle="light-content" />
+
             <KeyboardAvoidingView
                 style={styles.keyboardView}
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 75}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
             >
                 {loading && messages.length === 0 ? (
                     <View style={styles.loadingContainer}>
                         <Text style={styles.loadingText}>Mesajlar yükleniyor...</Text>
                     </View>
-                ) : messages.length === 0 ? (
-                    <EmptyChat />
                 ) : (
                     <FlatList
                         ref={flatListRef}
@@ -278,6 +320,8 @@ export default function GroupChatScreen() {
                         keyExtractor={(item) => item.id}
                         contentContainerStyle={styles.messageList}
                         showsVerticalScrollIndicator={false}
+                        ListHeaderComponent={renderHeader}
+                        ListEmptyComponent={<EmptyChat />}
                         refreshControl={
                             <RefreshControl
                                 refreshing={refreshing}
@@ -286,6 +330,11 @@ export default function GroupChatScreen() {
                                 colors={['#8b5cf6']}
                             />
                         }
+                        onScroll={Animated.event(
+                            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+                            { useNativeDriver: true }
+                        )}
+                        scrollEventThrottle={16}
                         onContentSizeChange={() => {
                             if (messages.length > 0) {
                                 flatListRef.current?.scrollToEnd({ animated: false });
@@ -294,7 +343,7 @@ export default function GroupChatScreen() {
                     />
                 )}
 
-                {/* Input */}
+                {/* Input - Sticky at bottom */}
                 <ChatInput onSend={sendMessage} disabled={sending} />
             </KeyboardAvoidingView>
         </SafeAreaView>
@@ -305,55 +354,6 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#0f172a',
-    },
-    header: {
-        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 8 : 8,
-        paddingHorizontal: 16,
-        paddingBottom: 16,
-        borderBottomLeftRadius: 24,
-        borderBottomRightRadius: 24,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 8,
-    },
-    headerContent: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    backButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.15)',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    headerCenter: {
-        flex: 1,
-    },
-    groupName: {
-        fontSize: 18,
-        fontWeight: '900',
-        color: '#fff',
-        fontFamily: 'Poppins-Bold',
-        letterSpacing: 0.3,
-    },
-    participantCount: {
-        fontSize: 12,
-        color: 'rgba(255,255,255,0.8)',
-        fontFamily: 'Poppins-Regular',
-        marginTop: 2,
-    },
-    infoButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.15)',
-        alignItems: 'center',
-        justifyContent: 'center',
     },
     keyboardView: {
         flex: 1,
@@ -369,7 +369,69 @@ const styles = StyleSheet.create({
         fontFamily: 'Poppins-Regular',
     },
     messageList: {
-        paddingVertical: 12,
         flexGrow: 1,
+        paddingBottom: 12,
+    },
+    headerInList: {
+        marginBottom: 16,
+    },
+    headerGradient: {
+        borderRadius: 24,
+        marginHorizontal: 12,
+        marginTop: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 8,
+    },
+    headerTop: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        gap: 12,
+    },
+    backButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    headerCenter: {
+        flex: 1,
+    },
+    groupName: {
+        fontSize: 18,
+        fontWeight: '900',
+        color: '#fff',
+        fontFamily: 'Poppins-Bold',
+        letterSpacing: 0.3,
+    },
+    statusRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 4,
+        gap: 6,
+    },
+    onlineIndicator: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: '#10b981',
+    },
+    participantCount: {
+        fontSize: 12,
+        color: 'rgba(255,255,255,0.9)',
+        fontFamily: 'Poppins-Medium',
+    },
+    infoButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 });

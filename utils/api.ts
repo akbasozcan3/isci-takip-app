@@ -54,37 +54,38 @@ function resolveBaseUrl(): string {
       // Check if running on emulator (Android emulator always uses 10.0.2.2)
       // For emulator: use 10.0.2.2 (special IP that maps to host's localhost)
       // For physical device: use local network IP
-      const isEmulator = process.env.EXPO_PUBLIC_IS_EMULATOR === 'true' || 
-                         !process.env.EXPO_PUBLIC_DEVICE_IP; // Default to emulator if IP not set
-      
+      const isEmulator = process.env.EXPO_PUBLIC_IS_EMULATOR === 'true' ||
+        !process.env.EXPO_PUBLIC_DEVICE_IP; // Default to emulator if IP not set
+
       if (isEmulator) {
         // Android Emulator: 10.0.2.2 maps to host machine's localhost
         resolvedBase = 'http://10.0.2.2:4000';
       } else {
         // Physical Android device: use local network IP
-      const physicalDeviceIP = process.env.EXPO_PUBLIC_DEVICE_IP || '192.168.1.95';
-      resolvedBase = `http://${physicalDeviceIP}:4000`;
+        const physicalDeviceIP = process.env.EXPO_PUBLIC_DEVICE_IP || '192.168.1.95';
+        resolvedBase = `http://${physicalDeviceIP}:4000`;
       }
     } else if (Platform.OS === 'ios') {
       // iOS simulator uses localhost (works directly)
       // iOS physical device needs local network IP
-      const isSimulator = process.env.EXPO_PUBLIC_IS_SIMULATOR === 'true' || 
-                         !process.env.EXPO_PUBLIC_DEVICE_IP;
-      
+      const isSimulator = process.env.EXPO_PUBLIC_IS_SIMULATOR === 'true' ||
+        !process.env.EXPO_PUBLIC_DEVICE_IP;
+
       if (isSimulator) {
         // iOS Simulator: localhost works
         resolvedBase = 'http://localhost:4000';
       } else {
         // Physical iOS device: use local network IP
-      const physicalDeviceIP = process.env.EXPO_PUBLIC_DEVICE_IP || '192.168.1.95';
-      resolvedBase = `http://${physicalDeviceIP}:4000`;
+        const physicalDeviceIP = process.env.EXPO_PUBLIC_DEVICE_IP || '192.168.1.95';
+        resolvedBase = `http://${physicalDeviceIP}:4000`;
       }
     } else {
       // Web or other platforms
       resolvedBase = 'http://localhost:4000';
     }
   } else {
-    resolvedBase = 'https://isci-takip-app-production-0f9e.up.railway.app';
+    // Production: Use Render.com backend
+    resolvedBase = 'https://isci-takip-app.onrender.com';
   }
   return resolvedBase;
 }

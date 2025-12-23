@@ -49,15 +49,15 @@ class GroupController {
         return res.error('Kullanıcı bilgisi (createdBy) gerekli', 'VALIDATION_ERROR', 400);
       }
 
-      const group = db.createGroup({ 
-        name: sanitized.name, 
-        address: sanitized.address || '', 
-        lat: lat ? parseFloat(lat) : null, 
-        lng: lng ? parseFloat(lng) : null, 
-        createdBy: sanitized.createdBy, 
-        visibility: sanitized.visibility || 'private' 
+      const group = db.createGroup({
+        name: sanitized.name,
+        address: sanitized.address || '',
+        lat: lat ? parseFloat(lat) : null,
+        lng: lng ? parseFloat(lng) : null,
+        createdBy: sanitized.createdBy,
+        visibility: sanitized.visibility || 'private'
       });
-      
+
       cacheService.delete(`group:${group.id}`);
       const response = { ...group, memberCount: db.getMemberCount(group.id) };
 
@@ -80,7 +80,7 @@ class GroupController {
           logger.warn('Notification send error (non-critical)', { error: err.message });
         });
       }
-      
+
       return res.success(response, 'Grup başarıyla oluşturuldu', 201);
     } catch (e) {
       logger.error('createGroup error', e);
@@ -94,7 +94,7 @@ class GroupController {
       const { userId } = req.params;
       if (!userId) throw createError('userId gereklidir', 400, 'MISSING_USER_ID');
       const groups = db.getGroupsByAdmin(userId);
-      
+
       const requestUserId = getUserIdFromToken(req);
       if (requestUserId) {
         activityLogService.logActivity(requestUserId, 'group', 'view_admin_groups', {
@@ -103,7 +103,7 @@ class GroupController {
           path: req.path
         });
       }
-      
+
       return res.success(groups);
     } catch (e) {
       logger.error('getGroupsByAdmin error', e);
@@ -116,7 +116,7 @@ class GroupController {
     try {
       const { groupId } = req.params;
       const reqs = db.getRequests(groupId);
-      
+
       const userId = getUserIdFromToken(req);
       if (userId) {
         activityLogService.logActivity(userId, 'group', 'view_requests', {
@@ -125,7 +125,7 @@ class GroupController {
           path: req.path
         });
       }
-      
+
       return res.success(reqs);
     } catch (e) {
       logger.error('getRequests error', e);
@@ -139,12 +139,12 @@ class GroupController {
       const { groupId, requestId } = req.params;
       const approved = db.approveRequest(groupId, requestId);
       if (!approved) throw createError('İstek bulunamadı', 404, 'REQUEST_NOT_FOUND');
-      
+
       const notificationService = require('../services/notificationService');
       const autoNotificationService = require('../services/autoNotificationService');
       const request = db.getRequest(groupId, requestId);
       const group = db.getGroupById(groupId);
-      
+
       if (request && request.userId) {
         await notificationService.send(request.userId, {
           title: '✅ Grup İsteği Onaylandı',
@@ -155,15 +155,15 @@ class GroupController {
         }, ['database', 'onesignal']).catch(err => {
           logger.warn('Approval notification error', { error: err.message });
         });
-        
+
         await autoNotificationService.notifyGroupMemberAdded(groupId, group?.name || 'Grup', request.userId, req.user?.id || group.createdBy).catch(err => {
           logger.warn('Auto notification error', { error: err.message });
         });
-        
+
         const members = (db.getMembers && db.getMembers(groupId)) || [];
         const otherMembers = Array.isArray(members) ? members.filter(m => m.userId !== request.userId) : [];
         const newMemberName = request.displayName || 'Yeni üye';
-        
+
         for (const member of otherMembers) {
           await notificationService.send(member.userId, {
             title: '👋 Yeni Üye Katıldı',
@@ -176,7 +176,7 @@ class GroupController {
           });
         }
       }
-      
+
       const adminUserId = req.user?.id || group?.createdBy;
       if (adminUserId) {
         activityLogService.logActivity(adminUserId, 'group', 'approve_request', {
@@ -186,7 +186,7 @@ class GroupController {
           path: req.path
         });
       }
-      
+
       return res.success(null, 'İstek onaylandı');
     } catch (e) {
       logger.error('approveRequest error', e);
@@ -200,7 +200,7 @@ class GroupController {
       const { groupId, requestId } = req.params;
       const rejected = db.rejectRequest(groupId, requestId);
       if (!rejected) throw createError('İstek bulunamadı', 404, 'REQUEST_NOT_FOUND');
-      
+
       const notificationService = require('../services/notificationService');
       const request = db.getRequest(groupId, requestId);
       if (request && request.userId) {
@@ -212,7 +212,7 @@ class GroupController {
           data: { groupId, type: 'group_rejected' }
         }, ['database', 'onesignal']);
       }
-      
+
       const adminUserId = req.user?.id || db.getGroupById(groupId)?.createdBy;
       if (adminUserId) {
         activityLogService.logActivity(adminUserId, 'group', 'reject_request', {
@@ -222,7 +222,7 @@ class GroupController {
           path: req.path
         });
       }
-      
+
       return res.success(null, 'İstek reddedildi');
     } catch (e) {
       logger.error('rejectRequest error', e);
@@ -236,7 +236,7 @@ class GroupController {
       const { code } = req.params;
       const group = db.getGroupByCode(code);
       if (!group) throw createError('Grup bulunamadı', 404, 'GROUP_NOT_FOUND');
-      
+
       const userId = getUserIdFromToken(req);
       if (userId) {
         activityLogService.logActivity(userId, 'group', 'view_group_info', {
@@ -245,7 +245,7 @@ class GroupController {
           path: req.path
         });
       }
-      
+
       return res.success({ id: group.id, code: group.code, name: group.name, memberCount: db.getMemberCount(group.id) });
     } catch (e) {
       logger.error('getGroupInfoByCode error', e);
@@ -260,20 +260,20 @@ class GroupController {
       const token = req.headers.authorization?.replace('Bearer ', '');
       const tokenData = db.getToken(token || '');
       if (!tokenData) return res.error('Geçersiz token', 'UNAUTHORIZED', 401);
-      
+
       const userId = tokenData.userId;
       const user = db.findUserById(userId);
       const displayName = user?.displayName || user?.name || user?.email || 'Bir kullanıcı';
-      
+
       const group = db.getGroupByCode(code);
       if (!group) throw createError('Grup bulunamadı', 404, 'GROUP_NOT_FOUND');
-      
+
       const request = db.addJoinRequest(group.id, { userId, displayName });
-      
+
       const notificationService = require('../services/notificationService');
       const members = db.getMembers(group.id) || [];
       const admins = members.filter(m => m.role === 'admin');
-      
+
       for (const admin of admins) {
         if (admin && admin.userId) {
           await notificationService.send(admin.userId, {
@@ -287,13 +287,13 @@ class GroupController {
           });
         }
       }
-      
+
       activityLogService.logActivity(userId, 'group', 'create_join_request', {
         groupId: group.id,
         groupCode: code,
         path: req.path
       });
-      
+
       return res.success(request, 'Katılma isteği oluşturuldu', 201);
     } catch (e) {
       logger.error('createJoinRequestByCode error', e);
@@ -307,7 +307,7 @@ class GroupController {
       const { userId } = req.params;
       if (!userId) throw createError('userId gereklidir', 400, 'MISSING_USER_ID');
       const groups = db.getUserGroups(userId);
-      
+
       const requestUserId = getUserIdFromToken(req);
       if (requestUserId) {
         activityLogService.logActivity(requestUserId, 'group', 'view_user_groups', {
@@ -316,7 +316,7 @@ class GroupController {
           path: req.path
         });
       }
-      
+
       return res.success(groups);
     } catch (e) {
       console.error('getActiveGroupsForUser error', e);
@@ -329,7 +329,7 @@ class GroupController {
     try {
       const { groupId } = req.params;
       const members = db.getMembers(groupId);
-      
+
       const userId = getUserIdFromToken(req);
       if (userId) {
         activityLogService.logActivity(userId, 'group', 'view_members', {
@@ -338,7 +338,7 @@ class GroupController {
           path: req.path
         });
       }
-      
+
       return res.success(members);
     } catch (e) {
       console.error('getMembers error', e);
@@ -350,11 +350,11 @@ class GroupController {
   getMembersWithLocations(req, res) {
     try {
       const { groupId } = req.params;
-      
+
       if (!groupId || typeof groupId !== 'string' || groupId.trim().length === 0) {
         throw createError('groupId gereklidir', 400, 'MISSING_GROUP_ID');
       }
-      
+
       const group = db.getGroupById(groupId);
       if (!group) {
         throw createError('Grup bulunamadı', 404, 'GROUP_NOT_FOUND', { groupId });
@@ -370,16 +370,16 @@ class GroupController {
         const previousEntry = Array.isArray(history) && history.length > 1 ? history[history.length - 2] : null;
         const location = lastEntry
           ? {
-              lat: lastEntry.coords?.latitude ?? null,
-              lng: lastEntry.coords?.longitude ?? null,
-              timestamp: lastEntry.timestamp,
-              accuracy: lastEntry.coords?.accuracy ?? null,
-              heading: lastEntry.coords?.heading ?? null,
-              geocode: lastEntry.geocode || null,
-            }
+            lat: lastEntry.coords?.latitude ?? null,
+            lng: lastEntry.coords?.longitude ?? null,
+            timestamp: lastEntry.timestamp,
+            accuracy: lastEntry.coords?.accuracy ?? null,
+            heading: lastEntry.coords?.heading ?? null,
+            geocode: lastEntry.geocode || null,
+          }
           : null;
         const isOnline = location ? now - location.timestamp <= ONLINE_WINDOW_MS : false;
-        
+
         let activity = null;
         if (lastEntry) {
           try {
@@ -418,7 +418,7 @@ class GroupController {
       if (e.isOperational) {
         return res.error(e.message, e.code, e.statusCode);
       }
-      
+
       console.error('getMembersWithLocations error', e);
       throw createError('Üyeler alınamadı', 500, 'MEMBERS_FETCH_ERROR', {
         groupId: req.params.groupId,
@@ -457,7 +457,7 @@ class GroupController {
 
       const latitude = Number(lat);
       const longitude = Number(lng);
-      
+
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
         throw createError('Geçersiz koordinat formatı', 400, 'INVALID_COORDINATES', { lat, lng });
       }
@@ -494,9 +494,9 @@ class GroupController {
       } catch (err) {
         console.warn('[GroupController] Geocoding failed or timed out, continuing without city data', { error: err.message });
       }
-      
+
       db.addToStore(userId, entry);
-      
+
       // 30 km mesafe kontrolü ve bildirim gönderimi (async, hata olsa bile devam et)
       try {
         const groupDistanceService = require('../services/groupDistanceService');
@@ -507,8 +507,8 @@ class GroupController {
       } catch (error) {
         console.error('[GroupController] Failed to check group distance:', error);
       }
-      
-      return res.success({ 
+
+      return res.success({
         timestamp: entry.timestamp,
         geocode: entry.geocode || null
       }, 'Konum kaydedildi');
@@ -516,7 +516,7 @@ class GroupController {
       if (e.isOperational) {
         return res.error(e.message, e.code, e.statusCode);
       }
-      
+
       console.error('recordGroupLocation error', e);
       throw createError('Konum kaydedilemedi', 500, 'LOCATION_SAVE_ERROR', {
         groupId: req.params.groupId,
@@ -529,7 +529,7 @@ class GroupController {
   getGroupLocations(req, res) {
     try {
       const { groupId } = req.params;
-      
+
       if (!groupId || typeof groupId !== 'string' || groupId.trim().length === 0) {
         return res.error('groupId gereklidir', 'MISSING_GROUP_ID', 400);
       }
@@ -548,14 +548,14 @@ class GroupController {
           groupId,
           location: latest
             ? {
-                lat: latest.coords?.latitude ?? null,
-                lng: latest.coords?.longitude ?? null,
-                accuracy: latest.coords?.accuracy ?? null,
-                heading: latest.coords?.heading ?? null,
-                speed: latest.coords?.speed ?? null,
-                timestamp: latest.timestamp ?? Date.now(),
-                geocode: latest.geocode || null,
-              }
+              lat: latest.coords?.latitude ?? null,
+              lng: latest.coords?.longitude ?? null,
+              accuracy: latest.coords?.accuracy ?? null,
+              heading: latest.coords?.heading ?? null,
+              speed: latest.coords?.speed ?? null,
+              timestamp: latest.timestamp ?? Date.now(),
+              geocode: latest.geocode || null,
+            }
             : null,
         };
       }).filter(item => item.location);
@@ -591,7 +591,7 @@ class GroupController {
       const group = db.getGroupById(groupId);
       const ok = db.removeMember(groupId, userId);
       if (!ok) return res.error('Üye bulunamadı', 'MEMBER_NOT_FOUND', 404);
-      
+
       try {
         const autoNotificationService = require('../services/autoNotificationService');
         await autoNotificationService.notifyGroupActivity(groupId, 'member_left', userId, {
@@ -602,7 +602,7 @@ class GroupController {
       } catch (notifError) {
         console.warn('[GroupController] Notification error (non-critical):', notifError);
       }
-      
+
       return res.success(null, 'Gruptan ayrıldınız');
     } catch (e) {
       console.error('leaveGroup error', e);
@@ -618,7 +618,7 @@ class GroupController {
       if (!currentAdminId || !newAdminId) return res.error('Eksik bilgi', 'VALIDATION_ERROR', 400);
       const ok = db.transferAdmin(groupId, currentAdminId, newAdminId);
       if (!ok) return res.error('Adminlik devredilemedi', 'ADMIN_TRANSFER_ERROR', 400);
-      
+
       const notificationService = require('../services/notificationService');
       const group = db.getGroupById(groupId);
       if (group) {
@@ -630,13 +630,13 @@ class GroupController {
           data: { groupId, type: 'admin_transferred' }
         }, ['database', 'onesignal']);
       }
-      
+
       activityLogService.logActivity(currentAdminId, 'group', 'transfer_admin', {
         groupId,
         newAdminId,
         path: req.path
       });
-      
+
       return res.success(null, 'Adminlik devredildi');
     } catch (e) {
       console.error('transferAdmin error', e);
@@ -655,12 +655,12 @@ class GroupController {
       if (!isAdmin) return res.error('Admin yetkisi gerekli', 'FORBIDDEN', 403);
       const ok = db.deleteGroup(groupId);
       if (!ok) return res.error('Grup bulunamadı', 'GROUP_NOT_FOUND', 404);
-      
+
       activityLogService.logActivity(adminUserId, 'group', 'delete_group', {
         groupId,
         path: req.path
       });
-      
+
       return res.success(null, 'Grup silindi');
     } catch (e) {
       console.error('deleteGroup error', e);
@@ -678,12 +678,12 @@ class GroupController {
           db.removeMember(g.id, userId);
         }
       }
-      
+
       activityLogService.logActivity(userId, 'group', 'leave_all_groups', {
         groupCount: groups.length,
         path: req.path
       });
-      
+
       return res.success(null, 'Tüm gruplardan ayrıldınız');
     } catch (e) {
       console.error('leaveAllGroups error', e);
@@ -700,7 +700,7 @@ class GroupController {
         delete db.data.store[userId];
       }
       db.scheduleSave();
-      
+
       const requestUserId = getUserIdFromToken(req);
       if (requestUserId) {
         activityLogService.logActivity(requestUserId, 'group', 'purge_user_data', {
@@ -708,11 +708,165 @@ class GroupController {
           path: req.path
         });
       }
-      
+
       return res.success(null, 'Kullanıcı verileri temizlendi');
     } catch (e) {
       console.error('purgeUserData error', e);
       return res.error('Temizleme başarısız', 'PURGE_ERROR', 500);
+    }
+  }
+
+  // GET /api/groups/:groupId/messages
+  getMessages(req, res) {
+    try {
+      const { groupId } = req.params;
+      const { limit = 50, offset = 0 } = req.query;
+
+      const group = db.getGroupById(groupId);
+      if (!group) {
+        return res.error('Grup bulunamadı', 'GROUP_NOT_FOUND', 404);
+      }
+
+      // Get messages from database
+      const allMessages = db.data.messages?.[groupId] || [];
+
+      // Filter out deleted messages (soft delete)
+      const activeMessages = allMessages.filter(msg => !msg.deleted);
+
+      // Pagination
+      const start = parseInt(offset);
+      const end = start + parseInt(limit);
+      const messages = activeMessages.slice(start, end);
+
+      return res.success({
+        messages,
+        pagination: {
+          total: activeMessages.length,
+          limit: parseInt(limit),
+          offset: start,
+          hasMore: end < activeMessages.length
+        }
+      });
+    } catch (error) {
+      logger.error('getMessages error', error);
+      return res.error('Mesajlar alınamadı', 'MESSAGES_FETCH_ERROR', 500);
+    }
+  }
+
+  // POST /api/groups/:groupId/messages
+  async sendMessage(req, res) {
+    try {
+      const { groupId } = req.params;
+      const { messageText } = req.body;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.error('Kullanıcı bilgisi gerekli', 'UNAUTHORIZED', 401);
+      }
+
+      if (!messageText || messageText.trim().length === 0) {
+        return res.error('Mesaj metni gerekli', 'VALIDATION_ERROR', 400);
+      }
+
+      const group = db.getGroupById(groupId);
+      if (!group) {
+        return res.error('Grup bulunamadı', 'GROUP_NOT_FOUND', 404);
+      }
+
+      // Check if user is member
+      const members = db.getMembers(groupId);
+      const isMember = members.some(m => m.userId === userId);
+      if (!isMember) {
+        return res.error('Bu grubun üyesi değilsiniz', 'FORBIDDEN', 403);
+      }
+
+      // Get user info
+      const user = db.findUserById(userId);
+      const senderName = user?.displayName || user?.name || 'Kullanıcı';
+
+      // Create message
+      const message = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        senderId: userId,
+        senderName,
+        senderAvatar: user?.avatar || null,
+        messageText: messageText.trim(),
+        createdAt: new Date().toISOString(),
+        deleted: false
+      };
+
+      // Initialize messages array if not exists
+      if (!db.data.messages) {
+        db.data.messages = {};
+      }
+      if (!db.data.messages[groupId]) {
+        db.data.messages[groupId] = [];
+      }
+
+      // Add message
+      db.data.messages[groupId].push(message);
+      db.scheduleSave();
+
+      // Log activity
+      activityLogService.logActivity(userId, 'message', 'send_message', {
+        groupId,
+        messageId: message.id,
+        path: req.path
+      });
+
+      return res.success({ message }, 'Mesaj gönderildi', 201);
+    } catch (error) {
+      logger.error('sendMessage error', error);
+      return res.error('Mesaj gönderilemedi', 'MESSAGE_SEND_ERROR', 500);
+    }
+  }
+
+  // DELETE /api/groups/:groupId/messages/:messageId
+  async deleteMessage(req, res) {
+    try {
+      const { groupId, messageId } = req.params;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.error('Kullanıcı bilgisi gerekli', 'UNAUTHORIZED', 401);
+      }
+
+      const group = db.getGroupById(groupId);
+      if (!group) {
+        return res.error('Grup bulunamadı', 'GROUP_NOT_FOUND', 404);
+      }
+
+      // Get messages
+      const messages = db.data.messages?.[groupId] || [];
+      const messageIndex = messages.findIndex(m => m.id === messageId);
+
+      if (messageIndex === -1) {
+        return res.error('Mesaj bulunamadı', 'MESSAGE_NOT_FOUND', 404);
+      }
+
+      const message = messages[messageIndex];
+
+      // Check if user owns the message
+      if (message.senderId !== userId) {
+        return res.error('Bu mesajı silme yetkiniz yok', 'FORBIDDEN', 403);
+      }
+
+      // Soft delete
+      message.deleted = true;
+      message.deletedAt = new Date().toISOString();
+      db.scheduleSave();
+
+      // Log activity
+      activityLogService.logActivity(userId, 'message', 'delete_message', {
+        groupId,
+        messageId,
+        path: req.path
+      });
+
+      return res.success(null, 'Mesaj silindi');
+    } catch (error) {
+      logger.error('deleteMessage error', error);
+      return res.error('Mesaj silinemedi', 'MESSAGE_DELETE_ERROR', 500);
     }
   }
 }
