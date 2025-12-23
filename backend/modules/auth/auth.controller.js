@@ -1331,23 +1331,22 @@ class AuthController {
 
       console.log('[Auth] Avatar upload for user:', user.id, 'File:', req.file.filename);
 
-      // Delete old avatar if exists
-      if (user.avatar) {
-        const fs = require('fs');
-        const path = require('path');
-        const oldAvatarPath = path.join(__dirname, '../../uploads/avatars', path.basename(user.avatar));
-        if (fs.existsSync(oldAvatarPath)) {
-          try {
-            fs.unlinkSync(oldAvatarPath);
-            console.log('[Auth] Deleted old avatar:', oldAvatarPath);
-          } catch (err) {
-            console.warn('[Auth] Failed to delete old avatar:', err.message);
-          }
-        }
-      }
+      // Convert image to Base64 for database storage (Render.com compatible)
+      const fs = require('fs');
+      const imageBuffer = fs.readFileSync(req.file.path);
+      const base64Image = imageBuffer.toString('base64');
+      const mimeType = req.file.mimetype || 'image/jpeg';
+      const avatarUrl = `data:${mimeType};base64,${base64Image}`;
 
-      // Generate avatar URL
-      const avatarUrl = `/api/uploads/avatars/${req.file.filename}`;
+      console.log('[Auth] Image converted to Base64, size:', base64Image.length, 'bytes');
+
+      // Delete uploaded file (no longer needed)
+      try {
+        fs.unlinkSync(req.file.path);
+        console.log('[Auth] Temporary file deleted:', req.file.path);
+      } catch (err) {
+        console.warn('[Auth] Failed to delete temp file:', err.message);
+      }
 
       // Update user avatar in database
       user.avatar = avatarUrl;
@@ -1356,7 +1355,7 @@ class AuthController {
         db.scheduleSave();
       }
 
-      console.log('[Auth] ✓ Avatar uploaded successfully:', avatarUrl);
+      console.log('[Auth] ✓ Avatar uploaded successfully (Base64)');
 
       return res.json(ResponseFormatter.success({
         avatarUrl: avatarUrl,
