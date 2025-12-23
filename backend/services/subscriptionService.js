@@ -285,9 +285,7 @@ class SubscriptionService {
     if (currentPlan === 'business') {
       return {
         recommended: false,
-        message: 'Zaten en yüksek plandas
-
-ınız'
+        message: 'Zaten en yüksek plandasınız'
       };
     }
 
