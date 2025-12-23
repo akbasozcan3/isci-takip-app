@@ -1,9 +1,0 @@
-bin/
-obj/
-*.user
-*.suo
-*.cache
-.vs/
-.vscode/
-launchSettings.json
-

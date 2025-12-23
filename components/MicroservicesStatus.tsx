@@ -31,7 +31,7 @@ export function MicroservicesStatus({ compact = false }: MicroservicesStatusProp
   if (loading) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="small" color="#06b6d4" />
+        <ActivityIndicator size="small" color="#0EA5E9" />
       </View>
     );
   }

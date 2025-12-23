@@ -19,7 +19,8 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  View
+  View,
+  Easing
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { io, Socket } from 'socket.io-client';
@@ -31,6 +32,7 @@ import { LoadingState } from '../../components/ui/LoadingState';
 import { getApiBase } from '../../utils/api';
 import { authFetch, getToken } from '../../utils/auth';
 import { shareCurrentLocation } from '../../utils/locationShare';
+import { useProfile } from '../../contexts/ProfileContext';
 
 const { width } = Dimensions.get('window');
 
@@ -110,6 +112,7 @@ const QUICK_ACTIONS = [
 export default function HomeScreen(): React.JSX.Element {
   const router = useRouter();
   const { toast, showError, showSuccess, showWarning, showInfo, hideToast } = useToast();
+  const { avatarUrl } = useProfile();
 
   const [isAuthenticated, setIsAuthenticated] = React.useState(false);
   const [refreshing, setRefreshing] = React.useState(false);
@@ -118,7 +121,6 @@ export default function HomeScreen(): React.JSX.Element {
   const [userId, setUserId] = React.useState('');
   const [stats, setStats] = React.useState<DashboardStats>({ activeWorkers: 0, totalGroups: 0, todayDistance: 0, activeAlerts: 0 });
   const [stepData, setStepData] = React.useState({ steps: 0, goal: null as number | null, progress: 0 });
-  const [activities, setActivities] = React.useState<RecentActivity[]>([]);
   const [hasLocationPermission, setHasLocationPermission] = React.useState(false);
   const [hidePermissionBanner, setHidePermissionBanner] = React.useState(true);
   const [permissionChecked, setPermissionChecked] = React.useState(false);
@@ -182,13 +184,34 @@ export default function HomeScreen(): React.JSX.Element {
   const cardScale = React.useRef(new Animated.Value(1)).current;
   const lightboxScale = React.useRef(new Animated.Value(0)).current;
   const statsAnimRef = React.useRef(Array(4).fill(0).map(() => new Animated.Value(0)));
-  const activityAnimRef = React.useRef<Animated.Value[]>([]);
   const headerScale = React.useRef(new Animated.Value(0.95)).current;
+
+  // Scroll to top
+  const [showScrollTop, setShowScrollTop] = React.useState(false);
+  const scrollViewRef = React.useRef<any>(null);
+  const scrollTopAnim = React.useRef(new Animated.Value(0)).current;
+  const waveAnim = React.useRef(new Animated.Value(0)).current; // Su dalgası animasyonu
+
+  // Wave Animation Loop
+  React.useEffect(() => {
+    if (showScrollTop) {
+      Animated.loop(
+        Animated.timing(waveAnim, {
+          toValue: 1,
+          duration: 3000,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      ).start();
+    } else {
+      waveAnim.setValue(0);
+    }
+  }, [showScrollTop]);
 
   // Slider auto-play
   const sliderRef = React.useRef<FlatList>(null);
   const autoPlayRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
-  
+
   // TÜM HOOKS'LAR ERKEN RETURN'DEN ÖNCE - Fonksiyonlar useCallback ile sarmalanmalı
   // loadDashboardData önce tanımlanmalı çünkü checkAuth tarafından kullanılıyor
   const loadDashboardData = React.useCallback(async (workerIdParam?: string) => {
@@ -229,14 +252,14 @@ export default function HomeScreen(): React.JSX.Element {
 
       try {
         const [statsRes, activitiesRes, stepsRes] = await Promise.all([
-          authFetch(`/dashboard/${worker}`, { 
-            signal: controller.signal 
+          authFetch(`/dashboard/${worker}`, {
+            signal: controller.signal
           }).catch(() => ({ ok: false, status: 404, json: async () => ({}) } as Response)),
-          authFetch(`/activities?limit=${activitiesLimit}`, { 
-            signal: controller.signal 
+          authFetch(`/activities?limit=${activitiesLimit}`, {
+            signal: controller.signal
           }).catch(() => ({ ok: false, status: 404, json: async () => ({ data: { activities: [] } }) } as Response)),
-          authFetch(`/steps/today`, { 
-            signal: controller.signal 
+          authFetch(`/steps/today`, {
+            signal: controller.signal
           }).catch(() => ({ ok: false, status: 404, json: async () => ({ success: false, data: {} }) } as Response)),
         ]);
 
@@ -264,20 +287,7 @@ export default function HomeScreen(): React.JSX.Element {
           setStats({ activeWorkers: 0, totalGroups: 0, todayDistance: 0, activeAlerts: 0 });
         }
 
-        // Activities güncelle
-        if (activitiesRes.ok) {
-          const response = await activitiesRes.json();
-          // Backend ResponseFormatter kullanıyor: { success: true, data: [...] }
-          const responseData = response.success && response.data ? response.data : response;
-          const activities = Array.isArray(responseData) ? responseData : (responseData.activities || []);
-          setActivities(Array.isArray(activities) ? activities : []);
-          console.log(`Activities loaded: ${Array.isArray(activities) ? activities.length : 0} (Plan: ${subscriptionPlan}, Limit: ${activitiesLimit})`);
-        } else {
-          if (activitiesRes.status !== 429) {
-            console.warn('Activities fetch failed:', activitiesRes.status);
-          }
-          setActivities([]);
-        }
+        // Activities removed for cleaner UI
 
         // Steps güncelle
         if (stepsRes.ok) {
@@ -296,14 +306,12 @@ export default function HomeScreen(): React.JSX.Element {
         }
         // Fallback - backend yoksa bile çalışsın
         setStats({ activeWorkers: 0, totalGroups: 0, todayDistance: 0, activeAlerts: 0 });
-        setActivities([]);
       } finally {
         setLoading(false);
       }
     } catch (e) {
       console.error('Dashboard outer error:', e);
       setStats({ activeWorkers: 0, totalGroups: 0, todayDistance: 0, activeAlerts: 0 });
-      setActivities([]);
       setLoading(false);
     }
   }, [userId]);
@@ -319,7 +327,7 @@ export default function HomeScreen(): React.JSX.Element {
         setIsAuthenticated(true);
         setUserId(workerId);
         if (displayName) setUserName(displayName);
-        
+
         await loadDashboardData(workerId);
 
         try {
@@ -328,7 +336,7 @@ export default function HomeScreen(): React.JSX.Element {
           setHasLocationPermission(granted);
           if (granted) {
             setHidePermissionBanner(true);
-            try { await AsyncStorage.setItem('hide_permission_banner', '1'); } catch {}
+            try { await AsyncStorage.setItem('hide_permission_banner', '1'); } catch { }
           } else {
             const hidden = await AsyncStorage.getItem('hide_permission_banner');
             setHidePermissionBanner(hidden === '1');
@@ -355,7 +363,7 @@ export default function HomeScreen(): React.JSX.Element {
     await loadDashboardData(userId);
     setRefreshing(false);
   }, [userId, loadDashboardData]);
-  
+
   // Fetch articles from backend
   React.useEffect(() => {
     const fetchArticles = async () => {
@@ -364,25 +372,36 @@ export default function HomeScreen(): React.JSX.Element {
         return;
       }
       try {
-        const response = await authFetch('/articles');
+        const response = await authFetch('/api/articles?limit=3');
         if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          setArticles(data.slice(0, 3));
-          } else if (data.articles && Array.isArray(data.articles)) {
-            setArticles(data.articles.slice(0, 3));
+          const data = await response.json();
+          console.log('[Home] Articles response:', data);
+
+          // Handle different response formats
+          let articlesArray = [];
+          if (data.success && data.data && Array.isArray(data.data.articles)) {
+            articlesArray = data.data.articles;
+          } else if (Array.isArray(data.articles)) {
+            articlesArray = data.articles;
+          } else if (Array.isArray(data)) {
+            articlesArray = data;
           }
+
+          setArticles(articlesArray.slice(0, 3));
+          console.log('[Home] Articles loaded:', articlesArray.length);
         } else {
           if (response.status !== 429) {
             console.warn('Articles fetch failed:', response.status);
           }
+          setArticles([]);
         }
       } catch (error) {
         console.error('Error fetching articles:', error);
+        setArticles([]);
       }
     };
     if (isAuthenticated) {
-    fetchArticles();
+      fetchArticles();
     }
   }, [isAuthenticated]);
 
@@ -396,11 +415,11 @@ export default function HomeScreen(): React.JSX.Element {
       try {
         try {
           const plansRes = await authFetch('/plans');
-          
+
           if (plansRes.ok) {
             const plansData = await plansRes.json();
             console.log('[Home] Plans response:', plansData);
-            
+
             if (plansData.success && Array.isArray(plansData.plans) && plansData.plans.length > 0) {
               setPlans(plansData.plans);
               setCurrentPlanId(plansData.currentPlan || 'free');
@@ -412,15 +431,15 @@ export default function HomeScreen(): React.JSX.Element {
             }
           } else {
             if (plansRes.status !== 429) {
-            console.warn('[Home] Plans fetch failed:', plansRes.status);
-            const errorText = await plansRes.text();
-            console.warn('[Home] Error response:', errorText);
+              console.warn('[Home] Plans fetch failed:', plansRes.status);
+              const errorText = await plansRes.text();
+              console.warn('[Home] Error response:', errorText);
             }
           }
         } catch (fetchError) {
           console.error('[Home] Plans fetch error:', fetchError);
         }
-        
+
         try {
           const subscriptionRes = await authFetch('/me/subscription');
           if (subscriptionRes.ok) {
@@ -439,10 +458,42 @@ export default function HomeScreen(): React.JSX.Element {
     fetchPlans();
   }, [isAuthenticated]);
 
+  // Scroll to top handlers
+  const handleScroll = React.useCallback((event: any) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+
+    if (offsetY > 200 && !showScrollTop) {
+      setShowScrollTop(true);
+      Animated.spring(scrollTopAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 50,
+        friction: 7,
+      }).start();
+    } else if (offsetY <= 200 && showScrollTop) {
+      Animated.spring(scrollTopAnim, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 50,
+        friction: 7,
+      }).start(() => {
+        setShowScrollTop(false);
+      });
+    }
+  }, [showScrollTop, scrollTopAnim]);
+
+  const scrollToTop = React.useCallback(() => {
+    scrollViewRef.current?.scrollTo({
+      y: 0,
+      animated: true,
+    });
+  }, []);
+
+
   React.useEffect(() => {
     if (plans.length > 0) {
       setTimeout(() => {
-        Animated.stagger(150, statsAnimRef.current.map((anim: Animated.Value) => 
+        Animated.stagger(150, statsAnimRef.current.map((anim: Animated.Value) =>
           Animated.spring(anim, { toValue: 1, tension: 50, friction: 8, useNativeDriver: true })
         )).start();
       }, 200);
@@ -454,11 +505,11 @@ export default function HomeScreen(): React.JSX.Element {
     fadeAnim.setValue(1);
     headerScale.setValue(1);
     statsAnimRef.current.forEach(anim => anim.setValue(1));
-    
+
     // Sadece hafif bir spring animasyonu yap, opacity değiştirme
     Animated.parallel([
       Animated.spring(headerScale, { toValue: 1, tension: 50, friction: 7, useNativeDriver: true }),
-      Animated.stagger(80, statsAnimRef.current.map((anim: Animated.Value) => 
+      Animated.stagger(80, statsAnimRef.current.map((anim: Animated.Value) =>
         Animated.spring(anim, { toValue: 1, tension: 50, friction: 8, useNativeDriver: true })
       ))
     ]).start();
@@ -468,14 +519,14 @@ export default function HomeScreen(): React.JSX.Element {
     const init = async () => {
       try {
         await checkAuth();
-        
+
         // İlk yüklemede fadeAnim'i 1'e set et - blur sorununu önlemek için
         fadeAnim.setValue(1);
         resetAnimations();
-        
+
         setTimeout(() => {
           if (plans.length > 0) {
-            Animated.stagger(150, statsAnimRef.current.map((anim: Animated.Value) => 
+            Animated.stagger(150, statsAnimRef.current.map((anim: Animated.Value) =>
               Animated.spring(anim, { toValue: 1, tension: 50, friction: 8, useNativeDriver: true })
             )).start();
           }
@@ -484,16 +535,11 @@ export default function HomeScreen(): React.JSX.Element {
         console.error('Init error:', e);
       }
     };
-    
+
     init();
 
-    const sub = DeviceEventEmitter.addListener('clearRecentActivities', () => {
-      setActivities([]);
-    });
-    
     return () => {
-      sub.remove?.();
-    }; 
+    };
   }, [checkAuth, resetAnimations]);
 
   useFocusEffect(
@@ -515,20 +561,13 @@ export default function HomeScreen(): React.JSX.Element {
             const hidden = await AsyncStorage.getItem('hide_permission_banner');
             setHidePermissionBanner(hidden === '1');
           }
-        } catch {}
+        } catch { }
       })();
-      return () => {};
+      return () => { };
     }, [resetAnimations, fadeAnim, userId, loadDashboardData])
   );
 
-  React.useEffect(() => {
-    if (activities.length > 0) {
-      activityAnimRef.current = activities.map(() => new Animated.Value(0));
-      Animated.stagger(80, activityAnimRef.current.map((anim: Animated.Value) => 
-        Animated.spring(anim, { toValue: 1, tension: 50, friction: 8, useNativeDriver: true })
-      )).start();
-    }
-  }, [activities.length]);
+
   // Auto-play slider
   React.useEffect(() => {
     if (!isAuthenticated && Platform.OS === 'ios') {
@@ -557,7 +596,7 @@ export default function HomeScreen(): React.JSX.Element {
         } else if (!hasLocationPermission) {
           setHidePermissionBanner(false);
         }
-      } catch {}
+      } catch { }
     })();
   }, [permissionChecked, hasLocationPermission]);
 
@@ -571,7 +610,7 @@ export default function HomeScreen(): React.JSX.Element {
             setShowOnboarding(true);
           }, 1000);
         }
-      } catch {}
+      } catch { }
     })();
   }, [isAuthenticated]);
 
@@ -579,7 +618,7 @@ export default function HomeScreen(): React.JSX.Element {
     try {
       await AsyncStorage.setItem('onboardingSeen', 'true');
       setShowOnboarding(false);
-    } catch {}
+    } catch { }
   }, []);
 
   // Global app data clear handler
@@ -594,10 +633,10 @@ export default function HomeScreen(): React.JSX.Element {
         setActivities([]);
         // Cleanup socket
         if (socketRef.current) {
-          try { socketRef.current.off(); socketRef.current.disconnect(); } catch {}
+          try { socketRef.current.off(); socketRef.current.disconnect(); } catch { }
           socketRef.current = null;
         }
-      } catch {}
+      } catch { }
     });
     return () => { sub.remove?.(); };
   }, []);
@@ -607,15 +646,15 @@ export default function HomeScreen(): React.JSX.Element {
     // Cleanup function - her zaman tanımlanmalı
     const cleanup = () => {
       if (socketRef.current) {
-        try { socketRef.current.off(); socketRef.current.disconnect(); } catch {}
+        try { socketRef.current.off(); socketRef.current.disconnect(); } catch { }
         socketRef.current = null;
       }
     };
-    
+
     if (!isAuthenticated || !userId) {
       // cleanup existing socket if auth lost
       if (socketRef.current) {
-        try { socketRef.current.off(); socketRef.current.disconnect(); } catch {}
+        try { socketRef.current.off(); socketRef.current.disconnect(); } catch { }
         socketRef.current = null;
       }
       return cleanup;
@@ -645,7 +684,7 @@ export default function HomeScreen(): React.JSX.Element {
         socketRef.current = s;
 
         const joinAll = () => {
-          try { groupIds.forEach(id => s.emit('join_group', id)); } catch {}
+          try { groupIds.forEach(id => s.emit('join_group', id)); } catch { }
         };
 
         s.on('connect', joinAll);
@@ -653,14 +692,13 @@ export default function HomeScreen(): React.JSX.Element {
         s.on('group_deleted', (ev: { groupId: string }) => {
           try {
             if (!ev || !ev.groupId) return;
-            // Clear activities and refresh stats
-            setActivities([]);
+            // Refresh stats
             onRefresh();
             showWarning('Bir grup silindi. Gösterge paneli güncellendi.');
-          } catch {}
+          } catch { }
         });
 
-        s.on('connect_error', () => {/* ignore */});
+        s.on('connect_error', () => {/* ignore */ });
       } catch (e) {
         // ignore
       }
@@ -695,10 +733,10 @@ export default function HomeScreen(): React.JSX.Element {
         showSuccess('Konum izni verildi');
         setHidePermissionBanner(true);
         setPermissionChecked(true);
-        try { 
+        try {
           await AsyncStorage.setItem('hide_permission_banner', '1');
           await AsyncStorage.setItem('location_permission_granted', '1');
-        } catch {}
+        } catch { }
       } else {
         showError('Konum izni verilmedi');
       }
@@ -738,92 +776,7 @@ export default function HomeScreen(): React.JSX.Element {
     );
   };
 
-  // --- Activity item ---
-  const ActivityItem: React.FC<{ item: RecentActivity; index: number }> = ({ item, index }) => {
-    // TÜM HOOKS'LAR ERKEN RETURN'DEN ÖNCE
-    const animValue = React.useMemo(() => {
-      if (!activityAnimRef.current[index]) {
-        activityAnimRef.current[index] = new Animated.Value(0);
-      }
-      return activityAnimRef.current[index];
-    }, [index]);
-    
-    React.useEffect(() => {
-      Animated.spring(animValue, {
-        toValue: 1,
-        tension: 50,
-        friction: 8,
-        useNativeDriver: true,
-        delay: index * 80
-      }).start();
-    }, [animValue, index]);
 
-    return (
-      <Animated.View
-        style={[
-          styles.activityRow,
-          {
-            opacity: animValue,
-            transform: [
-              {
-                translateX: animValue.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [-30, 0]
-                })
-              },
-              {
-                scale: animValue.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.95, 1]
-                })
-              }
-            ]
-          }
-        ]}
-      >
-        <Animated.View
-          style={[
-            styles.activityCircle,
-            { backgroundColor: getActivityColor(item.type) + '20' },
-            {
-              transform: [
-                {
-                  scale: animValue.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 1]
-                  })
-                }
-              ]
-            }
-          ]}
-        >
-          <Ionicons name={getActivityIcon(item.type) as any} size={18} color={getActivityColor(item.type)} />
-        </Animated.View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.activityMsg}>{item.message}</Text>
-          <Text style={styles.activityTime}>{formatTimeAgo(item.timestamp)}</Text>
-        </View>
-      </Animated.View>
-    );
-  };
-
-  const getActivityIcon = (type: RecentActivity['type']) => {
-    switch (type) {
-      case 'location': return 'navigate';
-      case 'join': return 'person-add';
-      case 'alert': return 'warning';
-      default: return 'information-circle';
-    }
-  };
-
-  const getActivityColor = (type: RecentActivity['type']) => {
-    switch (type) {
-      case 'location': return '#06b6d4';
-      case 'join': return '#10b981';
-      case 'alert': return '#f59e0b';
-      default: return '#64748b';
-    }
-  };
 
   // --- Loading State ---
   if (loading && !isAuthenticated) {
@@ -837,94 +790,96 @@ export default function HomeScreen(): React.JSX.Element {
 
   // --- Authenticated UI ---
   return (
-    <SafeAreaView style={styles.container} edges={[ 'top' ]}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="light-content" />
       <Animated.View style={{ transform: [{ scale: headerScale }] }}>
-        <LinearGradient colors={[ '#06b6d4', '#0ea5a4' ]} style={styles.header}>
+        <LinearGradient colors={['#0369a1', '#0c4a6e']} style={styles.header}>
           <View style={styles.headerTop}>
-          <View style={styles.headerLeft}>
-            <View style={styles.headerTextBlock}>
-              <Text style={styles.brandLabel}>BAVAXE PLATFORMU</Text>
-              <Text style={styles.headerTitle}>Ana Sayfa</Text>
-              <Text style={styles.headerSubtitle}>Hoş Geldin, {userName}</Text>
+            <View style={styles.headerLeft}>
+              <View style={styles.headerAvatarContainer}>
+                {avatarUrl ? (
+                  <Image source={{ uri: avatarUrl }} style={styles.headerAvatar} />
+                ) : (
+                  <View style={styles.headerAvatarPlaceholder}>
+                    <Ionicons name="person" size={24} color="#fff" />
+                  </View>
+                )}
+              </View>
+              <View style={styles.headerTextBlock}>
+                <Text style={styles.brandLabel}>BAVAXE PLATFORMU</Text>
+                <Text style={styles.headerTitle}>Ana Sayfa</Text>
+                <Text style={styles.headerSubtitle}>Hoş Geldin, {userName}</Text>
+              </View>
+            </View>
+
+            <View style={styles.headerActions}>
+              <NetworkStatusIcon size={20} />
+              <Pressable
+                onPress={() => router.push('/blog')}
+                style={({ pressed }) => [
+                  styles.headerIconButton,
+                  pressed && styles.headerIconButtonPressed
+                ]}
+              >
+                <Ionicons name="book-outline" size={20} color="#fff" />
+              </Pressable>
+              <Pressable
+                onPress={async () => {
+                  try {
+                    if (!hasLocationPermission) {
+                      const { status } = await Location.requestForegroundPermissionsAsync();
+                      if (status !== 'granted') {
+                        showError('Konum izni gerekli');
+                        return;
+                      }
+                      setHasLocationPermission(true);
+                    }
+
+                    showInfo('Konum alınıyor...');
+                    const location = await Location.getCurrentPositionAsync({
+                      accuracy: Location.Accuracy.High
+                    });
+
+                    await shareCurrentLocation(
+                      async () => ({ latitude: location.coords.latitude, longitude: location.coords.longitude }),
+                      userName || 'Konumum',
+                      () => showSuccess('Konum başarıyla paylaşıldı!'),
+                      (error: string) => showError(error)
+                    );
+                  } catch (e: any) {
+                    console.error('[Home] Share location error:', e);
+                    if (e.code === 'E_LOCATION_UNAVAILABLE') {
+                      showError('Konum servisleri kapalı. Lütfen ayarlardan açın.');
+                    } else if (e.code === 'E_LOCATION_TIMEOUT') {
+                      showError('Konum alınamadı. Lütfen tekrar deneyin.');
+                    } else {
+                      showError('Konum alınamadı: ' + (e.message || 'Bilinmeyen hata'));
+                    }
+                  }
+                }}
+                style={({ pressed }) => [
+                  styles.headerIconButton,
+                  pressed && styles.headerIconButtonPressed
+                ]}
+              >
+                <Ionicons name="share-social-outline" size={20} color="#fff" />
+              </Pressable>
             </View>
           </View>
-
-          <View style={styles.headerActions}>
-            <NetworkStatusIcon size={20} />
-            <Pressable 
-              onPress={() => router.push('/blog')} 
-              style={({ pressed }) => [
-                styles.headerIconButton,
-                pressed && styles.headerIconButtonPressed
-              ]}
-            >
-              <Ionicons name="book-outline" size={20} color="#fff" />
-            </Pressable>
-            <Pressable 
-              onPress={async () => {
-                try {
-                  if (!hasLocationPermission) {
-                    const { status } = await Location.requestForegroundPermissionsAsync();
-                    if (status !== 'granted') {
-                      showError('Konum izni gerekli');
-                      return;
-                    }
-                    setHasLocationPermission(true);
-                  }
-                  
-                  showInfo('Konum alınıyor...');
-                  const location = await Location.getCurrentPositionAsync({
-                    accuracy: Location.Accuracy.High
-                  });
-                  
-                  await shareCurrentLocation(
-                    async () => ({ latitude: location.coords.latitude, longitude: location.coords.longitude }),
-                    userName || 'Konumum',
-                    () => showSuccess('Konum başarıyla paylaşıldı!'),
-                    (error: string) => showError(error)
-                  );
-                } catch (e: any) {
-                  console.error('[Home] Share location error:', e);
-                  if (e.code === 'E_LOCATION_UNAVAILABLE') {
-                    showError('Konum servisleri kapalı. Lütfen ayarlardan açın.');
-                  } else if (e.code === 'E_LOCATION_TIMEOUT') {
-                    showError('Konum alınamadı. Lütfen tekrar deneyin.');
-                  } else {
-                    showError('Konum alınamadı: ' + (e.message || 'Bilinmeyen hata'));
-                  }
-                }
-              }}
-              style={({ pressed }) => [
-                styles.headerIconButton,
-                pressed && styles.headerIconButtonPressed
-              ]}
-            >
-              <Ionicons name="share-social-outline" size={20} color="#fff" />
-            </Pressable>
-            <Pressable 
-              onPress={() => router.push('/(tabs)/profile')} 
-              style={({ pressed }) => [
-                styles.headerIconButton,
-                styles.headerIconButtonSettings,
-                pressed && styles.headerIconButtonPressed
-              ]}
-            >
-              <Ionicons name="person-outline" size={20} color="#fff" />
-            </Pressable>
-          </View>
-        </View>
         </LinearGradient>
       </Animated.View>
 
-      <Animated.ScrollView 
-        contentContainerStyle={styles.scrollContent} 
-        style={{ opacity: fadeAnim }} 
+      <Animated.ScrollView
+        ref={scrollViewRef}
+        contentContainerStyle={styles.scrollContent}
+        style={{ opacity: fadeAnim }}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
-            onRefresh={onRefresh} 
-            tintColor="#06b6d4" 
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#06b6d4"
             colors={['#06b6d4']}
           />
         }
@@ -956,7 +911,13 @@ export default function HomeScreen(): React.JSX.Element {
           />
           <View style={styles.dotsRow}>
             {SLIDES.map((_, i) => (
-              <View key={i} style={[styles.smallDot, currentSlide === i && styles.smallDotActive]} />
+              <View
+                key={i}
+                style={[
+                  styles.pillIndicator,
+                  currentSlide === i && styles.pillIndicatorActive
+                ]}
+              />
             ))}
           </View>
         </View>
@@ -971,11 +932,11 @@ export default function HomeScreen(): React.JSX.Element {
             </View>
             <Pressable onPress={requestLocationPermission} style={styles.permissionButton} android_ripple={{ color: 'rgba(6,182,212,0.25)' }}><Text style={styles.permissionButtonText}>İzin Ver</Text></Pressable>
             <Pressable
-              onPress={async () => { 
-                try { 
-                  await AsyncStorage.setItem('hide_permission_banner', '1'); 
+              onPress={async () => {
+                try {
+                  await AsyncStorage.setItem('hide_permission_banner', '1');
                   setHidePermissionBanner(true);
-                } catch {} 
+                } catch { }
               }}
               style={{ marginLeft: 8, paddingHorizontal: 10, paddingVertical: 6 }}
               android_ripple={{ color: 'rgba(255,255,255,0.15)' }}
@@ -1080,55 +1041,55 @@ export default function HomeScreen(): React.JSX.Element {
           <View style={styles.quickGrid}>
             {QUICK_ACTIONS.map((q, idx) => {
               const animValue = statsAnimRef.current[idx % 4] || new Animated.Value(0);
-              
+
               return (
-              <Animated.View
-                key={q.id}
-                style={{
-                  opacity: animValue,
-                  transform: [
-                    {
-                      translateY: animValue.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [30, 0]
-                      })
-                    },
-                    {
-                      scale: animValue.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.9, 1]
-                      })
-                    }
-                  ]
-                }}
-              >
-              <Pressable 
-                onPress={() => handleQuickAction(q.route)} 
-                style={({ pressed }) => [
-                  styles.quickActionCard,
-                  pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }
-                ]}
-                android_ripple={{ color: `${q.color}22` }}
-              >
-                <View style={[styles.quickActionIconWrapper, { backgroundColor: `${q.color}15` }]}>
-                  <LinearGradient 
-                    colors={[q.color, q.color + 'DD']} 
-                    style={styles.quickActionIcon}
-                    start={[0, 0]}
-                    end={[1, 1]}
+                <Animated.View
+                  key={q.id}
+                  style={{
+                    opacity: animValue,
+                    transform: [
+                      {
+                        translateY: animValue.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [30, 0]
+                        })
+                      },
+                      {
+                        scale: animValue.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.9, 1]
+                        })
+                      }
+                    ]
+                  }}
+                >
+                  <Pressable
+                    onPress={() => handleQuickAction(q.route)}
+                    style={({ pressed }) => [
+                      styles.quickActionCard,
+                      pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }
+                    ]}
+                    android_ripple={{ color: `${q.color}22` }}
                   >
-                    <Ionicons name={q.icon as any} size={26} color="#fff" />
-                  </LinearGradient>
-                </View>
-                <View style={styles.quickActionContent}>
-                  <Text style={styles.quickActionTitle}>{q.title}</Text>
-                  <View style={styles.quickActionArrow}>
-                    <Ionicons name="arrow-forward" size={16} color="#64748b" />
-                  </View>
-                </View>
-              </Pressable>
-              </Animated.View>
-            );
+                    <View style={[styles.quickActionIconWrapper, { backgroundColor: `${q.color}15` }]}>
+                      <LinearGradient
+                        colors={[q.color, q.color + 'DD']}
+                        style={styles.quickActionIcon}
+                        start={[0, 0]}
+                        end={[1, 1]}
+                      >
+                        <Ionicons name={q.icon as any} size={26} color="#fff" />
+                      </LinearGradient>
+                    </View>
+                    <View style={styles.quickActionContent}>
+                      <Text style={styles.quickActionTitle}>{q.title}</Text>
+                      <View style={styles.quickActionArrow}>
+                        <Ionicons name="arrow-forward" size={16} color="#64748b" />
+                      </View>
+                    </View>
+                  </Pressable>
+                </Animated.View>
+              );
             })}
           </View>
         </View>
@@ -1149,8 +1110,8 @@ export default function HomeScreen(): React.JSX.Element {
                   <Text style={styles.sectionSubtitle}>Ekibinizi profesyonelce yönetin</Text>
                 </View>
               </View>
-              <Pressable 
-                onPress={() => router.push('/UpgradeScreen' as any)} 
+              <Pressable
+                onPress={() => router.push('/UpgradeScreen' as any)}
                 style={styles.viewAllButton}
                 android_ripple={{ color: 'rgba(124,58,237,0.2)' }}
               >
@@ -1158,14 +1119,14 @@ export default function HomeScreen(): React.JSX.Element {
                 <Ionicons name="arrow-forward" size={16} color="#7c3aed" />
               </Pressable>
             </View>
-            
+
             {plans.length > 0 ? (
               <View style={styles.plansContainer}>
                 {plans.filter(p => p.id !== 'free').slice(0, 2).map((plan, idx) => {
                   const isCurrent = currentPlanId === plan.id;
                   const isRecommended = plan.recommended || plan.badge === 'Önerilen';
                   const planAnim = statsAnimRef.current[idx % 4] || new Animated.Value(0);
-                  
+
                   return (
                     <Animated.View
                       key={plan.id}
@@ -1198,14 +1159,14 @@ export default function HomeScreen(): React.JSX.Element {
                           <Text style={styles.planRecommendedText}>ÖNERİLEN</Text>
                         </View>
                       )}
-                      
+
                       {isCurrent && (
                         <View style={styles.planCurrentBadge}>
                           <Ionicons name="checkmark-circle" size={14} color="#10b981" />
                           <Text style={styles.planCurrentText}>Mevcut Plan</Text>
                         </View>
                       )}
-                      
+
                       <View style={styles.planHeader}>
                         <View style={styles.planTitleRow}>
                           <Text style={[styles.planTitle, isRecommended && styles.planTitleRecommended]}>
@@ -1228,13 +1189,13 @@ export default function HomeScreen(): React.JSX.Element {
                           )}
                         </View>
                       </View>
-                      
+
                       {plan.description && (
                         <Text style={[styles.planDescription, isRecommended && styles.planDescriptionRecommended]}>
                           {plan.description}
                         </Text>
                       )}
-                      
+
                       <View style={styles.planFeatures}>
                         {plan.features.slice(0, 3).map((feature: string, fIdx: number) => (
                           <View key={fIdx} style={styles.planFeatureRow}>
@@ -1265,7 +1226,7 @@ export default function HomeScreen(): React.JSX.Element {
                           </Pressable>
                         )}
                       </View>
-                      
+
                       {isCurrent ? (
                         <View style={styles.planCurrentButton}>
                           <Ionicons name="checkmark-circle" size={18} color="#10b981" />
@@ -1291,17 +1252,17 @@ export default function HomeScreen(): React.JSX.Element {
                           ]}>
                             Ödeme Yap
                           </Text>
-                          <Ionicons 
-                            name="card" 
-                            size={16} 
-                            color={isRecommended ? '#7c3aed' : '#fff'} 
+                          <Ionicons
+                            name="card"
+                            size={16}
+                            color={isRecommended ? '#7c3aed' : '#fff'}
                           />
                         </Pressable>
                       )}
                     </Animated.View>
                   );
                 })}
-                
+
                 {plans.filter(p => p.id !== 'free').length > 2 && (
                   <Pressable
                     style={styles.planViewAllCard}
@@ -1323,18 +1284,7 @@ export default function HomeScreen(): React.JSX.Element {
           </View>
         )}
 
-        {/* Recent activities */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Son Aktiviteler</Text>
-            <Pressable onPress={onRefresh}><Ionicons name="refresh" size={18} color="#64748b" /></Pressable>
-          </View>
-          {activities.length === 0 ? (
-            <View style={styles.emptyState}><Ionicons name="time-outline" size={48} color="#cbd5e1" /><Text style={styles.emptyText}>Henüz aktivite yok</Text></View>
-          ) : (
-            activities.map((a, idx) => <ActivityItem key={a.id} item={a} index={idx} />)
-          )}
-        </View>
+
 
         {/* Blog Layout */}
         <View style={styles.section}>
@@ -1435,8 +1385,8 @@ export default function HomeScreen(): React.JSX.Element {
           </View>
           <View style={styles.infoCard}>
             <Text style={styles.infoText}>
-              İşçi Takip Paneli, modern işletmelerin saha çalışanlarını güvenli ve verimli 
-              şekilde yönetmesini sağlayan bir teknoloji çözümüdür. 2024'ten beri binlerce 
+              İşçi Takip Paneli, modern işletmelerin saha çalışanlarını güvenli ve verimli
+              şekilde yönetmesini sağlayan bir teknoloji çözümüdür. 2024'ten beri binlerce
               işletmeye hizmet veriyoruz.
             </Text>
           </View>
@@ -1506,7 +1456,7 @@ export default function HomeScreen(): React.JSX.Element {
             <Ionicons name="chatbubbles" size={22} color="#06b6d4" />
             <Text style={styles.sectionTitle}>İletişim</Text>
           </View>
-          
+
           <Pressable style={styles.modernContactCard} onPress={() => Linking.openURL('mailto:ozcanakbas38@gmail.com')} android_ripple={{ color: 'rgba(6,182,212,0.15)' }}>
             <LinearGradient
               colors={['#06b6d4', '#0891b2']}
@@ -1560,13 +1510,81 @@ export default function HomeScreen(): React.JSX.Element {
           </Animated.View>
         </Pressable>
       </Modal>
-      
+
       <Toast
         message={toast.message}
         type={toast.type}
         visible={toast.visible}
         onHide={hideToast}
       />
+
+      {/* Scroll to Top Button with Liquid Wave Effect */}
+      {showScrollTop && (
+        <Animated.View
+          style={[
+            styles.scrollToTopButton,
+            {
+              opacity: scrollTopAnim,
+              transform: [
+                { scale: scrollTopAnim },
+                { translateY: scrollTopAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }
+              ],
+            },
+          ]}
+        >
+          <Pressable
+            onPress={scrollToTop}
+            style={styles.scrollToTopPressable}
+            android_ripple={{ color: 'rgba(6, 182, 212, 0.3)', radius: 30 }}
+          >
+            {/* Liquid Wave Animation - Double Layer */}
+            <View style={styles.liquidContainer}>
+              {/* Back Wave (Slower, Reverse) */}
+              <Animated.View
+                style={[
+                  styles.liquidWave,
+                  styles.liquidWaveBack,
+                  {
+                    transform: [{
+                      rotate: waveAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['360deg', '0deg'] // Reverse rotation
+                      })
+                    }]
+                  }
+                ]}
+              />
+
+              {/* Front Wave (Normal) */}
+              <Animated.View
+                style={[
+                  styles.liquidWave,
+                  {
+                    transform: [{
+                      rotate: waveAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['0deg', '360deg']
+                      })
+                    }]
+                  }
+                ]}
+              >
+                <LinearGradient
+                  colors={['rgba(6,182,212,0.8)', 'rgba(59,130,246,0.9)']} // Slightly transparent for glass effect
+                  style={{ flex: 1 }}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                />
+              </Animated.View>
+            </View>
+
+            {/* Icon Layer */}
+            <View style={styles.liquidIconContainer}>
+              <Ionicons name="arrow-up" size={26} color="#fff" />
+            </View>
+          </Pressable>
+        </Animated.View>
+      )}
 
       <OnboardingModal visible={showOnboarding} onClose={handleOnboardingClose} />
     </SafeAreaView>
@@ -1579,11 +1597,11 @@ const styles = StyleSheet.create({
   loadingText: { marginTop: 12, color: '#94a3b8' },
 
   // Header
-  header: { 
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 20 : 20, 
-    paddingHorizontal: 20, 
-    paddingBottom: 24, 
-    borderBottomLeftRadius: 24, 
+  header: {
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 20 : 20,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
   },
   headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -1609,14 +1627,14 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
   headerSubtitle: { fontSize: 12, color: 'rgba(255,255,255,0.9)', marginTop: 3, fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
   headerActions: { flexDirection: 'row', alignItems: 'center' },
-  headerIconButton: { 
-    width: 42, 
-    height: 42, 
-    borderRadius: 12, 
-    backgroundColor: 'rgba(255,255,255,0.2)', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    borderWidth: 1, 
+  headerIconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.3)',
     marginLeft: 8,
   },
@@ -1631,10 +1649,34 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.25)',
     borderColor: 'rgba(255,255,255,0.4)',
   },
+  headerAvatarContainer: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    overflow: 'hidden',
+    borderWidth: 2.5,
+    borderColor: 'rgba(255,255,255,0.4)',
+    shadowColor: '#0369a1',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  headerAvatar: {
+    width: '100%',
+    height: '100%',
+  },
+  headerAvatarPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   // Scroll
   scrollContent: { paddingBottom: 32 },
-  
+
   // Top Slider
   topSlider: { marginBottom: 28 },
 
@@ -1667,8 +1709,18 @@ const styles = StyleSheet.create({
   slideCTA: { marginTop: 20, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 14 },
   slideCTAText: { color: '#fff', fontWeight: '900', marginRight: 8, fontFamily: 'Poppins-Bold' },
   dotsRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 20, paddingHorizontal: 20 },
-  smallDot: { width: 8, height: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.3)', marginHorizontal: 6 },
-  smallDotActive: { width: 36, backgroundColor: '#06b6d4' },
+  pillIndicator: {
+    height: 4,
+    width: 24,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    marginHorizontal: 4,
+    transition: 'all 0.3s ease'
+  },
+  pillIndicatorActive: {
+    width: 32,
+    backgroundColor: '#0369a1'
+  },
 
   // About
   aboutCard: { backgroundColor: '#fff', borderRadius: 16, padding: 18, marginTop: 8, marginBottom: 14 },
@@ -1689,8 +1741,8 @@ const styles = StyleSheet.create({
   articleMeta: { fontSize: 12, color: '#94a3b8', marginTop: 6 },
   // Stats
   statsContainer: { marginBottom: 32, paddingHorizontal: 20 },
-  statsGrid: { 
-    flexDirection: 'row', 
+  statsGrid: {
+    flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     gap: 12,
@@ -1715,20 +1767,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 16,
   },
-  statValue: { 
-    fontSize: 26, 
-    fontWeight: '900', 
-    color: '#fff', 
-    marginTop: 10, 
-    letterSpacing: 0.3, 
+  statValue: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#fff',
+    marginTop: 10,
+    letterSpacing: 0.3,
     fontFamily: 'Poppins-Bold',
     textAlign: 'center',
   },
-  statLabel: { 
-    color: '#94a3b8', 
-    marginTop: 8, 
-    fontSize: 14, 
-    fontWeight: '700', 
+  statLabel: {
+    color: '#94a3b8',
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: '700',
     fontFamily: 'Poppins-SemiBold',
     textAlign: 'center',
   },
@@ -1741,75 +1793,75 @@ const styles = StyleSheet.create({
   // Quick Actions - Professional
   section: { marginBottom: 32, paddingHorizontal: 20 },
   sectionTitle: { fontSize: 24, fontWeight: '900', color: '#fff', letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
-  sectionBadge: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 4, 
-    backgroundColor: 'rgba(6,182,212,0.1)', 
-    paddingHorizontal: 10, 
-    paddingVertical: 6, 
+  sectionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(3,105,161,0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(6,182,212,0.2)',
+    borderColor: 'rgba(3,105,161,0.2)',
   },
-  sectionBadgeText: { fontSize: 12, fontWeight: '800', color: '#06b6d4', fontFamily: 'Poppins-ExtraBold' },
+  sectionBadgeText: { fontSize: 12, fontWeight: '800', color: '#0369a1', fontFamily: 'Poppins-ExtraBold' },
   quickGrid: { gap: 14 },
-  quickActionCard: { 
-    backgroundColor: '#1e293b', 
-    borderRadius: 20, 
-    padding: 20, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    borderWidth: 1, 
+  quickActionCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 20,
+    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
     borderColor: '#334155',
     marginBottom: 0,
   },
-  quickActionIconWrapper: { 
-    width: 64, 
-    height: 64, 
-    borderRadius: 16, 
-    alignItems: 'center', 
-    justifyContent: 'center', 
+  quickActionIconWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 18,
   },
-  quickActionIcon: { 
-    width: 48, 
-    height: 48, 
-    borderRadius: 12, 
-    alignItems: 'center', 
+  quickActionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  quickActionContent: { 
-    flex: 1, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
+  quickActionContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
   },
-  quickActionTitle: { 
-    fontSize: 18, 
-    fontWeight: '900', 
-    color: '#fff', 
+  quickActionTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#fff',
     letterSpacing: 0.3,
     fontFamily: 'Poppins-Bold',
   },
-  quickActionArrow: { 
-    width: 32, 
-    height: 32, 
-    borderRadius: 10, 
-    backgroundColor: '#334155', 
-    alignItems: 'center', 
+  quickActionArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#334155',
+    alignItems: 'center',
     justifyContent: 'center',
   },
 
   // Activities
-  activityRow: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    marginBottom: 16, 
-    backgroundColor: '#1e293b', 
-    borderRadius: 18, 
-    padding: 18, 
-    borderWidth: 1, 
+  activityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    backgroundColor: '#1e293b',
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: 1,
     borderColor: '#334155',
   },
   activityCircle: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', marginRight: 18 },
@@ -1823,7 +1875,7 @@ const styles = StyleSheet.create({
   errorBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e293b', borderRadius: 20, padding: 20, marginBottom: 24, marginHorizontal: 20, borderWidth: 1, borderColor: '#ef4444' },
   errorTitle: { fontSize: 15, fontWeight: '900', color: '#fff', marginBottom: 6, fontFamily: 'Poppins-Bold' },
   errorText: { fontSize: 13, color: '#fca5a5', fontFamily: 'Poppins-Regular' },
-  
+
   // Permission
   permissionBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e293b', borderRadius: 20, padding: 20, marginBottom: 24, marginHorizontal: 20, borderWidth: 1, borderColor: '#f59e0b' },
   permissionTitle: { fontSize: 15, fontWeight: '900', color: '#fff', marginBottom: 6, fontFamily: 'Poppins-Bold' },
@@ -1836,13 +1888,13 @@ const styles = StyleSheet.create({
 
   // Blog Layout
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
-  seeAllText: { color: '#06b6d4', fontWeight: '900', fontSize: 15, fontFamily: 'Poppins-Bold' },
-  blogCard: { 
-    backgroundColor: '#1e293b', 
-    borderRadius: 24, 
-    marginBottom: 20, 
-    overflow: 'hidden', 
-    borderWidth: 1, 
+  seeAllText: { color: '#0369a1', fontWeight: '900', fontSize: 15, fontFamily: 'Poppins-Bold' },
+  blogCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 24,
+    marginBottom: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
     borderColor: '#334155',
   },
   blogImageContainer: { position: 'relative', height: 200 },
@@ -1876,13 +1928,13 @@ const styles = StyleSheet.create({
   lightboxClose: { position: 'absolute', top: 10, right: 10, zIndex: 10 },
 
   // Info sections
-  infoSection: { 
-    marginHorizontal: 20, 
-    marginBottom: 32, 
-    backgroundColor: '#1e293b', 
-    borderRadius: 24, 
-    padding: 28, 
-    borderWidth: 1, 
+  infoSection: {
+    marginHorizontal: 20,
+    marginBottom: 32,
+    backgroundColor: '#1e293b',
+    borderRadius: 24,
+    padding: 28,
+    borderWidth: 1,
     borderColor: '#334155',
   },
   infoTitle: { fontSize: 24, fontWeight: '900', color: '#fff', marginBottom: 20, letterSpacing: 0.5 },
@@ -1892,15 +1944,15 @@ const styles = StyleSheet.create({
   // Services
   servicesSection: { marginHorizontal: 20, marginBottom: 32 },
   servicesGrid: { flexDirection: 'column', gap: 14 },
-  serviceCard: { 
-    width: '100%', 
-    backgroundColor: '#1e293b', 
-    borderRadius: 24, 
-    padding: 24, 
-    marginBottom: 0, 
+  serviceCard: {
+    width: '100%',
+    backgroundColor: '#1e293b',
+    borderRadius: 24,
+    padding: 24,
+    marginBottom: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1, 
+    borderWidth: 1,
     borderColor: '#334155',
     shadowColor: '#06b6d4',
     shadowOffset: { width: 0, height: 4 },
@@ -2011,7 +2063,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.5,
   },
-  
+
   // Bionluk Card
   bionlukCard: {
     marginTop: 8,
@@ -2528,5 +2580,66 @@ const styles = StyleSheet.create({
   planModalUpgradeButtonTextRecommended: {
     color: '#7c3aed',
   },
+
+  // Scroll to Top Button
+  scrollToTopButton: {
+    position: 'absolute',
+    bottom: 130, // User preference
+    right: 20,
+    zIndex: 9999,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)', // Semi-transparent dark bg
+    shadowColor: '#06b6d4',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.15)',
+    overflow: 'hidden', // Ensure water stays inside circle from outside perspective
+  },
+  scrollToTopPressable: {
+    flex: 1,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Removed overflow:hidden here since container has it, but safe to keep or remove.
+  },
+  liquidContainer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 30,
+    overflow: 'hidden', // Critical for masking the square waves into a circle
+  },
+  liquidWave: {
+    width: 150, // Much larger for smoother wave
+    height: 150,
+    borderRadius: 60, // 40% radius for good squircle shape
+    position: 'absolute',
+    top: -5, // Adjust water level (higher top = lower water)
+    left: -45, // Center horizontally relative to button center (60/2 - 150/2 = -45)
+    // backgroundColor handled by gradient or style
+  },
+  liquidWaveBack: {
+    backgroundColor: 'rgba(6, 182, 212, 0.4)', // Lighter, transparent teal
+    width: 160, // Slightly simpler/different size for variation
+    height: 160,
+    borderRadius: 65,
+    top: -10,
+    left: -50,
+  },
+  liquidIconContainer: {
+    zIndex: 10,
+    shadowColor: 'rgba(0,0,0,0.3)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 4,
+  },
+  // Legacy styles removed
+  scrollToTopGradient: {},
+  scrollToTopGlow: {},
 
 });

@@ -63,7 +63,7 @@ export const Skeleton: React.FC<SkeletonProps> = ({
           width,
           height,
           borderRadius: getBorderRadius(),
-          backgroundColor: theme.colors.surface.elevated,
+          backgroundColor: theme.colors.surfaceElevated,
           opacity,
         },
         style,

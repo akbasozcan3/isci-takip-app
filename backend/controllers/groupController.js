@@ -11,19 +11,29 @@ const activityLogService = require('../services/activityLogService');
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
 function getUserIdFromToken(req) {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) return null;
-  const TokenModel = require('../core/database/models/token.model');
-  const tokenData = TokenModel.get(token);
-  return tokenData ? tokenData.userId : null;
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return null;
+    const TokenModel = require('../core/database/models/token.model');
+    if (!TokenModel || typeof TokenModel.get !== 'function') return null;
+    const tokenData = TokenModel.get(token);
+    return tokenData ? tokenData.userId : null;
+  } catch (err) {
+    logger && typeof logger.warn === 'function' && logger.warn('getUserIdFromToken error', { error: err.message });
+    return null;
+  }
 }
 
 class GroupController {
   async createGroup(req, res) {
     try {
-      const { name, address, lat, lng, createdBy, visibility } = req.body || {};
-      
-      const sanitized = validationService.sanitizeUserInput({ name, address, createdBy, visibility });
+      const { name, address, lat, lng, createdBy: bodyCreatedBy, visibility } = req.body || {};
+
+      // Prefer authenticated user id when available (requireAuth should set req.user)
+      const authUserId = req.user && req.user.id ? req.user.id : null;
+      const creatorId = authUserId || (typeof bodyCreatedBy === 'string' && bodyCreatedBy.trim() ? bodyCreatedBy : null);
+
+      const sanitized = validationService.sanitizeUserInput({ name, address, createdBy: creatorId, visibility });
       const validation = validationService.validateGroupData({
         name: sanitized.name,
         createdBy: sanitized.createdBy
@@ -31,6 +41,12 @@ class GroupController {
 
       if (!validation.valid) {
         return res.error(validation.error, 'VALIDATION_ERROR', 400);
+      }
+
+      // Defensive check: ensure we have a creator id before proceeding to DB/write paths
+      if (!sanitized.createdBy) {
+        logger && typeof logger.warn === 'function' && logger.warn('createGroup: missing createdBy after validation', { authUserId: authUserId, bodyCreatedBy });
+        return res.error('Kullanıcı bilgisi (createdBy) gerekli', 'VALIDATION_ERROR', 400);
       }
 
       const group = db.createGroup({ 
@@ -45,16 +61,16 @@ class GroupController {
       cacheService.delete(`group:${group.id}`);
       const response = { ...group, memberCount: db.getMemberCount(group.id) };
 
-      activityLogService.logActivity(createdBy, 'group', 'create_group', {
+      activityLogService.logActivity(sanitized.createdBy, 'group', 'create_group', {
         groupId: group.id,
         groupName: sanitized.name,
         path: req.path
       });
 
       const notificationService = require('../services/notificationService');
-      const user = db.findUserById(createdBy);
+      const user = db.findUserById(sanitized.createdBy);
       if (user && user.displayName) {
-        await notificationService.send(createdBy, {
+        await notificationService.send(sanitized.createdBy, {
           title: '🎉 Grup Oluşturuldu',
           message: `"${sanitized.name}" grubu başarıyla oluşturuldu. Grup kodunuz: ${group.code}`,
           type: 'success',
@@ -144,8 +160,8 @@ class GroupController {
           logger.warn('Auto notification error', { error: err.message });
         });
         
-        const members = db.getMembers(groupId) || [];
-        const otherMembers = members.filter(m => m.userId !== request.userId);
+        const members = (db.getMembers && db.getMembers(groupId)) || [];
+        const otherMembers = Array.isArray(members) ? members.filter(m => m.userId !== request.userId) : [];
         const newMemberName = request.displayName || 'Yeni üye';
         
         for (const member of otherMembers) {

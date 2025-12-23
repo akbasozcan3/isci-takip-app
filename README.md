@@ -1,205 +1,354 @@
-# İşçi Takip Platformu (Expo + Node.js)
+# BAVAXE - GPS Takip ve İşçi Yönetim Sistemi
 
-Gerçek zamanlı konum takibi, grup yönetimi ve e-posta doğrulamalı kimlik doğrulama içeren, yayınlanmaya hazır bir mobil + backend çözümü.
+## 📱 Genel Bakış
 
----
+BAVAXE, modern bir GPS takip ve işçi yönetim sistemidir. React Native (Expo) ile geliştirilmiş mobil uygulama ve Node.js/Express backend'e sahiptir.
 
-## İçindekiler
-1. [Mimari](#mimari)
-2. [Gereksinimler](#gereksinimler)
-3. [Kurulum & Çalıştırma](#kurulum--çalıştırma)
-4. [Ortam Değişkenleri](#ortam-değişkenleri)
-5. [PM2 ile Production Backend](#pm2-ile-production-backend)
-6. [Build / Dağıtım](#build--dağıtım)
-7. [Test Akışı](#test-akışı)
-8. [Sorun Giderme](#sorun-giderme)
+### ✨ Özellikler
 
----
-
-## Mimari
-
-```
-my-app
-├── app/                  # Expo Router tabanlı mobil istemci
-├── backend/              # Express + Socket.IO + Flask SMTP servisi
-│   ├── server.js         # Ana Node.js API
-│   ├── email_service.py  # Gmail SMTP doğrulama servisi
-│   └── data.json         # Dosya tabanlı veri deposu
-├── components/, utils/   # Paylaşılan RN bileşenleri / yardımcılar
-└── package.json          # Monorepo script'leri
-```
-
-Başlıca özellikler:
-- Socket.IO ile canlı konum yayını ve grup bazlı odalar
-- OTP + e-posta doğrulamalı auth akışı
-- Leaflet & React Native Maps destekli takip ekranları
-- PM2 üzerinden 7/24 çalışan backend + SMTP servisi
+- 🔐 **Güvenli Kimlik Doğrulama**: Email/şifre ve Google OAuth
+- 📍 **GPS Takip**: Gerçek zamanlı konum izleme
+- 👥 **Kullanıcı Yönetimi**: Profil, avatar, şifre değiştirme
+- 📧 **İletişim Formu**: Gmail entegrasyonu ile e-posta gönderimi
+- 🔔 **Push Bildirimleri**: OneSignal entegrasyonu
+- 📊 **İstatistikler**: Kullanıcı aktivite raporları
+- 🎨 **Premium UI/UX**: Modern, karanlık tema tasarım
 
 ---
 
-## Gereksinimler
+## 🚀 Hızlı Başlangıç
 
-- Node.js **18+**
-- npm **8+**
-- Python **3.11+** (Flask e-posta servisi için)
-- Expo CLI (`npx expo …` komutları yeterli)
-- (Opsiyonel) EAS CLI – market build’leri için
+### Gereksinimler
 
----
+- Node.js >= 18.0.0
+- npm >= 8.0.0
+- Expo CLI
+- PM2 (backend için)
 
-## Kurulum & Çalıştırma
-
-1. **Bağımlılıkları yükle**
-   ```bash
-   npm install
-   npm --prefix backend install
-   python -m venv venv && venv\Scripts\pip install -r backend/requirements.txt  # Windows
-   ```
-
-2. **Ortam dosyalarını oluştur**
-   - `cp backend/env.example backend/.env`
-   - `cp env.example .env` (Expo için opsiyonel)
-
-3. **Geliştirme ortamı**
-   ```bash
-   # Sadece backend
-   npm run start:backend          # Node + Socket.IO
-   (cd backend && python email_service.py)  # Gmail SMTP servisi
-
-   # Mobil uygulama
-   npx expo start
-   ```
-   Android emulator API tabanı otomatik olarak `http://10.0.2.2:4000`’e düşer; iOS simulator için `http://localhost:4000` kullanılır. Farklı bir backend URL’si vermek için (ör. fiziksel cihazdan LAN IP’ye gitmek):
-   ```bash
-   $env:EXPO_PUBLIC_API_BASE_URL="https://api.domain.com"   # PowerShell
-   export EXPO_PUBLIC_API_BASE_URL=https://api.domain.com   # macOS/Linux
-   ```
-
-### Windows tek komut başlatma
-
-- **PowerShell:** `.\start-backend.ps1`
-- **CMD:** `start-backend.bat`
-
-Bu scriptler:
-- `backend/.env` dosyasını `env.example` üzerinden üretir,
-- Node bağımlılıklarını yükler,
-- Repodaki `venv/` altında Python sanal ortamını kurup `backend/requirements.txt` içindeki Flask + SMTP bağımlılıklarını yükler,
-- `pm2` ile hem Express API’yi hem de `email_service.py` sürecini arka planda başlatır.
-
-Servisler başladıktan sonra sağlık kontrolleri:
-- API: `http://localhost:4000/api/health`
-- Email servisi: `http://localhost:5001/health`
-
----
-
-## Ortam Değişkenleri
-
-| Dosya | Anahtar | Açıklama |
-|-------|---------|----------|
-| `backend/.env` | `PORT` | Node API portu (varsayılan 4000) |
-|  | `JWT_SECRET` | JWT imzalama anahtarı (production’da zorunlu) |
-|  | `EMAIL_SERVICE_URL` | Node’un Flask servisine erişeceği URL (`http://localhost:5001`) |
-|  | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Gmail App Password bilgileri |
-|  | `EMAIL_LOGO_URL` | Doğrulama e-postasında gösterilecek logo (https link) |
-|  | `ALLOWED_ORIGINS` | CORS whitelist (virgülle ayır) |
-|  | `APP_SCHEME`, `FRONTEND_URL` | Şifre sıfırlama linkleri için deep link ayarları |
-|  | `ADMIN_RESET_TOKEN` | Tüm veriyi silen admin endpoint’i için gizli anahtar |
-| `.env` (opsiyonel) | `EXPO_PUBLIC_API_BASE_URL` / `EXPO_PUBLIC_API_URL` | Mobil istemci için varsayılan API tabanı |
-
-Güncel örnek değerler için `backend/env.example` ve kök `env.example` dosyalarına bakın.
-
----
-
-## PM2 ile Production Backend
-
-1. **İlk kurulum**
-   ```bash
-   cd backend
-   pm2 delete all                 # varsa eski süreçleri temizle
-   pm2 start ecosystem.config.js  # hem api hem email servisi
-   pm2 save
-   ```
-2. **Windows’ta otomatik başlangıç**
-   ```powershell
-   # PowerShell'i yönetici olarak aç
-   pm2 startup windows
-   # Komut çıktısında verilen ek satırı çalıştır (ör. Register-ScheduledTask ...).
-   ```
-3. **Durum ve loglar**
-   ```bash
-   pm2 status
-   pm2 logs isci-takip-api
-   pm2 logs email-service
-   ```
-4. **Sağlık kontrolleri**
-   - API: `http://<server>:4000/api/health`
-   - SMTP servisi: `http://<server>:5001/health`
-
-PM2 konfig dosyası (`backend/ecosystem.config.js`) Node sürecini `server.js` ile, SMTP sürecini de sanal ortam Python yorumlayıcısı ile başlatır; ekstra script yazmaya gerek yoktur.
-
----
-
-## Build / Dağıtım
-
-- **Android APK (Preview):**
-  ```bash
-  npm install -g eas-cli
-  eas login
-  eas build:configure
-  eas build --platform android --profile preview
-  ```
-- **Production APK / AAB:** `eas build --platform android --profile production-apk` veya `--profile production`.
-- **iOS:** Mac gerektirir → `eas build --platform ios --profile production`.
-- **Yerel cihaz test:** `npx expo run:android` veya `npx expo run:ios`.
-
-Backend’i Render/Railway gibi platformlara taşıyacaksan:
-1. Node 18 ortamı aç.
-2. Start komutu: `cd backend && node server.js`.
-3. `PORT`, `JWT_SECRET`, `EMAIL_SERVICE_URL`, `SMTP_*` gibi değişkenleri UI’dan tanımla.
-4. Flask servisini ayrı bir dyno/VM’de çalıştır veya `EMAIL_SERVICE_URL`’i mevcut hosta göre güncelle.
-
-### Tüm Veriyi Sıfırlama
-
-Üretim dışı ortamlarda tüm kullanıcıları, tokenları ve JSON verisini sıfırlamak için korumalı admin endpoint’i kullan:
+### Kurulum
 
 ```bash
-curl -X POST https://<host>/api/admin/reset-all \
-  -H "Content-Type: application/json" \
-  -H "x-reset-token: <ADMIN_RESET_TOKEN>"
+# Repository'yi klonlayın
+git clone <repository-url>
+cd my-app
+
+# Bağımlılıkları yükleyin
+npm install
+cd backend && npm install && cd ..
+
+# Environment dosyalarını yapılandırın
+cp backend/.env.example backend/.env
+# .env dosyasını düzenleyin
+
+# Backend'i başlatın
+npm run start:backend
+
+# Yeni terminalde uygulamayı başlatın
+npm start
 ```
 
-`ADMIN_RESET_TOKEN` değeri `.env` dosyasında tanımlanmalıdır. Yanlış token gönderilirse istek reddedilir.
+---
+
+## 📁 Proje Yapısı
+
+```
+my-app/
+├── app/                    # Expo Router sayfaları
+│   ├── (tabs)/            # Tab navigasyon sayfaları
+│   ├── auth/              # Kimlik doğrulama sayfaları
+│   └── contact.tsx        # İletişim formu
+├── backend/               # Node.js/Express backend
+│   ├── controllers/       # API controller'ları
+│   ├── middleware/        # Express middleware
+│   ├── routes/            # API rotaları
+│   ├── services/          # İş mantığı servisleri
+│   └── server.js          # Ana server dosyası
+├── components/            # React bileşenleri
+│   ├── ui/               # UI bileşenleri
+│   └── Toast.tsx         # Bildirim bileşeni
+├── hooks/                # Custom React hooks
+├── utils/                # Yardımcı fonksiyonlar
+└── contexts/             # React Context'ler
+```
 
 ---
 
-## Test Akışı
+## 🔧 Yapılandırma
 
-1. `pm2 start ecosystem.config.js` → `http://localhost:4000/api/health` = OK  
-2. `curl -X POST http://localhost:5001/send-verification -d '{"email":"test@domain.com","code":"123456"}'` → Gmail kutusuna düşmesi  
-3. Mobilde `Register` ekranı → e-posta OTP → `login` → `track` sekmesinde Socket.IO akışı  
-4. `POST /api/location/store` ile manuel konum gönder; admin panelinde listelenmeli  
-5. `npm run lint` (Expo) ve `npm --prefix backend run lint` (varsa) → hatasız
+### Backend Environment Variables
+
+```env
+# Server
+PORT=4000
+NODE_ENV=production
+
+# Database
+DATABASE_URL=postgresql://...
+
+# JWT
+JWT_SECRET=your-secret-key
+
+# Google OAuth
+GOOGLE_CLIENT_ID=your-client-id
+
+# Email (Gmail)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+
+# OneSignal
+ONESIGNAL_APP_ID=your-app-id
+ONESIGNAL_REST_API_KEY=your-api-key
+```
+
+### Frontend Environment Variables
+
+```env
+EXPO_PUBLIC_API_BASE_URL=http://localhost:4000
+EXPO_PUBLIC_GOOGLE_CLIENT_ID=your-client-id
+EXPO_PUBLIC_ONESIGNAL_APP_ID=your-app-id
+```
 
 ---
 
-## Sorun Giderme
+## 📜 Kullanılabilir Komutlar
 
-| Sorun | Çözüm |
-|-------|-------|
-| `localhost:5001` açılmıyor | Flask servisi çalışmıyor; `pm2 logs email-service` ile kontrol et, App Password / firewall ayarlarını doğrula. |
-| Android emülatörü API’ye bağlanmıyor | `EXPO_PUBLIC_API_BASE` boş bırak, app varsayılan olarak `http://10.0.2.2:4000` kullanır. Fiziksel cihaz için `http://<LAN_IP>:4000` gir. |
-| Render’da soğuk başlama | İlk istekte 30 sn kadar beklemek normal. Keep-alive için ücretsiz cron ping kullanabilirsin. |
-| Gmail doğrulama e-postası gelmiyor | `backend/.env` içindeki `SMTP_*` değerlerini (özellikle App Password) kontrol et, `http://localhost:5001/health` endpoint’inden servis durumunu doğrula ve detay için `backend/logs/email-err.log` dosyasını incele. |
-| JSON veritabanı bozuldu | `backend/data.backup.json` dosyasını `data.json` olarak kopyala, servisleri yeniden başlat. |
+### Geliştirme
+
+```bash
+# Uygulamayı başlat
+npm start
+
+# Backend'i başlat
+npm run start:backend
+
+# Her ikisini birden başlat
+npm run start:all
+
+# Backend'i geliştirme modunda başlat
+npm run start:dev
+```
+
+### Production
+
+```bash
+# Backend'i PM2 ile başlat
+npm run server:pm2
+
+# Backend'i durdur
+npm run server:stop
+
+# Backend'i yeniden başlat
+npm run server:restart
+
+# Logları görüntüle
+npm run server:logs
+```
+
+### Build
+
+```bash
+# Android APK
+npm run build:android
+
+# Android AAB (Play Store)
+npm run build:android:aab
+
+# iOS
+npm run build:ios
+
+# Tüm platformlar
+npm run build:all
+```
 
 ---
 
-## Lisans
+## 🔐 Güvenlik
 
-MIT Lisansı. Üretim ortamında ek güvenlik katmanları (gerçek DB, rate limit, şifre rotasyonu vb.) eklemeniz önerilir.
+### Implemented Security Features
+
+- ✅ JWT token authentication
+- ✅ Password hashing (bcryptjs)
+- ✅ Rate limiting
+- ✅ CORS configuration
+- ✅ Helmet.js security headers
+- ✅ Input validation
+- ✅ SQL injection prevention
+- ✅ XSS protection
+- ✅ Admin authorization middleware
+
+### Best Practices
+
+- Tüm hassas bilgiler environment variables'da
+- HTTPS kullanımı (production)
+- Secure cookie ayarları
+- Regular dependency updates
 
 ---
 
-Soruların için: `destek@iscitakip.com`
+## 📧 Email Yapılandırması
 
-İyi yayınlar! 🚀
+### Gmail App Password Oluşturma
+
+1. Google Account Settings → Security
+2. 2-Step Verification'ı aktifleştir
+3. App Passwords → Mail → Generate
+4. Oluşturulan şifreyi `.env` dosyasına ekle
+
+```env
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=generated-app-password
+```
+
+---
+
+## 🔔 Push Notifications (OneSignal)
+
+### Kurulum
+
+1. [OneSignal](https://onesignal.com) hesabı oluştur
+2. Yeni uygulama oluştur
+3. App ID ve REST API Key'i al
+4. `.env` dosyasına ekle
+
+```env
+ONESIGNAL_APP_ID=your-app-id
+ONESIGNAL_REST_API_KEY=your-rest-api-key
+```
+
+---
+
+## 🗄️ Database
+
+### PostgreSQL (Recommended for Production)
+
+```bash
+# PostgreSQL bağlantısı
+DATABASE_URL=postgresql://user:password@host:5432/database
+
+# Otomatik migration
+# Backend başlatıldığında tablolar otomatik oluşturulur
+```
+
+### JSON Database (Development)
+
+```bash
+# Otomatik olarak data.json dosyası oluşturulur
+# Geliştirme için uygundur
+```
+
+---
+
+## 📱 Deployment
+
+### Backend (Node.js)
+
+#### Option 1: PM2 (Recommended)
+
+```bash
+cd backend
+pm2 start ecosystem.config.js --env production
+pm2 save
+pm2 startup
+```
+
+#### Option 2: Docker
+
+```bash
+# Dockerfile oluştur
+# docker build -t bavaxe-backend .
+# docker run -p 4000:4000 bavaxe-backend
+```
+
+### Mobile App
+
+#### Android
+
+```bash
+# EAS Build ile
+npm run build:android:aab
+
+# Play Store'a yükle
+npm run submit:android
+```
+
+#### iOS
+
+```bash
+# EAS Build ile
+npm run build:ios
+
+# App Store'a yükle
+npm run submit:ios
+```
+
+---
+
+## 🧪 Testing
+
+### Manual Testing Checklist
+
+- [ ] Login/Register flow
+- [ ] Google OAuth login
+- [ ] Password reset
+- [ ] Contact form email delivery
+- [ ] Profile management
+- [ ] Avatar upload
+- [ ] Push notifications
+- [ ] GPS tracking
+- [ ] Admin features
+
+---
+
+## 📊 Monitoring
+
+### Recommended Tools
+
+- **Backend**: PM2, New Relic, Sentry
+- **Database**: PostgreSQL monitoring
+- **Logs**: PM2 logs, CloudWatch
+- **Uptime**: UptimeRobot, Pingdom
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to branch (`git push origin feature/AmazingFeature`)
+5. Open Pull Request
+
+---
+
+## 📝 License
+
+MIT License - see LICENSE file for details
+
+---
+
+## 👨‍💻 Author
+
+**Ozcan Akbas**
+
+---
+
+## 🆘 Support
+
+For issues and questions:
+- Email: support@bavaxe.com
+- GitHub Issues: [Create Issue](https://github.com/...)
+
+---
+
+## 🎉 Acknowledgments
+
+- Expo team for amazing framework
+- OneSignal for push notifications
+- All open-source contributors
+
+---
+
+**Version**: 1.0.0  
+**Last Updated**: December 2024

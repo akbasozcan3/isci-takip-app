@@ -1,165 +1,179 @@
-import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { Animated, Pressable, StyleProp, StyleSheet, Text, ViewStyle } from 'react-native';
-import { useTheme } from '../theme/ThemeContext';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  ViewStyle,
+} from 'react-native';
+import { useTheme } from '../theme';
 
-interface ButtonProps {
+export interface ButtonProps {
   title: string;
-  onPress?: () => void;
-  loading?: boolean;
-  disabled?: boolean;
-  style?: StyleProp<ViewStyle>;
-  variant?: 'primary' | 'secondary' | 'danger' | 'success' | 'ghost';
+  onPress: () => void;
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
   size?: 'sm' | 'md' | 'lg';
+  disabled?: boolean;
+  loading?: boolean;
+  icon?: React.ReactNode;
   fullWidth?: boolean;
+  style?: ViewStyle;
 }
 
 export const Button: React.FC<ButtonProps> = ({
   title,
   onPress,
-  loading,
-  disabled,
-  style,
   variant = 'primary',
   size = 'md',
+  disabled = false,
+  loading = false,
+  icon,
   fullWidth = false,
+  style,
 }) => {
   const theme = useTheme();
-  const scaleAnim = React.useRef(new Animated.Value(1)).current;
-  const opacityAnim = React.useRef(new Animated.Value(1)).current;
 
-  const getGradientColors = (): string[] => {
+  const getButtonStyles = () => {
+    const baseStyle: ViewStyle = {
+      height: theme.components.button.height[size],
+      paddingHorizontal: theme.components.button.padding[size].horizontal,
+      paddingVertical: theme.components.button.padding[size].vertical,
+      borderRadius: theme.borderRadius.lg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexDirection: 'row',
+      opacity: disabled || loading ? 0.6 : 1,
+    };
+
+    if (fullWidth) {
+      baseStyle.width = '100%';
+    }
+
     switch (variant) {
-      case 'danger':
-        return theme.colors.gradient.danger;
-      case 'success':
-        return theme.colors.gradient.success;
+      case 'primary':
+        return {
+          ...baseStyle,
+          backgroundColor: theme.colors.primary,
+        };
       case 'secondary':
-        return theme.colors.gradient.secondary;
+        return {
+          ...baseStyle,
+          backgroundColor: theme.colors.secondary,
+        };
+      case 'outline':
+        return {
+          ...baseStyle,
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          borderColor: theme.colors.primary,
+        };
       case 'ghost':
-        return ['transparent', 'transparent'];
+        return {
+          ...baseStyle,
+          backgroundColor: 'transparent',
+        };
+      case 'danger':
+        return {
+          ...baseStyle,
+          backgroundColor: theme.colors.error,
+        };
       default:
-        return theme.colors.gradient.primary;
+        return baseStyle;
     }
   };
 
-  const getSizeStyles = () => {
-    switch (size) {
-      case 'sm':
-        return { paddingVertical: 10, paddingHorizontal: 16, fontSize: 14 };
-      case 'lg':
-        return { paddingVertical: 18, paddingHorizontal: 24, fontSize: 18 };
+  const getTextStyles = () => {
+    const baseStyle = {
+      fontSize: theme.typography.fontSize[size === 'sm' ? 'sm' : size === 'lg' ? 'lg' : 'base'],
+      fontWeight: theme.typography.fontWeight.semiBold as '600',
+      fontFamily: theme.typography.fontFamily.semiBold,
+    };
+
+    switch (variant) {
+      case 'primary':
+      case 'secondary':
+      case 'danger':
+        return {
+          ...baseStyle,
+          color: theme.colors.textInverse,
+        };
+      case 'outline':
+        return {
+          ...baseStyle,
+          color: theme.colors.primary,
+        };
+      case 'ghost':
+        return {
+          ...baseStyle,
+          color: theme.colors.text,
+        };
       default:
-        return { paddingVertical: 14, paddingHorizontal: 20, fontSize: 16 };
+        return {
+          ...baseStyle,
+          color: theme.colors.text,
+        };
     }
   };
 
-  const sizeStyles = getSizeStyles();
-  const gradientColors = getGradientColors();
-  const isGhost = variant === 'ghost';
+  const buttonContent = (
+    <>
+      {loading ? (
+        <ActivityIndicator
+          color={variant === 'outline' || variant === 'ghost' ? theme.colors.primary : theme.colors.textInverse}
+          size="small"
+        />
+      ) : (
+        <>
+          {icon && <View style={styles.iconContainer}>{icon}</View>}
+          <Text style={getTextStyles()}>{title}</Text>
+        </>
+      )}
+    </>
+  );
 
-  const handlePressIn = () => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 0.96,
-        useNativeDriver: true,
-        ...theme.animation.spring,
-      }),
-      Animated.timing(opacityAnim, {
-        toValue: 0.9,
-        duration: theme.animation.fast,
-        useNativeDriver: true,
-      }),
-    ]).start();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  };
-
-  const handlePressOut = () => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-        ...theme.animation.spring,
-      }),
-      Animated.timing(opacityAnim, {
-        toValue: 1,
-        duration: theme.animation.fast,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  const handlePress = () => {
-    if (!disabled && !loading && onPress) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      onPress();
-    }
-  };
+  if (variant === 'primary' && !disabled && !loading) {
+    return (
+      <Pressable
+        onPress={onPress}
+        disabled={disabled || loading}
+        style={[getButtonStyles(), style]}
+        android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
+      >
+        <LinearGradient
+          colors={theme.colors.gradients.primary as [string, string, ...string[]]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[StyleSheet.absoluteFill, { borderRadius: theme.borderRadius.lg }]}
+        />
+        <View style={styles.content}>{buttonContent}</View>
+      </Pressable>
+    );
+  }
 
   return (
     <Pressable
-      onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
+      onPress={onPress}
       disabled={disabled || loading}
-      style={[
-        styles.container,
-        fullWidth && styles.fullWidth,
-        (disabled || loading) && styles.disabled,
-        style,
-      ]}
+      style={[getButtonStyles(), style]}
+      android_ripple={{
+        color: variant === 'outline' || variant === 'ghost' ? theme.colors.primary + '20' : 'rgba(255,255,255,0.2)',
+      }}
     >
-      <Animated.View style={{ transform: [{ scale: scaleAnim }], opacity: opacityAnim }}>
-        {isGhost ? (
-          <View style={[styles.ghostContainer, { paddingVertical: sizeStyles.paddingVertical, paddingHorizontal: sizeStyles.paddingHorizontal }]}>
-            <Text style={[styles.title, { fontSize: sizeStyles.fontSize, color: theme.colors.text.primary }]}>
-              {loading ? 'Yükleniyor...' : title}
-            </Text>
-          </View>
-        ) : (
-          <LinearGradient
-            colors={gradientColors}
-            style={[styles.gradient, { paddingVertical: sizeStyles.paddingVertical, paddingHorizontal: sizeStyles.paddingHorizontal }]}
-            start={[0, 0]}
-            end={[1, 1]}
-          >
-            <Text style={[styles.title, { fontSize: sizeStyles.fontSize, color: theme.colors.text.primary }]}>
-              {loading ? 'Yükleniyor...' : title}
-            </Text>
-          </LinearGradient>
-        )}
-      </Animated.View>
+      {buttonContent}
     </Pressable>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  fullWidth: {
-    width: '100%',
-  },
-  gradient: {
+  content: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
   },
-  ghostContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  title: {
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  disabled: {
-    opacity: 0.5,
+  iconContainer: {
+    marginRight: 8,
   },
 });
 

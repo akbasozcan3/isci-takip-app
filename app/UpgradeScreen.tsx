@@ -130,13 +130,13 @@ const UpgradeScreen: React.FC = () => {
     try {
       setLoading(true);
       setErrorMessage(null);
-      
+
       const [plansRes, subscriptionRes, historyRes] = await Promise.all([
         authFetch('/plans'),
         authFetch('/me/subscription'),
         authFetch('/billing/history')
       ]);
-      
+
       if (plansRes.ok) {
         const plansData = await plansRes.json();
         if (Array.isArray(plansData.plans) && plansData.plans.length > 0) {
@@ -170,15 +170,22 @@ const UpgradeScreen: React.FC = () => {
       } else {
         setPlans(FALLBACK_PLANS);
       }
-      
+
       if (subscriptionRes.ok) {
         const subData = await subscriptionRes.json();
         setSubscription(subData.subscription || null);
       }
-      
+
       if (historyRes.ok) {
         const historyData = await historyRes.json();
-        setHistory(historyData.history || historyData || []);
+        const historyArray = Array.isArray(historyData.history)
+          ? historyData.history
+          : Array.isArray(historyData)
+            ? historyData
+            : [];
+        setHistory(historyArray);
+      } else {
+        setHistory([]);
       }
     } catch (error) {
       console.error('[UpgradeScreen] Plan fetch error:', error);
@@ -209,17 +216,24 @@ const UpgradeScreen: React.FC = () => {
         authFetch('/me/subscription'),
         authFetch('/billing/history')
       ]);
-      
+
       if (subscriptionRes.ok) {
         const subData = await subscriptionRes.json();
         setSubscription(subData.subscription || null);
       }
-      
+
       if (historyRes.ok) {
         const historyData = await historyRes.json();
-        setHistory(historyData.history || historyData || []);
+        const historyArray = Array.isArray(historyData.history)
+          ? historyData.history
+          : Array.isArray(historyData)
+            ? historyData
+            : [];
+        setHistory(historyArray);
+      } else {
+        setHistory([]);
       }
-      
+
       await fetchPlans();
     } catch (error) {
       console.error('[UpgradeScreen] Subscription refresh error:', error);
@@ -229,7 +243,7 @@ const UpgradeScreen: React.FC = () => {
   const handleSelectPlan = React.useCallback(
     async (planId: string) => {
       if (processingPlan) return;
-      
+
       if (planId === 'free') {
         Alert.alert('Bilgi', 'Zaten ücretsiz plandayız veya ücretsiz plana geçiş için destek ile iletişime geçin.');
         return;
@@ -250,18 +264,18 @@ const UpgradeScreen: React.FC = () => {
   const handlePaymentSuccess = React.useCallback(async () => {
     setShowPayment(false);
     setSelectedPlan(null);
-    
+
     await refreshSubscription();
-    
+
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
     try {
       const subRes = await authFetch('/me/subscription');
       if (subRes.ok) {
         const subData = await subRes.json();
         if (subData.subscription) {
           Alert.alert(
-            '🎉 Ödeme Başarılı!', 
+            '🎉 Ödeme Başarılı!',
             `${subData.subscription.planName} planınız aktifleştirildi.`,
             [{ text: 'Tamam', style: 'default' }]
           );
@@ -439,10 +453,10 @@ const UpgradeScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          {history.length === 0 ? (
+          {!history || !Array.isArray(history) || history.length === 0 ? (
             <Text style={styles.historyEmpty}>Henüz bir abonelik hareketi kaydı yok.</Text>
           ) : (
-            history.map((entry) => (
+            Array.isArray(history) && history.map((entry) => (
               <View key={entry.id} style={styles.historyItem}>
                 <View style={styles.historyBullet} />
                 <View style={styles.historyDetails}>
@@ -451,7 +465,7 @@ const UpgradeScreen: React.FC = () => {
                     {(entry.planName || entry.planId || '').toString()} • {formatDate(entry.timestamp)}
                   </Text>
                 </View>
-                  {typeof entry.amount === 'number' ? (
+                {typeof entry.amount === 'number' ? (
                   <Text style={styles.historyAmount}>
                     ₺{entry.amount}/{entry.interval === 'yearly' ? 'yıl' : 'ay'}
                   </Text>
@@ -467,7 +481,7 @@ const UpgradeScreen: React.FC = () => {
           visible={showPayment}
           planId={selectedPlan.id}
           planName={selectedPlan.title}
-          amount={selectedPlan.monthlyPriceTRY || selectedPlan.monthlyPrice || 
+          amount={selectedPlan.monthlyPriceTRY || selectedPlan.monthlyPrice ||
             (selectedPlan.priceLabel ? parseInt(selectedPlan.priceLabel.replace(/[^\d]/g, '')) : 0)}
           currency={selectedPlan.currency || 'USD'}
           onSuccess={handlePaymentSuccess}

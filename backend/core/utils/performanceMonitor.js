@@ -3,7 +3,7 @@
  * Advanced performance monitoring and alerting
  */
 
-const { logger } = require('./logger');
+const logger = require('./logger');
 
 class PerformanceMonitor {
   constructor() {

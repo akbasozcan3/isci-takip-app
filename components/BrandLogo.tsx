@@ -9,16 +9,17 @@ type Props = {
   style?: ImageStyle;
   withSoftContainer?: boolean;
   variant?: 'default' | 'compact' | 'large';
+  tintColor?: string;
 };
 
-export function BrandLogo({ 
-  size = 80, 
-  style, 
+export function BrandLogo({
+  size = 80,
+  style,
   withSoftContainer = false,
-  variant = 'default' 
+  variant = 'default',
+  tintColor
 }: Props) {
-  // Adjust size based on variant
-  const adjustedSize = variant === 'compact' ? size * 0.7 : variant === 'large' ? size * 1.3 : size;
+  const adjustedSize = variant === 'compact' ? size * 0.7 : variant === 'large' ? size : size;
 
   const img = (
     <Image
@@ -29,6 +30,7 @@ export function BrandLogo({
         {
           width: adjustedSize,
           height: adjustedSize,
+          tintColor: tintColor,
         },
         style
       ]}
@@ -98,7 +100,6 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
-    tintColor: undefined, // Keep original logo colors
   },
 });
 

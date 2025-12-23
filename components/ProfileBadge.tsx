@@ -56,12 +56,12 @@ export const ProfileBadge: React.FC<Props> = ({ name, size = 40, style, onPress:
 
   // If custom onPress provided, use it; otherwise default to profile navigation
   const handlePress = customOnPress || (() => {
-    router.push('/(tabs)/profile');
+    router.replace('/(tabs)/profile');
   });
 
   return (
-    <Pressable 
-      onPress={handlePress} 
+    <Pressable
+      onPress={handlePress}
       android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true }}
       style={({ pressed }) => pressed && { opacity: 0.8 }}
     >

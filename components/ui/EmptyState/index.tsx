@@ -31,17 +31,17 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   return (
     <View style={[styles.container, style]}>
       <View
-        style={[
+          style={[
           styles.iconContainer,
           {
-            backgroundColor: `${theme.colors.primary.main}20`,
+            backgroundColor: `${theme.colors.primary}20`,
           },
         ]}
       >
         <Ionicons
           name={icon}
           size={64}
-          color={theme.colors.primary.main}
+          color={theme.colors.primary}
         />
       </View>
       
@@ -49,7 +49,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
         style={[
           styles.title,
           {
-            color: theme.colors.text.primary,
+            color: theme.colors.text,
           },
         ]}
       >
@@ -61,7 +61,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
           style={[
             styles.message,
             {
-              color: theme.colors.text.secondary,
+              color: theme.colors.textSecondary,
             },
           ]}
         >

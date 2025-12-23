@@ -1,0 +1,48 @@
+// Avatar Upload Fonksiyonları
+const pickImageFromGallery = async () => {
+  try {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      showError('Galeri erişim izni gerekli');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      await uploadAvatar(result.assets[0].uri);
+    }
+  } catch (error) {
+    console.error('Image picker error:', error);
+    showError('Fotoğraf seçilemedi');
+  }
+};
+
+const uploadAvatar = async (uri: string) => {
+  try {
+    setUploadingAvatar(true);
+    setAvatarUrl(uri);
+    await SecureStore.setItemAsync('avatarUrl', uri);
+    showSuccess('Profil fotoğrafı güncellendi');
+  } catch (error) {
+    console.error('Upload error:', error);
+    showError('Fotoğraf yüklenemedi');
+    setAvatarUrl(null);
+  } finally {
+    setUploadingAvatar(false);
+  }
+};
+
+// Load avatar on mount
+React.useEffect(() => {
+  const loadAvatar = async () => {
+    const saved = await SecureStore.getItemAsync('avatarUrl');
+    if (saved) setAvatarUrl(saved);
+  };
+  loadAvatar();
+}, []);

@@ -20,6 +20,12 @@ class InactivityNotificationService {
    * Start the inactivity monitoring service
    */
   start() {
+    // DISABLED: Inactivity notifications are disabled by user request
+    logger.info('Inactivity notification service is disabled');
+    return;
+    
+    // Original code (disabled):
+    /*
     if (this.intervalId) {
       logger.warn('Inactivity notification service already running');
       return;
@@ -35,6 +41,7 @@ class InactivityNotificationService {
     setTimeout(() => {
       this.checkInactiveDevices();
     }, 60000);
+    */
   }
 
   /**
@@ -131,9 +138,9 @@ class InactivityNotificationService {
         // Send notification
         const notificationResult = await onesignalService.sendToPlayer(
           playerId,
+          '📍 Konum Güncellemesi',
+          `${userName}, ${minutes} dakikadır konum bilginiz güncellenmedi. Lütfen uygulamayı açın ve konum paylaşımınızı kontrol edin.`,
           {
-            title: '📍 Konum Güncellemesi',
-            message: `${userName}, ${minutes} dakikadır konum bilginiz güncellenmedi. Lütfen uygulamayı açın ve konum paylaşımınızı kontrol edin.`,
             data: {
               type: 'inactivity_alert',
               userId,

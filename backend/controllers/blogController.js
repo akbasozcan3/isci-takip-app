@@ -2,6 +2,7 @@ const db = require('../config/database');
 const { createError } = require('../core/utils/errorHandler');
 const ResponseFormatter = require('../core/utils/responseFormatter');
 const { logger } = require('../core/utils/logger');
+const { getUserIdFromToken } = require('../core/middleware/auth.middleware');
 
 class BlogController {
   validateArticle(data) {
@@ -33,8 +34,11 @@ class BlogController {
 
   async getAllArticles(req, res) {
     try {
-      let articles = db.getAllArticles();
-      
+      let articles = db.getAllArticles() || [];
+      if (!Array.isArray(articles)) {
+        articles = [];
+      }
+
       const {
         page = 1,
         limit = 20,
@@ -44,13 +48,15 @@ class BlogController {
         sort = 'newest',
         featured = null
       } = req.query;
-      
-      if (!articles || articles.length === 0) {
-        const sampleArticles = [
+
+      // If no articles in database, use sample articles
+      if (!Array.isArray(articles) || articles.length === 0) {
+        articles = [
           {
+            id: 'bavaxe-gps-kullanim-kilavuzu',
             title: 'Bavaxe GPS Takip Sistemi: Kapsamlı Kullanım Kılavuzu',
             excerpt: 'Bavaxe GPS takip sistemini kullanarak işletmenizin operasyonel verimliliğini nasıl artıracağınızı öğrenin. Gerçek zamanlı konum takibi, raporlama ve analitik özelliklerini keşfedin.',
-            hero: '../../app/blog/image/ChatGPT Image 9 Ara 2025 10_08_14.png',
+            hero: 'blog-hero-2',
             content: `# Bavaxe GPS Takip Sistemi: Kapsamlı Kullanım Kılavuzu
 
 ## Giriş
@@ -224,12 +230,13 @@ Web dashboard, masaüstü ve tablet cihazlardan tam erişim sağlar. Modern, res
 Bavaxe GPS takip sistemi, işletmenizin operasyonel verimliliğini artırmak için güçlü bir araçtır. Bu kılavuzda yer alan özellikleri kullanarak sistemden maksimum faydayı sağlayabilirsiniz. Platform, sürekli geliştirilmekte ve yeni özellikler eklenmektedir. Daha fazla bilgi için destek ekibimizle iletişime geçebilirsiniz.`,
             readTime: '25 dk',
             category: 'Kullanım',
-            hero: null,
+            hero: 'blog-hero-2',
             tags: ['GPS', 'Takip', 'Kullanım', 'Kılavuz'],
             createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
             updatedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
           },
           {
+            id: 'grup-yonetimi-rehber',
             title: 'Grup Yönetimi ve Takım Organizasyonu: Profesyonel Rehber',
             excerpt: 'Grup oluşturma, yönetimi ve takım organizasyonu için kapsamlı bir rehber. Grup bazlı konum takibi ve raporlama özelliklerini keşfedin.',
             content: `# Grup Yönetimi ve Takım Organizasyonu: Profesyonel Rehber
@@ -400,12 +407,13 @@ Grup bazlı raporlar oluşturarak her grubun performansını ayrı ayrı analiz 
 Etkili grup yönetimi, işletmenizin operasyonel başarısı için kritik öneme sahiptir. Bavaxe GPS takip sistemi, bu süreci kolaylaştıran güçlü araçlar sunar. Doğru stratejiler ve en iyi uygulamalar ile grup yönetiminden maksimum faydayı sağlayabilirsiniz. Platform, sürekli geliştirilmekte ve yeni özellikler eklenmektedir.`,
             readTime: '22 dk',
             category: 'Yönetim',
-            hero: null,
+            hero: 'blog-hero-1',
             tags: ['Grup', 'Yönetim', 'Organizasyon', 'Takım'],
             createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
             updatedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
           },
           {
+            id: 'guvenlik-ve-gizlilik',
             title: 'Güvenlik ve Gizlilik: Verilerinizin Korunması',
             excerpt: 'Bavaxe platformunda verilerinizin nasıl korunduğunu öğrenin. Şifreleme, güvenlik protokolleri ve gizlilik ayarları hakkında detaylı bilgi.',
             content: `# Güvenlik ve Gizlilik: Verilerinizin Korunması
@@ -645,6 +653,7 @@ Güvenlik ve gizlilik, Bavaxe'in temel değerleridir. Platformumuz, verilerinizi
             updatedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
           },
           {
+            id: 'operasyonel-verimlilik',
             title: 'Operasyonel Verimlilik: GPS Takibi ile İş Süreçlerini Optimize Etme',
             excerpt: 'GPS takip sistemini kullanarak operasyonel verimliliği nasıl artıracağınızı öğrenin. Rota optimizasyonu, zaman yönetimi ve kaynak planlama stratejileri.',
             content: `# Operasyonel Verimlilik: GPS Takibi ile İş Süreçlerini Optimize Etme
@@ -720,6 +729,7 @@ GPS takip sistemi, operasyonel verimliliği artırmak için güçlü bir araçt�
             updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
           },
           {
+            id: 'mobil-uygulama-kullanimi',
             title: 'Mobil Uygulama Kullanımı: iOS ve Android Rehberi',
             excerpt: 'Bavaxe mobil uygulamasını iOS ve Android cihazlarda nasıl kullanacağınızı öğrenin. Temel özellikler, ayarlar ve ipuçları.',
             content: `# Mobil Uygulama Kullanımı: iOS ve Android Rehberi
@@ -823,6 +833,7 @@ Bavaxe mobil uygulaması, işletmenizin operasyonel ihtiyaçlarını karşılama
             updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
           },
           {
+            id: 'gps-teknolojisi-gelecek',
             title: 'GPS Teknolojisi ve Geleceği: Modern İş Dünyasında Konum Tabanlı Çözümler',
             excerpt: 'GPS teknolojisinin iş dünyasındaki rolü ve gelecekteki potansiyeli hakkında kapsamlı bir analiz. Yapay zeka, IoT entegrasyonu ve akıllı şehir uygulamaları.',
             content: `# GPS Teknolojisi ve Geleceği: Modern İş Dünyasında Konum Tabanlı Çözümler
@@ -895,6 +906,7 @@ GPS teknolojisi, iş dünyasının geleceğini şekillendirmektedir. Bavaxe, bu 
             updatedAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString()
           },
           {
+            id: 'is-dunyasinda-gps-roi',
             title: 'İş Dünyasında GPS Takibi: Rekabet Avantajı ve ROI Analizi',
             excerpt: 'GPS takip sistemlerinin iş dünyasındaki etkisi ve yatırım getirisi. Müşteri memnuniyeti, maliyet tasarrufu ve operasyonel verimlilik artışı.',
             content: `# İş Dünyasında GPS Takibi: Rekabet Avantajı ve ROI Analizi
@@ -985,6 +997,7 @@ GPS takip sistemleri, modern işletmeler için kritik bir rekabet aracıdır. Ba
             updatedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString()
           },
           {
+            id: 'veri-analizi-raporlama',
             title: 'Veri Analizi ve Raporlama: İş Zekası ile Karar Verme',
             excerpt: 'GPS takip verilerini analiz ederek iş zekası oluşturma. Raporlama, trend analizi ve veriye dayalı karar verme stratejileri.',
             content: `# Veri Analizi ve Raporlama: İş Zekası ile Karar Verme
@@ -3346,36 +3359,561 @@ Gelişmiş veri analizi, modern işletmeler için rekabet avantajı sağlar. Bav
             featured: true,
             createdAt: new Date(Date.now() - 24 * 24 * 60 * 60 * 1000).toISOString(),
             updatedAt: new Date(Date.now() - 24 * 24 * 60 * 60 * 1000).toISOString()
+          },
+          {
+            title: 'Güvenlik ve Gizlilik: KVKK Uyumlu GPS Takip Çözümü',
+            excerpt: 'Bavaxe platformunun güvenlik özellikleri ve KVKK uyumluluğu hakkında detaylı bilgi. Veri koruma, şifreleme ve gizlilik kontrolleri.',
+            content: `# Güvenlik ve Gizlilik: KVKK Uyumlu GPS Takip Çözümü
+
+## Güvenlik Önceliği
+
+Bavaxe, kullanıcı verilerinin güvenliği ve gizliliğini en üst düzeyde tutar. Platform, endüstri standardı güvenlik protokolleri ve KVKK uyumluluğu ile tasarlanmıştır.
+
+## Veri Şifreleme
+
+### Aktarım Sırasında Şifreleme
+
+Tüm veri aktarımları SSL/TLS 1.3 protokolü ile şifrelenir. Bu, verilerinizin ağ üzerinden aktarılırken korunmasını garanti eder.
+
+**Şifreleme Özellikleri:**
+- TLS 1.3 protokolü
+- Perfect Forward Secrecy
+- HSTS (HTTP Strict Transport Security)
+- Certificate Pinning
+
+### Depolama Sırasında Şifreleme
+
+Veritabanında saklanan tüm hassas veriler AES-256 şifreleme ile korunur. Bu, verilerinizin yetkisiz erişimlere karşı korunmasını sağlar.
+
+**Depolama Güvenliği:**
+- AES-256 şifreleme
+- Şifreli yedekleme
+- Güvenli anahtar yönetimi
+- Düzenli güvenlik denetimleri
+
+## KVKK Uyumluluğu
+
+### Kişisel Verilerin Korunması
+
+Bavaxe, 6698 sayılı Kişisel Verilerin Korunması Kanunu'na tam uyumludur. Platform, kişisel verilerin işlenmesi, saklanması ve silinmesi konusunda yasal gereklilikleri karşılar.
+
+**KVKK Uyum Özellikleri:**
+- Açık rıza yönetimi
+- Veri işleme kayıtları
+- Veri silme talepleri
+- Gizlilik bildirimleri
+- Veri ihlali bildirimleri
+
+### Kullanıcı Hakları
+
+Kullanıcılar, KVKK kapsamında aşağıdaki haklara sahiptir:
+
+**Temel Haklar:**
+- Bilgi edinme hakkı
+- Erişim hakkı
+- Düzeltme hakkı
+- Silme hakkı
+- İtiraz hakkı
+- Veri taşınabilirliği hakkı
+
+## Erişim Kontrolü
+
+### Çok Faktörlü Kimlik Doğrulama (MFA)
+
+Bavaxe, hesaplarınızı korumak için çok faktörlü kimlik doğrulama desteği sunar. Bu, yetkisiz erişimlere karşı ek bir güvenlik katmanı sağlar.
+
+**MFA Yöntemleri:**
+- SMS doğrulama
+- E-posta doğrulama
+- Authenticator uygulamaları
+- Biyometrik doğrulama
+
+### Rol Tabanlı Erişim Kontrolü (RBAC)
+
+Sistem, rol tabanlı erişim kontrolü ile kullanıcıların sadece yetkili oldukları verilere erişmesini sağlar.
+
+**Rol Seviyeleri:**
+- Süper Admin: Tüm yetkiler
+- Admin: Organizasyon yönetimi
+- Manager: Grup yönetimi
+- User: Sınırlı erişim
+- Viewer: Sadece görüntüleme
+
+## Gizlilik Kontrolleri
+
+### Konum Paylaşımı Ayarları
+
+Kullanıcılar, konum paylaşımı ayarlarını özelleştirebilir. Bu, gizlilik tercihlerinize göre konum bilgilerinizi kontrol etmenizi sağlar.
+
+**Gizlilik Seçenekleri:**
+- Tam paylaşım
+- Sınırlı paylaşım
+- Grup bazlı paylaşım
+- Zaman bazlı paylaşım
+- Paylaşım yok
+
+### Veri Saklama Politikaları
+
+Bavaxe, veri saklama politikaları ile verilerinizin ne kadar süre saklanacağını belirler. Bu, gereksiz veri birikimini önler.
+
+**Saklama Süreleri:**
+- Aktif konum verileri: 30 gün
+- Geçmiş konum verileri: 90 gün (Business plan)
+- Rapor verileri: 1 yıl
+- Log verileri: 6 ay
+
+## Güvenlik İzleme
+
+### Tehdit Tespiti
+
+Bavaxe, otomatik tehdit tespiti sistemi ile şüpheli aktiviteleri tespit eder ve uyarır.
+
+**Tespit Edilen Tehditler:**
+- Yetkisiz erişim denemeleri
+- Anormal kullanım desenleri
+- Şüpheli konum değişiklikleri
+- Veri sızıntı girişimleri
+
+### Güvenlik Denetimleri
+
+Platform, düzenli güvenlik denetimleri yapar ve güvenlik açıklarını tespit eder.
+
+**Denetim Türleri:**
+- Kod güvenlik denetimleri
+- Altyapı güvenlik denetimleri
+- Üçüncü parti güvenlik denetimleri
+- Penetrasyon testleri
+
+## En İyi Güvenlik Uygulamaları
+
+### Kullanıcı Eğitimi
+
+Güvenlik, sadece teknik önlemlerle değil, kullanıcı eğitimi ile de sağlanır. Bavaxe, kullanıcıları güvenlik konusunda eğitir.
+
+**Eğitim Konuları:**
+- Güçlü şifre oluşturma
+- Phishing saldırılarına karşı korunma
+- Güvenli cihaz kullanımı
+- Veri paylaşımı güvenliği
+
+### Sürekli İyileştirme
+
+Güvenlik, sürekli bir süreçtir. Bavaxe, güvenlik önlemlerini sürekli olarak günceller ve iyileştirir.
+
+## Sonuç
+
+Bavaxe, güvenlik ve gizlilik konusunda en yüksek standartları karşılar. Platform, KVKK uyumluluğu ve endüstri standardı güvenlik protokolleri ile verilerinizi korur.`,
+            readTime: '18 dk',
+            category: 'Güvenlik',
+            hero: null,
+            tags: ['Güvenlik', 'KVKK', 'Gizlilik', 'Şifreleme', 'Veri Koruma'],
+            featured: true,
+            createdAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString()
+          },
+          {
+            title: 'Mobil Uygulama Kullanım Kılavuzu: iOS ve Android',
+            excerpt: 'Bavaxe mobil uygulamasının tüm özelliklerini keşfedin. iOS ve Android platformları için detaylı kullanım kılavuzu.',
+            content: `# Mobil Uygulama Kullanım Kılavuzu: iOS ve Android
+
+## Mobil Uygulama Özellikleri
+
+Bavaxe mobil uygulaması, iOS ve Android platformları için tam özellikli bir GPS takip çözümü sunar. Uygulama, native performans ve modern kullanıcı arayüzü ile kullanıcı deneyimini optimize eder.
+
+## Kurulum ve İlk Yapılandırma
+
+### Uygulama İndirme
+
+Bavaxe mobil uygulaması, App Store ve Google Play Store'dan indirilebilir. Uygulama, ücretsizdir ve tüm temel özellikleri içerir.
+
+**İndirme Adımları:**
+1. App Store veya Google Play Store'u açın
+2. "Bavaxe" araması yapın
+3. Uygulamayı indirin
+4. Kurulumu tamamlayın
+
+### İlk Giriş
+
+Uygulama ilk açıldığında, hesap oluşturmanız veya mevcut hesabınızla giriş yapmanız gerekir.
+
+**Giriş Seçenekleri:**
+- E-posta ve şifre ile giriş
+- Sosyal medya hesapları ile giriş
+- Misafir modu (sınırlı özellikler)
+
+### İzin Ayarları
+
+Uygulama, konum takibi için gerekli izinleri ister. Bu izinler, sistemin düzgün çalışması için kritik öneme sahiptir.
+
+**Gerekli İzinler:**
+- Konum izni (her zaman)
+- Bildirim izni
+- Arka plan yenileme izni
+- Ağ erişim izni
+
+## Ana Özellikler
+
+### Gerçek Zamanlı Konum Takibi
+
+Mobil uygulama, gerçek zamanlı konum takibi yapar. Konum bilgileri, belirlenen aralıklarla sunucuya gönderilir.
+
+**Konum Güncelleme Ayarları:**
+- Yüksek hassasiyet: 1-5 saniye
+- Orta hassasiyet: 10-30 saniye
+- Düşük hassasiyet: 1-5 dakika
+- Pil tasarrufu modu: 5-15 dakika
+
+### Harita Görünümü
+
+Uygulama, interaktif harita görünümü ile konumları görselleştirir. Harita, çeşitli görünüm modları sunar.
+
+**Harita Özellikleri:**
+- Standart harita görünümü
+- Uydu görünümü
+- Hibrit görünüm
+- Trafik görünümü
+- 3D görünüm (desteklenen cihazlarda)
+
+### Grup Yönetimi
+
+Mobil uygulama, grup yönetimi özellikleri sunar. Grupları görüntüleyebilir, üye ekleyebilir ve grup ayarlarını yönetebilirsiniz.
+
+**Grup Özellikleri:**
+- Grup listesi görüntüleme
+- Grup detayları
+- Üye konumları
+- Grup sohbeti
+- Grup bildirimleri
+
+## Gelişmiş Özellikler
+
+### Offline Mod
+
+Uygulama, internet bağlantısı olmadığında da çalışabilir. Offline mod, konum verilerini yerel olarak saklar ve bağlantı kurulduğunda senkronize eder.
+
+**Offline Özellikleri:**
+- Yerel veri saklama
+- Otomatik senkronizasyon
+- Offline harita görünümü
+- Offline bildirimler
+
+### Widget Desteği
+
+iOS ve Android widget'ları, hızlı erişim sağlar. Widget'lar, ana ekrandan konum bilgilerini görüntülemenizi sağlar.
+
+**Widget Özellikleri:**
+- Hızlı konum görüntüleme
+- Grup durumu
+- Son aktiviteler
+- Hızlı aksiyonlar
+
+### Karanlık Mod
+
+Uygulama, karanlık mod desteği sunar. Bu, düşük ışık koşullarında kullanımı kolaylaştırır ve pil tüketimini azaltır.
+
+## Bildirimler
+
+### Bildirim Türleri
+
+Uygulama, çeşitli bildirim türleri sunar. Bildirimler, önemli olaylar hakkında bilgilendirir.
+
+**Bildirim Türleri:**
+- Konum güncellemeleri
+- Grup bildirimleri
+- Rota uyarıları
+- Acil durum bildirimleri
+- Sistem bildirimleri
+
+### Bildirim Ayarları
+
+Bildirim ayarlarını özelleştirebilirsiniz. Bu, hangi bildirimlerin gösterileceğini kontrol etmenizi sağlar.
+
+## Performans Optimizasyonu
+
+### Pil Tasarrufu
+
+Uygulama, pil tasarrufu modları sunar. Bu modlar, pil tüketimini azaltırken temel özellikleri korur.
+
+**Pil Tasarrufu Özellikleri:**
+- Arka plan güncelleme optimizasyonu
+- Düşük hassasiyet modu
+- Uyku modu
+- Akıllı güncelleme
+
+### Veri Kullanımı
+
+Uygulama, veri kullanımını optimize eder. Bu, mobil veri maliyetlerini azaltır.
+
+**Veri Optimizasyonu:**
+- Sıkıştırılmış veri aktarımı
+- Yalnızca Wi-Fi modu
+- Veri kullanımı izleme
+- Veri limitleri
+
+## Sorun Giderme
+
+### Yaygın Sorunlar
+
+Uygulama kullanımında karşılaşılabilecek yaygın sorunlar ve çözümleri:
+
+**Konum Güncellemesi Sorunları:**
+- GPS ayarlarını kontrol edin
+- İzinleri yeniden verin
+- Uygulamayı yeniden başlatın
+- Cihazı yeniden başlatın
+
+**Bağlantı Sorunları:**
+- İnternet bağlantısını kontrol edin
+- Wi-Fi veya mobil veri ayarlarını kontrol edin
+- Uygulama güncellemelerini kontrol edin
+
+## Sonuç
+
+Bavaxe mobil uygulaması, iOS ve Android platformları için güçlü bir GPS takip çözümü sunar. Uygulama, kullanıcı dostu arayüzü ve gelişmiş özellikleri ile profesyonel ihtiyaçları karşılar.`,
+            readTime: '15 dk',
+            category: 'Kullanım',
+            hero: null,
+            tags: ['Mobil', 'iOS', 'Android', 'Uygulama', 'Kullanım'],
+            featured: false,
+            createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
+          },
+          {
+            title: 'Raporlama ve Analitik: İş Zekası Çözümleri',
+            excerpt: 'Bavaxe raporlama ve analitik özelliklerini keşfedin. Detaylı raporlar, trend analizleri ve iş zekası araçları.',
+            content: `# Raporlama ve Analitik: İş Zekası Çözümleri
+
+## Raporlama Sistemi
+
+Bavaxe, kapsamlı raporlama ve analitik özellikleri sunar. Sistem, operasyonel verilerinizi analiz ederek değerli içgörüler sağlar.
+
+## Rapor Türleri
+
+### Konum Geçmişi Raporları
+
+Konum geçmişi raporları, belirli bir zaman dilimindeki tüm konum verilerini gösterir. Bu raporlar, rota analizi ve performans değerlendirmesi için kullanılır.
+
+**Rapor Özellikleri:**
+- Tarih aralığı seçimi
+- Kullanıcı/grup filtreleme
+- Harita görünümü
+- Detaylı zaman çizelgesi
+- Dışa aktarma (PDF, Excel, CSV)
+
+### Mesafe ve Süre Analizleri
+
+Mesafe ve süre analizleri, çalışanların ve araçların kat ettiği mesafeleri ve harcadıkları süreleri gösterir.
+
+**Analiz Metrikleri:**
+- Toplam mesafe
+- Ortalama hız
+- Maksimum hız
+- Duraklama süreleri
+- Çalışma saatleri
+
+### Performans Metrikleri
+
+Performans metrikleri, çalışan ve ekip performansını değerlendirmek için kullanılır.
+
+**Performans Göstergeleri:**
+- Görev tamamlama oranı
+- Zamanında varış oranı
+- Rota optimizasyon skoru
+- Müşteri memnuniyeti skoru
+
+## Görselleştirme
+
+### Dashboard'lar
+
+Bavaxe, özelleştirilebilir dashboard'lar sunar. Dashboard'lar, önemli metrikleri tek bir ekranda görüntülemenizi sağlar.
+
+**Dashboard Bileşenleri:**
+- Gerçek zamanlı metrikler
+- Trend grafikleri
+- Harita görünümleri
+- Karşılaştırmalı analizler
+- Uyarılar ve bildirimler
+
+### Grafikler ve Çizelgeler
+
+Sistem, çeşitli grafik türleri sunar. Bu grafikler, verilerinizi görselleştirmenizi sağlar.
+
+**Grafik Türleri:**
+- Çizgi grafikleri
+- Çubuk grafikleri
+- Pasta grafikleri
+- Alan grafikleri
+- Isı haritaları
+
+## Dışa Aktarma
+
+### Format Seçenekleri
+
+Raporlar, çeşitli formatlarda dışa aktarılabilir. Bu, raporları başka sistemlerde kullanmanızı sağlar.
+
+**Dışa Aktarma Formatları:**
+- PDF (yazdırma için optimize)
+- Excel (veri analizi için)
+- CSV (veri işleme için)
+- JSON (API entegrasyonu için)
+
+### Otomatik Raporlama
+
+Sistem, otomatik raporlama özelliği sunar. Bu, düzenli raporların otomatik olarak oluşturulmasını sağlar.
+
+**Otomatik Rapor Ayarları:**
+- Günlük raporlar
+- Haftalık raporlar
+- Aylık raporlar
+- Özel zamanlama
+
+## Sonuç
+
+Bavaxe raporlama ve analitik sistemi, işletmenizin operasyonel verilerini analiz ederek değerli içgörüler sağlar. Sistem, kapsamlı raporlama özellikleri ve görselleştirme araçları ile karar verme süreçlerinizi destekler.`,
+            readTime: '12 dk',
+            category: 'Analiz',
+            hero: null,
+            tags: ['Raporlama', 'Analitik', 'İş Zekası', 'Dashboard', 'Görselleştirme'],
+            featured: false,
+            createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
+          },
+          {
+            title: 'API Entegrasyonu: Üçüncü Parti Sistemlerle Bağlantı',
+            excerpt: 'Bavaxe API entegrasyonu ile ERP, CRM ve diğer sistemlerle veri paylaşımı. RESTful API, WebSocket ve webhook desteği.',
+            content: `# API Entegrasyonu: Üçüncü Parti Sistemlerle Bağlantı
+
+## API Mimarisi
+
+Bavaxe, güçlü API altyapısı ile üçüncü parti sistemlerle entegrasyon sağlar. API, RESTful standartlarına uygun olarak tasarlanmıştır.
+
+## RESTful API
+
+### Temel Endpoint'ler
+
+Bavaxe API, çeşitli endpoint'ler sunar. Bu endpoint'ler, konum verileri, kullanıcı yönetimi ve raporlama işlemlerini destekler.
+
+**Ana Endpoint Kategorileri:**
+- Konum API'si
+- Kullanıcı API'si
+- Grup API'si
+- Rapor API'si
+- Bildirim API'si
+
+### Kimlik Doğrulama
+
+API, OAuth 2.0 ve JWT token tabanlı kimlik doğrulama destekler. Bu, güvenli API erişimi sağlar.
+
+**Kimlik Doğrulama Yöntemleri:**
+- OAuth 2.0
+- JWT Token
+- API Key
+- Basic Authentication
+
+## WebSocket Desteği
+
+### Gerçek Zamanlı Veri Akışı
+
+WebSocket desteği, gerçek zamanlı veri akışı sağlar. Bu, anlık konum güncellemeleri ve bildirimler için kullanılır.
+
+**WebSocket Özellikleri:**
+- Gerçek zamanlı konum güncellemeleri
+- Anlık bildirimler
+- Düşük gecikme
+- Otomatik yeniden bağlanma
+
+## Webhook Desteği
+
+### Olay Tabanlı Bildirimler
+
+Webhook'lar, belirli olaylar gerçekleştiğinde üçüncü parti sistemlere bildirim gönderir.
+
+**Webhook Olayları:**
+- Konum güncellemeleri
+- Geofence giriş/çıkış
+- Acil durumlar
+- Rota sapmaları
+
+## Entegrasyon Örnekleri
+
+### ERP Entegrasyonu
+
+Bavaxe, ERP sistemleri ile entegre çalışabilir. Bu, iş süreçlerinin bütünleşik yönetimini sağlar.
+
+**ERP Entegrasyon Avantajları:**
+- Otomatik veri senkronizasyonu
+- İş süreçleri optimizasyonu
+- Merkezi veri yönetimi
+
+### CRM Entegrasyonu
+
+CRM sistemleri ile entegrasyon, müşteri ilişkileri yönetimini geliştirir.
+
+**CRM Entegrasyon Özellikleri:**
+- Müşteri ziyaret takibi
+- Müşteri konum bilgileri
+- Ziyaret raporları
+
+## API Dokümantasyonu
+
+Bavaxe, kapsamlı API dokümantasyonu sunar. Dokümantasyon, Swagger/OpenAPI formatında mevcuttur.
+
+**Dokümantasyon Özellikleri:**
+- Interaktif API testleri
+- Kod örnekleri
+- Hata kodları
+- Rate limiting bilgileri
+
+## Sonuç
+
+Bavaxe API, üçüncü parti sistemlerle güçlü entegrasyon sağlar. API, RESTful standartları, WebSocket desteği ve webhook'lar ile kapsamlı bir entegrasyon çözümü sunar.`,
+            readTime: '10 dk',
+            category: 'Teknoloji',
+            hero: null,
+            tags: ['API', 'Entegrasyon', 'WebSocket', 'REST', 'Webhook'],
+            featured: false,
+            createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
           }
         ];
-        
-        for (const article of sampleArticles) {
-          db.createArticle(article);
+
+        // Assign sample articles to articles variable if database is empty
+        articles = sampleArticles;
+
+        // Try to save them to database for persistence
+        try {
+          for (const article of sampleArticles) {
+            db.createArticle(article);
+          }
+        } catch (dbError) {
+          logger.warn('Could not save sample articles to database:', dbError.message);
         }
-        
-        articles = db.getAllArticles();
       }
-      
-      let filtered = [...articles];
+
+      let filtered = Array.isArray(articles) ? [...articles] : [];
 
       if (search) {
-        const searchLower = search.toLowerCase();
-        filtered = filtered.filter(article =>
-          article.title?.toLowerCase().includes(searchLower) ||
-          article.excerpt?.toLowerCase().includes(searchLower) ||
-          article.content?.toLowerCase().includes(searchLower) ||
-          article.tags?.some(tag => tag.toLowerCase().includes(searchLower))
-        );
+        const searchLower = search.toLowerCase().trim();
+        filtered = filtered.filter(article => {
+          if (!article) return false;
+          const titleMatch = article.title?.toLowerCase().includes(searchLower);
+          const excerptMatch = article.excerpt?.toLowerCase().includes(searchLower);
+          const contentMatch = article.content?.toLowerCase().includes(searchLower);
+          const tagsMatch = Array.isArray(article.tags) &&
+            article.tags.some(tag => tag && typeof tag === 'string' && tag.toLowerCase().includes(searchLower));
+          return titleMatch || excerptMatch || contentMatch || tagsMatch;
+        });
       }
 
       if (category) {
-        filtered = filtered.filter(article => article.category === category);
+        filtered = filtered.filter(article => article && article.category === category);
       }
 
       if (tag) {
-        filtered = filtered.filter(article =>
-          article.tags && article.tags.some(t => t.toLowerCase() === tag.toLowerCase())
-        );
+        filtered = filtered.filter(article => {
+          if (!article || !Array.isArray(article.tags)) return false;
+          return article.tags.some(t => t && typeof t === 'string' && t.toLowerCase() === tag.toLowerCase());
+        });
       }
 
       if (featured !== null) {
@@ -3385,35 +3923,51 @@ Gelişmiş veri analizi, modern işletmeler için rekabet avantajı sağlar. Bav
 
       if (sort === 'newest') {
         filtered.sort((a, b) => {
-          const dateA = new Date(a.createdAt || a.updatedAt).getTime();
-          const dateB = new Date(b.createdAt || b.updatedAt).getTime();
+          if (!a || !b) return 0;
+          const dateA = new Date(a.createdAt || a.updatedAt || 0).getTime();
+          const dateB = new Date(b.createdAt || b.updatedAt || 0).getTime();
           return dateB - dateA;
         });
       } else if (sort === 'oldest') {
         filtered.sort((a, b) => {
-          const dateA = new Date(a.createdAt || a.updatedAt).getTime();
-          const dateB = new Date(b.createdAt || b.updatedAt).getTime();
+          if (!a || !b) return 0;
+          const dateA = new Date(a.createdAt || a.updatedAt || 0).getTime();
+          const dateB = new Date(b.createdAt || b.updatedAt || 0).getTime();
           return dateA - dateB;
         });
       } else if (sort === 'views') {
-        filtered.sort((a, b) => (b.views || 0) - (a.views || 0));
+        filtered.sort((a, b) => {
+          if (!a || !b) return 0;
+          const viewsA = db.getArticleViews ? (db.getArticleViews(a.id) || 0) : (a.views || 0);
+          const viewsB = db.getArticleViews ? (db.getArticleViews(b.id) || 0) : (b.views || 0);
+          return viewsB - viewsA;
+        });
       } else if (sort === 'title') {
         filtered.sort((a, b) => {
+          if (!a || !b) return 0;
           const at = String(a.title || '').toLocaleLowerCase('tr');
           const bt = String(b.title || '').toLocaleLowerCase('tr');
           return at.localeCompare(bt, 'tr');
         });
       }
 
-      const pageNum = parseInt(page, 10) || 1;
-      const limitNum = parseInt(limit, 10) || 20;
+      const pageNum = Math.max(1, parseInt(page, 10) || 1);
+      const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
       const startIndex = (pageNum - 1) * limitNum;
       const endIndex = startIndex + limitNum;
-      const paginated = filtered.slice(startIndex, endIndex);
+      const paginated = filtered.slice(startIndex, endIndex).map(article => {
+        if (!article) return null;
+        const views = db.getArticleViews ? (db.getArticleViews(article.id) || 0) : (article.views || 0);
+        return {
+          ...article,
+          views,
+          viewCount: views
+        };
+      }).filter(Boolean);
 
-      const totalPages = Math.ceil(filtered.length / limitNum);
+      const totalPages = Math.max(1, Math.ceil(filtered.length / limitNum));
 
-      return res.json({
+      return res.json(ResponseFormatter.success({
         articles: paginated,
         pagination: {
           currentPage: pageNum,
@@ -3430,10 +3984,10 @@ Gelişmiş veri analizi, modern işletmeler için rekabet avantajı sağlar. Bav
           sort,
           featured: featured !== null ? (featured === 'true' || featured === true) : null
         }
-      });
+      }, 'Makaleler başarıyla yüklendi'));
     } catch (error) {
-      console.error('Get all articles error:', error);
-      return res.status(500).json({ error: 'Failed to fetch articles' });
+      logger.error('Get all articles error:', error);
+      return res.status(500).json(ResponseFormatter.error('Makaleler yüklenemedi', 'BLOG_ERROR'));
     }
   }
 
@@ -3441,49 +3995,58 @@ Gelişmiş veri analizi, modern işletmeler için rekabet avantajı sağlar. Bav
     try {
       const { id } = req.params;
       const article = db.getArticleById(id);
-      
+
       if (!article) {
-        return res.status(404).json({ error: 'Article not found' });
+        return res.status(404).json(ResponseFormatter.error('Makale bulunamadı', 'ARTICLE_NOT_FOUND'));
       }
 
       if (req.query.trackView !== 'false') {
-        db.incrementArticleView(id);
+        try {
+          db.incrementArticleView(id);
+        } catch (viewError) {
+          logger.warn('Failed to increment article view:', viewError);
+        }
       }
 
-      const views = db.getArticleViews(id);
-      const allArticles = db.getAllArticles();
-      
-      const relatedArticles = allArticles
-        .filter(a => 
-          a.id !== id && 
-          (a.category === article.category || 
-           (a.tags && article.tags && a.tags.some(tag => article.tags.includes(tag))))
+      const views = db.getArticleViews ? db.getArticleViews(id) : (article.views || 0);
+      const allArticles = db.getAllArticles() || [];
+
+      const relatedArticles = Array.isArray(allArticles) ? allArticles
+        .filter(a => a && a.id && a.id !== id &&
+          (a.category === article.category ||
+            (Array.isArray(a.tags) && Array.isArray(article.tags) &&
+              a.tags.some(tag => article.tags.includes(tag))))
         )
         .slice(0, 3)
         .map(a => ({
           id: a.id,
-          title: a.title,
-          excerpt: a.excerpt,
-          category: a.category,
-          readTime: a.readTime,
-          createdAt: a.createdAt,
-          views: db.getArticleViews(a.id) || 0
-        }));
+          title: a.title || '',
+          excerpt: a.excerpt || '',
+          category: a.category || '',
+          readTime: a.readTime || '5 dk',
+          createdAt: a.createdAt || new Date().toISOString(),
+          views: db.getArticleViews ? (db.getArticleViews(a.id) || 0) : (a.views || 0)
+        })) : [];
 
       const userId = getUserIdFromToken(req);
       if (userId) {
-        activityLogService.logActivity(userId, 'blog', 'view_article', {
-          articleId: id,
-          path: req.path
-        });
+        try {
+          const activityLogService = require('../services/activityLogService');
+          activityLogService.logActivity(userId, 'blog', 'view_article', {
+            articleId: id,
+            path: req.path
+          });
+        } catch (logError) {
+          logger.warn('Failed to log article view activity:', logError);
+        }
       }
 
-      return res.json({
+      return res.json(ResponseFormatter.success({
         ...article,
         views,
         viewCount: views,
         relatedArticles
-      });
+      }, 'Makale başarıyla yüklendi'));
     } catch (error) {
       logger.error('Get article by ID error', error);
       return res.status(500).json(ResponseFormatter.error('Makale yüklenemedi', 'BLOG_ERROR'));
@@ -3493,52 +4056,65 @@ Gelişmiş veri analizi, modern işletmeler için rekabet avantajı sağlar. Bav
   async getArticleBySlug(req, res) {
     try {
       const { slug } = req.params;
-      const articles = db.getAllArticles();
-      const article = articles.find(a => a.slug === slug);
-      
+      const articles = db.getAllArticles() || [];
+      if (!Array.isArray(articles)) {
+        return res.status(404).json(ResponseFormatter.error('Makale bulunamadı', 'ARTICLE_NOT_FOUND'));
+      }
+
+      const article = articles.find(a => a && a.slug === slug);
+
       if (!article) {
-        return res.status(404).json({ error: 'Article not found' });
+        return res.status(404).json(ResponseFormatter.error('Makale bulunamadı', 'ARTICLE_NOT_FOUND'));
       }
 
       if (req.query.trackView !== 'false') {
-        db.incrementArticleView(article.id);
+        try {
+          db.incrementArticleView(article.id);
+        } catch (viewError) {
+          logger.warn('Failed to increment article view:', viewError);
+        }
       }
 
-      const views = db.getArticleViews(article.id);
-      const allArticles = db.getAllArticles();
-      
-      const relatedArticles = allArticles
-        .filter(a => 
-          a.id !== article.id && 
-          (a.category === article.category || 
-           (a.tags && article.tags && a.tags.some(tag => article.tags.includes(tag))))
+      const views = db.getArticleViews ? db.getArticleViews(article.id) : (article.views || 0);
+      const allArticles = db.getAllArticles() || [];
+
+      const relatedArticles = Array.isArray(allArticles) ? allArticles
+        .filter(a => a && a.id && a.id !== article.id &&
+          (a.category === article.category ||
+            (Array.isArray(a.tags) && Array.isArray(article.tags) &&
+              a.tags.some(tag => article.tags.includes(tag))))
         )
         .slice(0, 3)
         .map(a => ({
           id: a.id,
-          title: a.title,
-          excerpt: a.excerpt,
-          category: a.category,
-          readTime: a.readTime,
-          createdAt: a.createdAt,
-          views: db.getArticleViews(a.id) || 0
-        }));
+          title: a.title || '',
+          excerpt: a.excerpt || '',
+          category: a.category || '',
+          readTime: a.readTime || '5 dk',
+          createdAt: a.createdAt || new Date().toISOString(),
+          views: db.getArticleViews ? (db.getArticleViews(a.id) || 0) : (a.views || 0)
+        })) : [];
 
       const userId = getUserIdFromToken(req);
       if (userId) {
-        activityLogService.logActivity(userId, 'blog', 'view_article', {
-          articleSlug: slug,
-          articleId: article.id,
-          path: req.path
-        });
+        try {
+          const activityLogService = require('../services/activityLogService');
+          activityLogService.logActivity(userId, 'blog', 'view_article', {
+            articleSlug: slug,
+            articleId: article.id,
+            path: req.path
+          });
+        } catch (logError) {
+          logger.warn('Failed to log article view activity:', logError);
+        }
       }
 
-      return res.json({
+      return res.json(ResponseFormatter.success({
         ...article,
         views,
         viewCount: views,
         relatedArticles
-      });
+      }, 'Makale başarıyla yüklendi'));
     } catch (error) {
       logger.error('Get article by slug error', error);
       return res.status(500).json(ResponseFormatter.error('Makale yüklenemedi', 'BLOG_ERROR'));
@@ -3547,36 +4123,49 @@ Gelişmiş veri analizi, modern işletmeler için rekabet avantajı sağlar. Bav
 
   async getCategories(req, res) {
     try {
-      const articles = db.getAllArticles();
-      const categories = [...new Set(articles.map(a => a.category).filter(Boolean))];
+      const articles = db.getAllArticles() || [];
+      if (!Array.isArray(articles)) {
+        return res.json(ResponseFormatter.success({ categories: [] }, 'Kategoriler yüklendi'));
+      }
+
+      const categories = [...new Set(articles.map(a => a && a.category).filter(Boolean))];
       const categoryCounts = categories.map(cat => ({
         name: cat,
-        count: articles.filter(a => a.category === cat).length
+        count: articles.filter(a => a && a.category === cat).length
       }));
-      return res.json({ categories: categoryCounts });
+
+      return res.json(ResponseFormatter.success({ categories: categoryCounts }, 'Kategoriler yüklendi'));
     } catch (error) {
-      logger.error('Get categories error', error);
+      logger.error('Get categories error:', error);
       return res.status(500).json(ResponseFormatter.error('Kategoriler yüklenemedi', 'BLOG_ERROR'));
     }
   }
 
   async getTags(req, res) {
     try {
-      const articles = db.getAllArticles();
+      const articles = db.getAllArticles() || [];
+      if (!Array.isArray(articles)) {
+        return res.json(ResponseFormatter.success({ tags: [] }, 'Etiketler yüklendi'));
+      }
+
       const tagMap = {};
       articles.forEach(article => {
-        if (article.tags && Array.isArray(article.tags)) {
+        if (article && article.tags && Array.isArray(article.tags)) {
           article.tags.forEach(tag => {
-            tagMap[tag] = (tagMap[tag] || 0) + 1;
+            if (tag && typeof tag === 'string') {
+              tagMap[tag] = (tagMap[tag] || 0) + 1;
+            }
           });
         }
       });
+
       const tags = Object.entries(tagMap)
         .map(([name, count]) => ({ name, count }))
         .sort((a, b) => b.count - a.count);
-      return res.json({ tags });
+
+      return res.json(ResponseFormatter.success({ tags }, 'Etiketler yüklendi'));
     } catch (error) {
-      logger.error('Get tags error', error);
+      logger.error('Get tags error:', error);
       return res.status(500).json(ResponseFormatter.error('Etiketler yüklenemedi', 'BLOG_ERROR'));
     }
   }
@@ -3584,17 +4173,23 @@ Gelişmiş veri analizi, modern işletmeler için rekabet avantajı sağlar. Bav
   async getFeaturedArticles(req, res) {
     try {
       const articles = db.getAllArticles();
+      if (!Array.isArray(articles)) {
+        return res.json(ResponseFormatter.success({ articles: [] }, 'Öne çıkan makaleler yüklendi'));
+      }
+
+      const limit = parseInt(req.query.limit || 5, 10);
       const featured = articles
-        .filter(a => a.featured === true)
+        .filter(a => a && a.featured === true)
         .sort((a, b) => {
-          const dateA = new Date(a.createdAt || a.updatedAt).getTime();
-          const dateB = new Date(b.createdAt || b.updatedAt).getTime();
+          const dateA = new Date(a.createdAt || a.updatedAt || 0).getTime();
+          const dateB = new Date(b.createdAt || b.updatedAt || 0).getTime();
           return dateB - dateA;
         })
-        .slice(0, parseInt(req.query.limit || 5, 10));
-      return res.json({ articles: featured });
+        .slice(0, limit);
+
+      return res.json(ResponseFormatter.success({ articles: featured }, 'Öne çıkan makaleler yüklendi'));
     } catch (error) {
-      logger.error('Get featured articles error', error);
+      logger.error('Get featured articles error:', error);
       return res.status(500).json(ResponseFormatter.error('Öne çıkan makaleler yüklenemedi', 'BLOG_ERROR'));
     }
   }
@@ -3602,13 +4197,23 @@ Gelişmiş veri analizi, modern işletmeler için rekabet avantajı sağlar. Bav
   async getPopularArticles(req, res) {
     try {
       const articles = db.getAllArticles();
+      if (!Array.isArray(articles)) {
+        return res.json(ResponseFormatter.success({ articles: [] }, 'Popüler makaleler yüklendi'));
+      }
+
       const limit = parseInt(req.query.limit || 10, 10);
       const popular = articles
-        .sort((a, b) => (b.views || 0) - (a.views || 0))
+        .filter(a => a)
+        .sort((a, b) => {
+          const viewsA = db.getArticleViews ? (db.getArticleViews(a.id) || 0) : (a.views || 0);
+          const viewsB = db.getArticleViews ? (db.getArticleViews(b.id) || 0) : (b.views || 0);
+          return viewsB - viewsA;
+        })
         .slice(0, limit);
-      return res.json({ articles: popular });
+
+      return res.json(ResponseFormatter.success({ articles: popular }, 'Popüler makaleler yüklendi'));
     } catch (error) {
-      logger.error('Get popular articles error', error);
+      logger.error('Get popular articles error:', error);
       return res.status(500).json(ResponseFormatter.error('Popüler makaleler yüklenemedi', 'BLOG_ERROR'));
     }
   }
@@ -3630,13 +4235,10 @@ Gelişmiş veri analizi, modern işletmeler için rekabet avantajı sağlar. Bav
         status,
         featured
       } = req.body;
-      
+
       const validationErrors = this.validateArticle({ title, excerpt, content });
       if (validationErrors.length > 0) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          errors: validationErrors
-        });
+        return res.status(400).json(ResponseFormatter.error('Doğrulama hatası', 'VALIDATION_ERROR', { errors: validationErrors }));
       }
 
       const calculatedReadTime = readTime || this.calculateReadTime(content);
@@ -3661,18 +4263,19 @@ Gelişmiş veri analizi, modern işletmeler için rekabet avantajı sağlar. Bav
 
       const userId = getUserIdFromToken(req);
       if (userId) {
-        activityLogService.logActivity(userId, 'blog', 'create_article', {
-          articleId: article.id,
-          title: article.title,
-          path: req.path
-        });
+        try {
+          const activityLogService = require('../services/activityLogService');
+          activityLogService.logActivity(userId, 'blog', 'create_article', {
+            articleId: article.id,
+            title: article.title,
+            path: req.path
+          });
+        } catch (logError) {
+          logger.warn('Failed to log create article activity:', logError);
+        }
       }
 
-      return res.status(201).json({
-        success: true,
-        message: 'Article created successfully',
-        article
-      });
+      return res.status(201).json(ResponseFormatter.success({ article }, 'Makale başarıyla oluşturuldu'));
     } catch (error) {
       logger.error('Create article error', error);
       return res.status(500).json(ResponseFormatter.error('Makale oluşturulamadı', 'BLOG_ERROR'));
@@ -3697,41 +4300,50 @@ Gelişmiş veri analizi, modern işletmeler için rekabet avantajı sağlar. Bav
         status,
         featured
       } = req.body;
-      
+
       const article = db.getArticleById(id);
       if (!article) {
-        return res.status(404).json({ error: 'Article not found' });
+        return res.status(404).json(ResponseFormatter.error('Makale bulunamadı', 'ARTICLE_NOT_FOUND'));
       }
 
       const updateData = {
         updatedAt: new Date().toISOString()
       };
 
+      const validationErrors = [];
+
       if (title !== undefined) {
-        if (!title || title.trim().length < 3) {
-          return res.status(400).json({ error: 'Title must be at least 3 characters' });
-        }
-        updateData.title = title.trim();
-        if (!slug) {
-          updateData.slug = db.generateSlug(title);
+        if (!title || typeof title !== 'string' || title.trim().length < 3) {
+          validationErrors.push({ field: 'title', message: 'Başlık en az 3 karakter olmalıdır' });
+        } else {
+          updateData.title = title.trim();
+          if (!slug) {
+            updateData.slug = db.generateSlug ? db.generateSlug(title) : title.toLowerCase().replace(/\s+/g, '-');
+          }
         }
       }
 
       if (excerpt !== undefined) {
-        if (!excerpt || excerpt.trim().length < 10) {
-          return res.status(400).json({ error: 'Excerpt must be at least 10 characters' });
+        if (!excerpt || typeof excerpt !== 'string' || excerpt.trim().length < 10) {
+          validationErrors.push({ field: 'excerpt', message: 'Özet en az 10 karakter olmalıdır' });
+        } else {
+          updateData.excerpt = excerpt.trim();
         }
-        updateData.excerpt = excerpt.trim();
       }
 
       if (content !== undefined) {
-        if (!content || content.trim().length < 50) {
-          return res.status(400).json({ error: 'Content must be at least 50 characters' });
+        if (!content || typeof content !== 'string' || content.trim().length < 50) {
+          validationErrors.push({ field: 'content', message: 'İçerik en az 50 karakter olmalıdır' });
+        } else {
+          updateData.content = content.trim();
+          if (!readTime) {
+            updateData.readTime = this.calculateReadTime(content);
+          }
         }
-        updateData.content = content.trim();
-        if (!readTime) {
-          updateData.readTime = this.calculateReadTime(content);
-        }
+      }
+
+      if (validationErrors.length > 0) {
+        return res.status(400).json(ResponseFormatter.error('Doğrulama hatası', 'VALIDATION_ERROR', { errors: validationErrors }));
       }
 
       if (readTime !== undefined) updateData.readTime = readTime;
@@ -3749,17 +4361,18 @@ Gelişmiş veri analizi, modern işletmeler için rekabet avantajı sağlar. Bav
 
       const userId = getUserIdFromToken(req);
       if (userId) {
-        activityLogService.logActivity(userId, 'blog', 'update_article', {
-          articleId: id,
-          path: req.path
-        });
+        try {
+          const activityLogService = require('../services/activityLogService');
+          activityLogService.logActivity(userId, 'blog', 'update_article', {
+            articleId: id,
+            path: req.path
+          });
+        } catch (logError) {
+          logger.warn('Failed to log update article activity:', logError);
+        }
       }
 
-      return res.json({
-        success: true,
-        message: 'Article updated successfully',
-        article: updatedArticle
-      });
+      return res.json(ResponseFormatter.success({ article: updatedArticle }, 'Makale başarıyla güncellendi'));
     } catch (error) {
       logger.error('Update article error', error);
       return res.status(500).json(ResponseFormatter.error('Makale güncellenemedi', 'BLOG_ERROR'));
@@ -3769,29 +4382,31 @@ Gelişmiş veri analizi, modern işletmeler için rekabet avantajı sağlar. Bav
   async deleteArticle(req, res) {
     try {
       const { id } = req.params;
-      
+
       const article = db.getArticleById(id);
       if (!article) {
-        return res.status(404).json({ error: 'Article not found' });
+        return res.status(404).json(ResponseFormatter.error('Makale bulunamadı', 'ARTICLE_NOT_FOUND'));
       }
 
       db.deleteArticle(id);
-      if (db.data.articleViews && db.data.articleViews[id]) {
+      if (db.data && db.data.articleViews && db.data.articleViews[id]) {
         delete db.data.articleViews[id];
       }
 
       const userId = getUserIdFromToken(req);
       if (userId) {
-        activityLogService.logActivity(userId, 'blog', 'delete_article', {
-          articleId: id,
-          path: req.path
-        });
+        try {
+          const activityLogService = require('../services/activityLogService');
+          activityLogService.logActivity(userId, 'blog', 'delete_article', {
+            articleId: id,
+            path: req.path
+          });
+        } catch (logError) {
+          logger.warn('Failed to log delete article activity:', logError);
+        }
       }
 
-      return res.json({
-        success: true,
-        message: 'Article deleted successfully'
-      });
+      return res.json(ResponseFormatter.success(null, 'Makale başarıyla silindi'));
     } catch (error) {
       logger.error('Delete article error', error);
       return res.status(500).json(ResponseFormatter.error('Makale silinemedi', 'BLOG_ERROR'));
@@ -3801,48 +4416,58 @@ Gelişmiş veri analizi, modern işletmeler için rekabet avantajı sağlar. Bav
   async searchArticles(req, res) {
     try {
       const { q, limit = 10 } = req.query;
-      if (!q || q.trim().length < 2) {
-        return res.status(400).json({ error: 'Search query must be at least 2 characters' });
+      if (!q || typeof q !== 'string' || q.trim().length < 2) {
+        return res.status(400).json(ResponseFormatter.error('Arama sorgusu en az 2 karakter olmalıdır', 'VALIDATION_ERROR'));
       }
 
-      const articles = db.getAllArticles();
+      const articles = db.getAllArticles() || [];
+      if (!Array.isArray(articles)) {
+        return res.json(ResponseFormatter.success({ query: q, results: [], count: 0 }, 'Arama tamamlandı'));
+      }
+
       const query = q.toLowerCase().trim();
       const results = articles
         .filter(article => {
+          if (!article) return false;
           const searchable = [
-            article.title,
-            article.excerpt,
-            article.content,
-            article.category,
-            ...(article.tags || [])
+            article.title || '',
+            article.excerpt || '',
+            article.content || '',
+            article.category || '',
+            ...(Array.isArray(article.tags) ? article.tags : [])
           ].join(' ').toLowerCase();
           return searchable.includes(query);
         })
         .slice(0, parseInt(limit, 10))
         .map(a => ({
           id: a.id,
-          title: a.title,
-          excerpt: a.excerpt,
-          category: a.category,
-          readTime: a.readTime,
-          createdAt: a.createdAt,
-          views: db.getArticleViews(a.id) || 0
+          title: a.title || '',
+          excerpt: a.excerpt || '',
+          category: a.category || '',
+          readTime: a.readTime || '5 dk',
+          createdAt: a.createdAt || new Date().toISOString(),
+          views: db.getArticleViews ? (db.getArticleViews(a.id) || 0) : (a.views || 0)
         }));
 
       const userId = getUserIdFromToken(req);
       if (userId) {
-        activityLogService.logActivity(userId, 'blog', 'search_articles', {
-          query: q,
-          resultCount: results.length,
-          path: req.path
-        });
+        try {
+          const activityLogService = require('../services/activityLogService');
+          activityLogService.logActivity(userId, 'blog', 'search_articles', {
+            query: q,
+            resultCount: results.length,
+            path: req.path
+          });
+        } catch (logError) {
+          logger.warn('Failed to log search articles activity:', logError);
+        }
       }
 
-      return res.json({
+      return res.json(ResponseFormatter.success({
         query: q,
         results,
         count: results.length
-      });
+      }, 'Arama tamamlandı'));
     } catch (error) {
       logger.error('Search articles error', error);
       return res.status(500).json(ResponseFormatter.error('Makale araması başarısız', 'BLOG_ERROR'));

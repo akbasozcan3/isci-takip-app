@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Linking from 'expo-linking';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -224,7 +225,7 @@ export default function PaymentScreen({
 
   const validateField = (field: string, value: string) => {
     let validation: { valid: boolean; error?: string } = { valid: true };
-    
+
     switch (field) {
       case 'cardNumber':
         validation = validateCardNumber(value);
@@ -279,111 +280,94 @@ export default function PaymentScreen({
     transform: [{ rotateY: backInterpolate }]
   };
 
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {};
-
-    const cardValidation = validateCardNumber(cardNumber);
-    if (!cardValidation.valid) {
-      newErrors.cardNumber = cardValidation.error || 'Geçerli bir kart numarası girin';
-    }
-
-    const expiryValidation = validateExpiry(expiry);
-    if (!expiryValidation.valid) {
-      newErrors.expiry = expiryValidation.error || 'Geçerli bir son kullanma tarihi girin';
-    }
-
-    const cvcValidation = validateCVC(cvc);
-    if (!cvcValidation.valid) {
-      newErrors.cvc = cvcValidation.error || 'Geçerli bir CVV girin';
-    }
-
-    const nameValidation = validateCardName(cardName);
-    if (!nameValidation.valid) {
-      newErrors.cardName = nameValidation.error || 'Kart üzerindeki ismi girin';
-    }
-
-    setErrors(newErrors);
-    
-    if (Object.keys(newErrors).length > 0) {
-      shakeAnim.setValue(0);
-      Animated.sequence([
-        Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
-        Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
-        Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
-        Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true })
-      ]).start();
-    }
-
-    return Object.keys(newErrors).length === 0;
-  };
-
   const handlePayment = async () => {
-    Object.keys({ cardNumber, expiry, cvc, cardName }).forEach(field => {
-      setTouchedFields(prev => ({ ...prev, [field]: true }));
-    });
-
-    if (!validateForm()) {
-      return;
-    }
-
     setProcessing(true);
     try {
-      const cleanedCard = cardNumber.replace(/\s/g, '');
-      const expiryParts = expiry.split('/');
-
-      const response = await authFetch('/payment/process', {
+      // Shopier checkout session oluştur
+      const response = await authFetch('/billing/shopier/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          planId,
-          cardNumber: cleanedCard,
-          expiryMonth: expiryParts[0],
-          expiryYear: '20' + expiryParts[1],
-          cvc,
-          cardName: cardName.trim(),
-          amount: amount
+          planId
         })
       });
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        const errorMsg = data.error || data.message || 'Ödeme işlenemedi';
+        const errorMsg = data.error || data.message || 'Ödeme linki oluşturulamadı';
         throw new Error(errorMsg);
       }
 
       const data = await response.json();
-      
+
       if (data.success && data.data) {
-        const paymentData = data.data;
-        console.log('[PaymentScreen] Payment successful:', {
-          paymentId: paymentData.paymentId,
-          transactionId: paymentData.transactionId,
-          gateway: paymentData.gateway,
-          receiptNumber: paymentData.receiptNumber
-        });
-        Alert.alert(
-          'Ödeme Başarılı',
-          `${planName} planınız aktifleştirildi.${paymentData.receiptNumber ? '\n\nMakbuz No: ' + paymentData.receiptNumber : ''}`,
-          [{ text: 'Tamam', onPress: onSuccess }]
-        );
-      } else if (data.success) {
-        console.log('[PaymentScreen] Payment successful:', {
-          paymentId: data.paymentId,
-          transactionId: data.transactionId,
-          gateway: data.gateway,
-          receiptNumber: data.receiptNumber
-        });
-        Alert.alert(
-          'Ödeme Başarılı',
-          `${planName} planınız aktifleştirildi.${data.receiptNumber ? '\n\nMakbuz No: ' + data.receiptNumber : ''}`,
-          [{ text: 'Tamam', onPress: onSuccess }]
-        );
+        const { paymentLink, transactionId } = data.data;
+
+        // Kullanıcıyı Shopier sayfasına yönlendir
+        const canOpen = await Linking.canOpenURL(paymentLink);
+
+        if (canOpen) {
+          // Direkt Shopier'e yönlendir, alert gösterme
+          await Linking.openURL(paymentLink);
+
+          // Ödeme durumunu kontrol et (polling)
+          const checkPaymentStatus = async (): Promise<boolean> => {
+            try {
+              const statusResponse = await authFetch(`/billing/shopier/status/${transactionId}`);
+              if (statusResponse.ok) {
+                const statusData = await statusResponse.json();
+                if (statusData.success && statusData.data) {
+                  const { status, shopierTransactionId } = statusData.data;
+
+                  if (status === 'succeeded') {
+                    // Ödeme başarılı
+                    Alert.alert(
+                      '✅ Ödeme Başarılı',
+                      `${planName} planınız aktifleştirildi.${shopierTransactionId ? '\n\nİşlem No: ' + shopierTransactionId : ''}`,
+                      [{ text: 'Tamam', onPress: onSuccess }]
+                    );
+                    return true;
+                  } else if (status === 'failed') {
+                    // Ödeme başarısız
+                    Alert.alert(
+                      '❌ Ödeme Başarısız',
+                      'Ödeme işlemi tamamlanamadı. Lütfen tekrar deneyin.',
+                      [{ text: 'Tamam' }]
+                    );
+                    return true;
+                  }
+                }
+              }
+            } catch (error) {
+            }
+            return false;
+          };
+
+          // İlk kontrol 3 saniye sonra, sonra her 5 saniyede bir
+          setTimeout(() => {
+            let attempts = 0;
+            const maxAttempts = 24; // 2 dakika (24 * 5 saniye)
+
+            const interval = setInterval(async () => {
+              attempts++;
+              const completed = await checkPaymentStatus();
+
+              if (completed || attempts >= maxAttempts) {
+                clearInterval(interval);
+                setProcessing(false);
+              }
+            }, 5000);
+          }, 3000);
+
+          setProcessing(false);
+        } else {
+          throw new Error('Ödeme linki açılamadı. Lütfen internet bağlantınızı kontrol edin.');
+        }
       } else {
-        throw new Error(data.error || data.message || 'Ödeme başarısız');
+        throw new Error(data.error || data.message || 'Ödeme linki oluşturulamadı');
       }
     } catch (error: any) {
       Alert.alert('Ödeme Hatası', error.message || 'Ödeme sırasında bir sorun oluştu. Lütfen tekrar deneyin.');
-    } finally {
       setProcessing(false);
     }
   };
@@ -435,14 +419,17 @@ export default function PaymentScreen({
                 </View>
                 <Text style={styles.title}>Güvenli Ödeme</Text>
                 <View style={styles.planInfo}>
-                  <Text style={styles.planName}>{planName} Plan</Text>
+                  <View style={styles.planBadge}>
+                    <Ionicons name="sparkles" size={14} color="#a855f7" />
+                    <Text style={styles.planName}>{planName} Plan</Text>
+                  </View>
                   <Text style={styles.amount}>
                     {displayCurrency}{currency === 'USD' ? displayAmount : displayAmount.toLocaleString('tr-TR')}<Text style={styles.amountPeriod}> / ay</Text>
                   </Text>
                 </View>
                 <View style={styles.descriptionContainer}>
                   <Text style={styles.descriptionText}>
-                    Aboneliğiniz otomatik olarak yenilenecektir. İstediğiniz zaman iptal edebilirsiniz.
+                    Güvenli ödeme için Shopier üzerinden yönlendirileceksiniz. Ödeme sonrası aboneliğiniz otomatik olarak aktif edilecektir.
                   </Text>
                 </View>
               </View>
@@ -698,13 +685,17 @@ export default function PaymentScreen({
                     end={[1, 1]}
                   >
                     {processing ? (
-                      <ActivityIndicator color="#fff" size="small" />
+                      <View style={styles.processingContainer}>
+                        <ActivityIndicator color="#fff" size="small" />
+                        <Text style={styles.processingText}>İşleniyor...</Text>
+                      </View>
                     ) : (
                       <>
-                        <Ionicons name="lock-closed" size={16} color="#fff" />
+                        <Ionicons name="checkmark-circle" size={18} color="#fff" />
                         <Text style={styles.payButtonText}>
-                          {displayCurrency}{currency === 'USD' ? displayAmount : displayAmount.toLocaleString('tr-TR')} <Text style={styles.payButtonTextSmall}>Öde</Text>
+                          Ödemeyi Tamamla
                         </Text>
+                        <Ionicons name="arrow-forward" size={16} color="#fff" style={{ marginLeft: 4 }} />
                       </>
                     )}
                   </LinearGradient>
@@ -712,12 +703,12 @@ export default function PaymentScreen({
 
                 <View style={styles.securityNote}>
                   <View style={styles.securityIcon}>
-                    <Ionicons name="shield-checkmark" size={16} color="#06b6d4" />
+                    <Ionicons name="shield-checkmark" size={16} color="#0EA5E9" />
                   </View>
                   <View style={styles.securityContent}>
                     <Text style={styles.securityTitle}>256-bit SSL Şifreleme ile Güvenli Ödeme</Text>
                     <Text style={styles.securityText}>
-                      Ödeme bilgileriniz PCI DSS standartlarına uygun olarak işlenir. Kart bilgileriniz sunucularımızda saklanmaz ve doğrudan ödeme sağlayıcıya iletilir. İyzico gibi güvenilir ödeme altyapıları kullanılmaktadır.
+                      Ödeme işlemi Shopier üzerinden güvenli bir şekilde gerçekleştirilecektir. Kart bilgileriniz sunucularımızda saklanmaz ve doğrudan Shopier'e iletilir. Ödeme sonrası aboneliğiniz otomatik olarak aktif edilecektir.
                     </Text>
                   </View>
                 </View>
@@ -806,11 +797,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 2
   },
+  planBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: 'rgba(168,85,247,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.3)',
+    marginBottom: 8
+  },
   planName: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#94a3b8',
-    marginBottom: 2
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#c084fc',
+    letterSpacing: 0.3
   },
   amount: {
     fontSize: 24,
@@ -1119,11 +1122,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    gap: 8
+    paddingVertical: 16,
+    gap: 10
   },
   payButtonDisabled: {
     opacity: 0.7
+  },
+  processingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  processingText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 0.3
   },
   payButtonText: {
     color: '#fff',
@@ -1154,7 +1168,7 @@ const styles = StyleSheet.create({
     flex: 1
   },
   securityTitle: {
-    color: '#06b6d4',
+    color: '#0EA5E9',
     fontSize: 11,
     fontWeight: '700',
     marginBottom: 4,

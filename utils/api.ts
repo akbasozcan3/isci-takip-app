@@ -51,17 +51,37 @@ function resolveBaseUrl(): string {
     // Android emulator uses 10.0.2.2 to access host machine
     // Physical devices need the actual local network IP
     if (Platform.OS === 'android') {
-      // Try to detect if running on emulator or physical device
-      // For physical devices, use local network IP (update this with your actual IP)
-      // You can find your IP with: ipconfig (Windows) or ifconfig (Mac/Linux)
-      // Common local IPs: 192.168.1.x, 192.168.0.x, 10.0.0.x
-      const physicalDeviceIP = process.env.EXPO_PUBLIC_DEVICE_IP || '192.168.1.102';
+      // Check if running on emulator (Android emulator always uses 10.0.2.2)
+      // For emulator: use 10.0.2.2 (special IP that maps to host's localhost)
+      // For physical device: use local network IP
+      const isEmulator = process.env.EXPO_PUBLIC_IS_EMULATOR === 'true' || 
+                         !process.env.EXPO_PUBLIC_DEVICE_IP; // Default to emulator if IP not set
+      
+      if (isEmulator) {
+        // Android Emulator: 10.0.2.2 maps to host machine's localhost
+        resolvedBase = 'http://10.0.2.2:4000';
+      } else {
+        // Physical Android device: use local network IP
+      const physicalDeviceIP = process.env.EXPO_PUBLIC_DEVICE_IP || '192.168.1.95';
       resolvedBase = `http://${physicalDeviceIP}:4000`;
-    } else {
-      // iOS simulator uses localhost
+      }
+    } else if (Platform.OS === 'ios') {
+      // iOS simulator uses localhost (works directly)
       // iOS physical device needs local network IP
-      const physicalDeviceIP = process.env.EXPO_PUBLIC_DEVICE_IP || '192.168.1.102';
+      const isSimulator = process.env.EXPO_PUBLIC_IS_SIMULATOR === 'true' || 
+                         !process.env.EXPO_PUBLIC_DEVICE_IP;
+      
+      if (isSimulator) {
+        // iOS Simulator: localhost works
+        resolvedBase = 'http://localhost:4000';
+      } else {
+        // Physical iOS device: use local network IP
+      const physicalDeviceIP = process.env.EXPO_PUBLIC_DEVICE_IP || '192.168.1.95';
       resolvedBase = `http://${physicalDeviceIP}:4000`;
+      }
+    } else {
+      // Web or other platforms
+      resolvedBase = 'http://localhost:4000';
     }
   } else {
     resolvedBase = 'https://isci-takip-app-production-0f9e.up.railway.app';

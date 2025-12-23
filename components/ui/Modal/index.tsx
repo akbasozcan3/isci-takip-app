@@ -124,9 +124,9 @@ export const Modal: React.FC<ModalProps> = ({
         content: [
           styles.bottomSheetContent,
           {
-            backgroundColor: theme.colors.surface.elevated,
-            borderTopLeftRadius: theme.radius.xl,
-            borderTopRightRadius: theme.radius.xl,
+            backgroundColor: theme.colors.surfaceElevated,
+            borderTopLeftRadius: theme.borderRadius.xl,
+            borderTopRightRadius: theme.borderRadius.xl,
             padding: theme.spacing.lg,
             transform: [{ translateY: slideAnim }],
           },
@@ -140,8 +140,8 @@ export const Modal: React.FC<ModalProps> = ({
         content: [
           styles.centeredContent,
           {
-            backgroundColor: theme.colors.surface.elevated,
-            borderRadius: theme.radius.xl,
+            backgroundColor: theme.colors.surfaceElevated,
+            borderRadius: theme.borderRadius.xl,
             padding: getSizeStyles().padding,
             maxWidth: getSizeStyles().maxWidth,
             transform: [{ scale: scaleAnim }],
@@ -156,8 +156,8 @@ export const Modal: React.FC<ModalProps> = ({
       content: [
         styles.defaultContent,
         {
-          backgroundColor: theme.colors.surface.elevated,
-          borderRadius: theme.radius.xl,
+          backgroundColor: theme.colors.surfaceElevated,
+          borderRadius: theme.borderRadius.xl,
           padding: getSizeStyles().padding,
           maxWidth: getSizeStyles().maxWidth,
           transform: [{ scale: scaleAnim }],
@@ -191,11 +191,11 @@ export const Modal: React.FC<ModalProps> = ({
             <View style={styles.header}>
               {title && (
                 <View style={styles.headerContent}>
-                  <Text style={[styles.title, { color: theme.colors.text.primary }]}>
+                  <Text style={[styles.title, { color: theme.colors.text }]}>
                     {title}
                   </Text>
                   {description && (
-                    <Text style={[styles.description, { color: theme.colors.text.secondary }]}>
+                    <Text style={[styles.description, { color: theme.colors.textSecondary }]}>
                       {description}
                     </Text>
                   )}
@@ -215,7 +215,7 @@ export const Modal: React.FC<ModalProps> = ({
                   <Ionicons
                     name="close"
                     size={24}
-                    color={theme.colors.text.secondary}
+                    color={theme.colors.textSecondary}
                   />
                 </Pressable>
               )}

@@ -1,15 +1,36 @@
+import { useFonts } from 'expo-font';
 import * as Linking from 'expo-linking';
 import { Slot, SplashScreen, usePathname, useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import React from 'react';
+import { LogBox, View } from 'react-native';
 import AppFlow from '../components/AppFlow';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { MessageProvider } from '../components/MessageProvider';
 import { NetworkGuard } from '../components/NetworkGuard';
+import { ProfileProvider } from '../contexts/ProfileContext';
 import SubscriptionModal, { useSubscriptionModal } from '../components/SubscriptionModal';
 import { ThemeProvider } from '../components/ui/theme/ThemeProvider';
 import '../utils/errorHandler';
 import { initializeOneSignal } from '../utils/onesignal';
+import { registerBackgroundStepTask } from '../services/backgroundStepTracker';
+
+// Prevent the splash screen from auto-hiding before asset loading is complete.
+SplashScreen.preventAutoHideAsync();
+
+LogBox.ignoreAllLogs(true);
+LogBox.ignoreLogs([
+  'ExpoFontLoader',
+  'ionicons',
+  'keep awake',
+  'KeepAwake',
+  'VideoBanner',
+  'HttpDataSource',
+  'Response code:',
+  'InvalidResponseCodeException',
+  'Warning:',
+  'Error:',
+]);
 
 export default function RootLayout(): React.JSX.Element {
   const pathname = usePathname();
@@ -17,60 +38,68 @@ export default function RootLayout(): React.JSX.Element {
   const [isAuthenticated, setIsAuthenticated] = React.useState(false);
   const subscriptionModal = useSubscriptionModal();
 
+
+  const [fontsLoaded] = useFonts({
+    'Poppins-Regular': require('./assets/Poppins-Regular.ttf'),
+    'Poppins-Medium': require('./assets/Poppins-Medium.ttf'),
+    'Poppins-SemiBold': require('./assets/Poppins-SemiBold.ttf'),
+    'Poppins-Bold': require('./assets/Poppins-Bold.ttf'),
+    'Poppins-Black': require('./assets/Poppins-Black.ttf'),
+    'Poppins-Light': require('./assets/Poppins-Light.ttf'),
+    'Poppins-ExtraLight': require('./assets/Poppins-ExtraLight.ttf'),
+    'Poppins-Thin': require('./assets/Poppins-Thin.ttf'),
+    'Poppins-Italic': require('./assets/Poppins-Italic.ttf'),
+  });
+
   React.useEffect(() => {
-    const originalError = console.error;
-    console.error = (...args: any[]) => {
-      const errorMessage = args[0]?.toString() || '';
-      if (errorMessage.includes('keep awake') || errorMessage.includes('KeepAwake') || errorMessage.includes('Unable to activate keep awake')) {
-        return;
-      }
-      originalError.apply(console, args);
-    };
-    
-    return () => {
-      console.error = originalError;
-    };
-  }, []);
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
 
   React.useEffect(() => {
     const init = async () => {
+
+
       try {
-        await SplashScreen.hideAsync();
         await initializeOneSignal();
-        
+        await registerBackgroundStepTask();
+
         const initialUrl = await Linking.getInitialURL();
         if (initialUrl) {
           handleDeepLink(initialUrl);
         }
       } catch (error: any) {
-        if (error?.message?.includes('keep awake') || error?.message?.includes('KeepAwake')) {
-          console.warn('[RootLayout] Keep awake not available on this platform, ignoring...');
-        } else {
-          console.error('[RootLayout] Initialization error:', error);
-        }
       }
     };
-    
+
     init();
-    
+
     const subscription = Linking.addEventListener('url', (event) => {
       handleDeepLink(event.url);
     });
-    
+
     return () => {
       subscription.remove();
     };
   }, []);
-  
+
+  React.useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
+
+
   const handleDeepLink = (url: string) => {
     try {
-      console.log('[DeepLink] Handling URL:', url);
-      
+
       if (url.startsWith('bavaxe://') || url.includes('bavaxe')) {
         const parsed = Linking.parse(url);
         const path = parsed.path || '';
         const params = parsed.queryParams || {};
-        
+
         // Route based on path
         if (path.includes('track') || path.includes('location')) {
           router.push('/(tabs)/track');
@@ -99,20 +128,19 @@ export default function RootLayout(): React.JSX.Element {
         }
       }
     } catch (error) {
-      console.error('[DeepLink] Error handling deep link:', error);
     }
   };
 
   React.useEffect(() => {
     let isMounted = true;
-    
+
     (async () => {
       try {
         const token = await SecureStore.getItemAsync('auth_token');
         const isAuthPage = pathname.startsWith('/auth');
         const isResetPasswordPage = pathname.startsWith('/auth/reset-password');
         const isAllowedAuthPage = isResetPasswordPage;
-        
+
         if (isMounted) {
           if (!token && !isAuthPage) {
             router.replace('/auth/login');
@@ -126,7 +154,7 @@ export default function RootLayout(): React.JSX.Element {
               const { markUserActive } = await import('../utils/onesignalSegments');
               await setOneSignalExternalUserId(workerId);
               markUserActive();
-              
+
               // Sync OneSignal Player ID with backend (throttled in helper)
               // Only sync once per session to prevent rate limiting
               setTimeout(async () => {
@@ -135,10 +163,8 @@ export default function RootLayout(): React.JSX.Element {
                   const playerId = await getPlayerId();
                   if (playerId) {
                     await sendPlayerIdToBackend(playerId, workerId);
-                    console.log('[RootLayout] OneSignal Player ID synced:', playerId);
                   }
                 } catch (onesignalError) {
-                  console.warn('[RootLayout] OneSignal Player ID sync error:', onesignalError);
                 }
               }, 2000);
             }
@@ -150,7 +176,7 @@ export default function RootLayout(): React.JSX.Element {
               const { markUserActive } = await import('../utils/onesignalSegments');
               await setOneSignalExternalUserId(workerId);
               markUserActive();
-              
+
               // Sync OneSignal Player ID with backend (throttled in helper)
               // Only sync once per session to prevent rate limiting
               setTimeout(async () => {
@@ -159,20 +185,17 @@ export default function RootLayout(): React.JSX.Element {
                   const playerId = await getPlayerId();
                   if (playerId) {
                     await sendPlayerIdToBackend(playerId, workerId);
-                    console.log('[RootLayout] OneSignal Player ID synced:', playerId);
                   }
                 } catch (onesignalError) {
-                  console.warn('[RootLayout] OneSignal Player ID sync error:', onesignalError);
                 }
               }, 2000);
             }
           }
         }
       } catch (error) {
-        console.error('[RootLayout] Root layout init error:', error);
       }
     })();
-    
+
     return () => {
       isMounted = false;
     };
@@ -187,25 +210,29 @@ export default function RootLayout(): React.JSX.Element {
     }
     return undefined;
   }, [isAuthenticated, pathname, subscriptionModal]);
-  
+
+  if (!fontsLoaded) {
+    return null;
+  }
+
   return (
-    <ErrorBoundary>
-      <ThemeProvider>
-        <NetworkGuard>
-          <AppFlow>
-            <MessageProvider>
-              <Slot />
-              <SubscriptionModal
-                visible={subscriptionModal.visible}
-                onClose={subscriptionModal.hide}
-                onSubscriptionChange={subscriptionModal.setSubscription}
-              />
-            </MessageProvider>
-          </AppFlow>
-        </NetworkGuard>
-      </ThemeProvider>
-    </ErrorBoundary>
+    <ProfileProvider>
+      <ErrorBoundary>
+        <ThemeProvider>
+          <NetworkGuard>
+            <AppFlow>
+              <MessageProvider>
+                <Slot />
+                <SubscriptionModal
+                  visible={subscriptionModal.visible}
+                  onClose={subscriptionModal.hide}
+                  onSubscriptionChange={subscriptionModal.setSubscription}
+                />
+              </MessageProvider>
+            </AppFlow>
+          </NetworkGuard>
+        </ThemeProvider>
+      </ErrorBoundary>
+    </ProfileProvider>
   );
 }
-
-

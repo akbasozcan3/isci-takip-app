@@ -13,11 +13,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { AnimatedBubbles } from '../../components/AnimatedBubbles';
 import { AuthHeader } from '../../components/AuthHeader';
+import { PremiumBackground } from '../../components/PremiumBackground';
 import { Toast, useToast } from '../../components/Toast';
-import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Input';
+import { Button } from '../../components/ui/Button/index';
+import { Input } from '../../components/ui/Input/index';
 import { getApiBase } from '../../utils/api';
 
 export default function RegisterScreen() {
@@ -33,11 +33,11 @@ export default function RegisterScreen() {
   const [sendingCode, setSendingCode] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [codeSent, setCodeSent] = useState(false);
-  
+
   // Smooth animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
-  
+
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -71,11 +71,11 @@ export default function RegisterScreen() {
       // Backend'e kod isteği gönder
       const apiBase = getApiBase();
       const url = `${apiBase}/api/auth/pre-verify-email`;
-      
+
       // Timeout controller (10 saniye)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
-      
+
       const checkResponse = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -85,24 +85,41 @@ export default function RegisterScreen() {
 
       clearTimeout(timeoutId);
 
-      const rawText = await checkResponse.text();
       let checkData: any = {};
-      try { checkData = rawText ? JSON.parse(rawText) : {}; } catch (_) { checkData = { rawText }; }
-
-      if (!checkResponse.ok) {
-        // E-posta zaten kayıtlı kontrolü
-        if (checkData.error && checkData.error.includes('zaten kayıtlı')) {
-          showError('Bu e-posta adresi zaten kayıtlıdır. Giriş yapmak için "Giriş Yap" butonunu kullanabilirsiniz.');
-        } else {
-          showError(checkData.error || 'E-posta gönderilemedi');
-        }
+      try {
+        const text = await checkResponse.text();
+        checkData = text ? JSON.parse(text) : {};
+      } catch (parseError) {
+        showError('Sunucu yanıtı işlenemedi. Lütfen tekrar deneyin.');
+        setSendingCode(false);
         return;
       }
 
-      // Backend otomatik olarak Python servisi ile email gönderir
-      setCodeSent(true);
-      setStep('verify');
-      showSuccess('Kod gönderildi. Lütfen e-posta gelen kutunu ve Spam klasörünü kontrol et.');
+      if (!checkResponse.ok) {
+        if (checkData.error && checkData.error.includes('zaten kayıtlı')) {
+          showError('Bu e-posta adresi zaten kayıtlıdır. Giriş yapmak için "Giriş Yap" butonunu kullanabilirsiniz.');
+          setTimeout(() => {
+            router.push('/auth/login');
+          }, 2000);
+        } else if (checkData.error && checkData.code === 'RATE_LIMIT_EXCEEDED') {
+          const retryAfter = checkData.details?.retryAfter || 600;
+          const minutes = Math.ceil(retryAfter / 60);
+          showError(`Çok fazla istek gönderildi. Lütfen ${minutes} dakika sonra tekrar deneyin.`);
+        } else {
+          showError(checkData.error || 'E-posta gönderilemedi');
+        }
+        setSendingCode(false);
+        return;
+      }
+
+      if (checkData.success !== false || checkResponse.ok) {
+        setCodeSent(true);
+        setStep('verify');
+        showSuccess('Kod gönderildi. Lütfen e-posta gelen kutunu ve Spam klasörünü kontrol et.');
+      } else {
+        showError(checkData.error || 'E-posta gönderilemedi');
+        setSendingCode(false);
+      }
     } catch (error: any) {
       if (error.name === 'AbortError') {
         showError('İstek zaman aşımına uğradı. Backend çalışıyor mu kontrol edin.');
@@ -124,26 +141,54 @@ export default function RegisterScreen() {
 
     setLoading(true);
     try {
-      const response = await fetch(`${getApiBase()}/api/auth/pre-verify-email/verify`, {
+      const apiBase = getApiBase();
+      const url = `${apiBase}/api/auth/pre-verify-email/verify`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: email.trim(),
           code: verificationCode.trim(),
         }),
+        signal: controller.signal,
       });
 
-      const data = await response.json();
+      clearTimeout(timeoutId);
+
+      let data: any = {};
+      try {
+        const text = await response.text();
+        data = text ? JSON.parse(text) : {};
+      } catch (parseError) {
+        showError('Sunucu yanıtı işlenemedi. Lütfen tekrar deneyin.');
+        return;
+      }
 
       if (!response.ok) {
-        showError(data.error || 'Geçersiz doğrulama kodu');
+        if (data.error && data.error.includes('süresi doldu')) {
+          showError('Doğrulama kodu süresi dolmuş. Lütfen yeni kod alın.');
+          setStep('email');
+          setVerificationCode('');
+        } else {
+          showError(data.error || 'Geçersiz doğrulama kodu');
+        }
         return;
       }
 
       showSuccess('E-posta doğrulandı!');
       setStep('register');
-    } catch (error) {
-      showError('Bağlantı hatası. Lütfen tekrar deneyin.');
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        showError('İstek zaman aşımına uğradı. Lütfen tekrar deneyin.');
+      } else if (error.message?.includes('Network request failed') || error.message?.includes('Failed to fetch')) {
+        showError('Backend bağlantısı kurulamadı. Lütfen internet bağlantınızı kontrol edin.');
+      } else {
+        showError('Bağlantı hatası. Lütfen tekrar deneyin.');
+      }
     } finally {
       setLoading(false);
     }
@@ -179,11 +224,11 @@ export default function RegisterScreen() {
     try {
       const apiBase = getApiBase();
       const url = `${apiBase}/api/auth/register`;
-      
+
       // Timeout controller (15 saniye)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
-      
+
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -204,32 +249,44 @@ export default function RegisterScreen() {
         const text = await response.text();
         data = text ? JSON.parse(text) : {};
       } catch (parseError) {
-        console.error('Response parse error:', parseError);
         showError('Sunucu yanıtı işlenemedi. Lütfen tekrar deneyin.');
         return;
       }
 
       if (!response.ok) {
-        // E-posta zaten kayıtlı kontrolü
         if (data.error && data.error.includes('zaten kayıtlı')) {
           showError('Bu e-posta adresi zaten kayıtlıdır. Giriş yapmak için "Giriş Yap" sayfasına gidebilirsiniz.');
-        } else if (data.error && data.error.includes('doğrulama kodu')) {
+          setTimeout(() => {
+            router.push('/auth/login');
+          }, 2000);
+        } else if (data.error && (data.error.includes('doğrulama kodu') || data.error.includes('INVALID_VERIFICATION_CODE'))) {
           showError('Doğrulama kodu geçersiz veya süresi dolmuş. Lütfen yeni kod alın.');
+          setStep('verify');
+          setVerificationCode('');
+        } else if (data.error && data.error.includes('MISSING_VERIFICATION_CODE')) {
+          showError('Doğrulama kodu gereklidir. Lütfen önce e-postanızı doğrulayın.');
           setStep('verify');
         } else {
           showError(data.error || 'Kayıt başarısız. Lütfen bilgilerinizi kontrol edin.');
         }
+        setLoading(false);
         return;
       }
 
-      // Kayıt başarılı - giriş sayfasına yönlendir
-      showSuccess('Kayıt başarılı! Şimdi giriş yapabilirsiniz 🎉');
-      
-      setTimeout(() => {
-        router.replace('/auth/login');
-      }, 1500);
+      const userData = data.data?.user || data.user;
+      const tokenData = data.data?.token || data.token;
+
+      if ((data.success !== false && (userData || tokenData || data.message)) || (userData && tokenData)) {
+        showSuccess(data.message || 'Kayıt başarılı! Şimdi giriş yapabilirsiniz 🎉');
+
+        setTimeout(() => {
+          router.replace('/auth/login');
+        }, 1500);
+      } else {
+        showError(data.error || 'Kayıt işlemi tamamlanamadı. Lütfen tekrar deneyin.');
+        setLoading(false);
+      }
     } catch (error: any) {
-      console.error('Register error:', error);
       if (error.name === 'AbortError') {
         showError('İstek zaman aşımına uğradı. Backend çalışıyor mu kontrol edin.');
       } else if (error.message?.includes('Network request failed') || error.message?.includes('Failed to fetch')) {
@@ -253,17 +310,14 @@ export default function RegisterScreen() {
         style={styles.gradient}
       >
         <StatusBar barStyle="light-content" />
-        <AnimatedBubbles />
-        <View style={styles.decorativeCircle1} />
-        <View style={styles.decorativeCircle2} />
-        <View style={styles.decorativeCircle3} />
+        <PremiumBackground color="#06B6D4" lineCount={8} circleCount={5} />
 
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-        <View style={styles.content}>
+          <View style={styles.content}>
             <AuthHeader
               activeTab="register"
               onTabChange={(tab: 'login' | 'register') => {
@@ -273,180 +327,179 @@ export default function RegisterScreen() {
               }}
               title={
                 step === 'email' ? 'Kayıt Ol' :
-                step === 'verify' ? 'E-posta Doğrula' :
-                'Hesap Bilgileri'
+                  step === 'verify' ? 'E-posta Doğrula' :
+                    'Hesap Bilgileri'
               }
               subtitle={
                 step === 'email' ? 'Bavaxe hesabınızı oluşturmak için e-posta adresinizi girin' :
-                step === 'verify' ? 'E-posta adresinize gönderilen 6 haneli kodu girin' :
-                'Son adım! Hesap bilgilerinizi tamamlayın'
+                  step === 'verify' ? 'E-posta adresinize gönderilen 6 haneli kodu girin' :
+                    'Son adım! Hesap bilgilerinizi tamamlayın'
               }
             />
 
-          <Animated.View 
-            style={[
-              styles.form,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              }
-            ]}
-          >
-            {step === 'email' && (
-              <>
-                <Input
-                  label="E-posta Adresi"
-                  placeholder="ornek@email.com"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  leftElement={
+            <Animated.View
+              style={[
+                styles.form,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ translateY: slideAnim }],
+                }
+              ]}
+            >
+              {step === 'email' && (
+                <>
+                  <Input
+                    label="E-posta Adresi"
+                    placeholder="ornek@email.com"
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoComplete="email"
+                    leftElement={
+                      <View style={styles.iconCircle}>
+                        <Ionicons name="mail-outline" size={16} color="#94a3b8" />
+                      </View>
+                    }
+                    style={styles.input}
+                  />
+
+                  <Button
+                    title={sendingCode ? 'Gönderiliyor...' : 'Doğrulama Kodu Gönder'}
+                    onPress={handleSendVerificationCode}
+                    loading={sendingCode}
+                    style={styles.loginButton}
+                  />
+                </>
+              )}
+
+              {step === 'verify' && (
+                <>
+                  <View style={styles.emailInfo}>
                     <View style={styles.iconCircle}>
-                      <Ionicons name="mail-outline" size={16} color="#94a3b8" />
+                      <Ionicons name="mail" size={18} color="#94a3b8" />
                     </View>
-                  }
-                  style={styles.input}
-                />
-
-                <Button
-                  title={sendingCode ? 'Gönderiliyor...' : 'Doğrulama Kodu Gönder'}
-                  onPress={handleSendVerificationCode}
-                  loading={sendingCode}
-                  style={styles.loginButton}
-                />
-              </>
-            )}
-
-            {step === 'verify' && (
-              <>
-                <View style={styles.emailInfo}>
-                  <View style={styles.iconCircle}>
-                    <Ionicons name="mail" size={18} color="#94a3b8" />
+                    <Text style={styles.emailText}>{email}</Text>
                   </View>
-                  <Text style={styles.emailText}>{email}</Text>
-                </View>
-                <Input
-                  label="Doğrulama Kodu"
-                  placeholder="******"
-                  value={verificationCode}
-                  onChangeText={(text) => setVerificationCode(text.replace(/[^0-9]/g, ''))}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  leftElement={
-                    <View style={styles.iconCircle2}>
-                      <Ionicons name="keypad-outline" size={16} color="#94a3b8" />
+                  <Input
+                    label="Doğrulama Kodu"
+                    placeholder="******"
+                    value={verificationCode}
+                    onChangeText={(text) => setVerificationCode(text.replace(/[^0-9]/g, ''))}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    leftElement={
+                      <View style={styles.iconCircle2}>
+                        <Ionicons name="keypad-outline" size={16} color="#94a3b8" />
+                      </View>
+                    }
+                    style={styles.input}
+                  />
+
+                  <Button
+                    title="Kodu Doğrula"
+                    onPress={handleVerifyCode}
+                    loading={loading}
+                    style={styles.loginButton}
+                  />
+
+                  <TouchableOpacity
+                    onPress={() => {
+                      setStep('email');
+                      setVerificationCode('');
+                      setCodeSent(false);
+                    }}
+                    style={styles.forgotPasswordButton}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.forgotPasswordContent}>
+                      <Ionicons name="arrow-back" size={16} color="#f59e0b" />
+                      <Text style={styles.forgotPasswordText}>E-posta Değiştir</Text>
                     </View>
-                  }
-                  style={styles.input}
-                />
+                  </TouchableOpacity>
+                </>
+              )}
 
-                <Button
-                  title="Kodu Doğrula"
-                  onPress={handleVerifyCode}
-                  loading={loading}
-                  style={styles.loginButton}
-                />
+              {step === 'register' && (
+                <>
+                  <Input
+                    label="Ad Soyad"
+                    placeholder="Adınız Soyadınız"
+                    value={displayName}
+                    onChangeText={setDisplayName}
+                    autoCapitalize="words"
+                    leftElement={
+                      <View style={styles.iconCircle}>
+                        <Ionicons name="person-outline" size={16} color="#94a3b8" />
+                      </View>
+                    }
+                    style={styles.input}
+                  />
 
-                <TouchableOpacity
-                  onPress={() => {
-                    setStep('email');
-                    setVerificationCode('');
-                    setCodeSent(false);
-                  }}
-                  style={styles.forgotPasswordButton}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.forgotPasswordContent}>
-                    <Ionicons name="arrow-back" size={16} color="#f59e0b" />
-                    <Text style={styles.forgotPasswordText}>E-posta Değiştir</Text>
-                  </View>
-                </TouchableOpacity>
-              </>
-            )}
+                  <Input
+                    label="Şifre"
+                    placeholder="En az 6 karakter"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    autoComplete="password-new"
+                    leftElement={
+                      <View style={styles.iconCircle}>
+                        <Ionicons name="lock-closed-outline" size={16} color="#94a3b8" />
+                      </View>
+                    }
+                    rightElement={
+                      <TouchableOpacity
+                        onPress={() => setShowPassword(!showPassword)}
+                        style={styles.iconCircle}
+                      >
+                        <Ionicons
+                          name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                          size={16}
+                          color="#94a3b8"
+                        />
+                      </TouchableOpacity>
+                    }
+                    style={styles.input}
+                  />
+                  <Input
+                    label="Şifre Tekrar"
+                    placeholder="Şifrenizi tekrar girin"
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    autoComplete="password-new"
+                    leftElement={
+                      <View style={styles.iconCircle}>
+                        <Ionicons name="lock-closed-outline" size={18} color="#94a3b8" />
+                      </View>
+                    }
+                    style={styles.input}
+                  />
 
-            {step === 'register' && (
-              <>
-                <Input
-                  label="Ad Soyad"
-                  placeholder="Adınız Soyadınız"
-                  value={displayName}
-                  onChangeText={setDisplayName}
-                  autoCapitalize="words"
-                  leftElement={
-                    <View style={styles.iconCircle}>
-                      <Ionicons name="person-outline" size={16} color="#94a3b8" />
+                  <Button
+                    title="Kayıt Ol"
+                    onPress={handleRegister}
+                    loading={loading}
+                    style={styles.loginButton}
+                  />
+
+                  <TouchableOpacity
+                    onPress={() => setStep('verify')}
+                    style={styles.forgotPasswordButton}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.forgotPasswordContent}>
+                      <Ionicons name="arrow-back" size={16} color="#f59e0b" />
+                      <Text style={styles.forgotPasswordText}>Geri</Text>
                     </View>
-                  }
-                  style={styles.input}
-                />
-
-                <Input
-                  label="Şifre"
-                  placeholder="En az 6 karakter"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoComplete="password-new"
-                  leftElement={
-                    <View style={styles.iconCircle}>
-                      <Ionicons name="lock-closed-outline" size={16} color="#94a3b8" />
-                    </View>
-                  }
-                  rightElement={
-                    <TouchableOpacity
-                      onPress={() => setShowPassword(!showPassword)}
-                      style={styles.iconCircle}
-                    >
-                      <Ionicons
-                        name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                        size={16}
-                        color="#94a3b8"
-                      />
-                    </TouchableOpacity>
-                  }
-                  style={styles.input}
-                />
-
-                <Input
-                  label="Şifre Tekrar"
-                  placeholder="Şifrenizi tekrar girin"
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoComplete="password-new"
-                  leftElement={
-                    <View style={styles.iconCircle}>
-                      <Ionicons name="lock-closed-outline" size={18} color="#94a3b8" />
-                    </View>
-                  }
-                  style={styles.input}
-                />
-
-                <Button
-                  title="Kayıt Ol"
-                  onPress={handleRegister}
-                  loading={loading}
-                  style={styles.loginButton}
-                />
-
-                <TouchableOpacity
-                  onPress={() => setStep('verify')}
-                  style={styles.forgotPasswordButton}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.forgotPasswordContent}>
-                    <Ionicons name="arrow-back" size={16} color="#f59e0b" />
-                    <Text style={styles.forgotPasswordText}>Geri</Text>
-                  </View>
-                </TouchableOpacity>
-              </>
-            )}
-          </Animated.View>
-        </View>
+                  </TouchableOpacity>
+                </>
+              )}
+            </Animated.View>
+          </View>
         </ScrollView>
         <Toast
           message={toast.message}
@@ -500,14 +553,15 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+    top: 4,
     justifyContent: 'flex-start',
-    paddingTop: Platform.OS === 'ios' ? 8 : 4,
+    paddingTop: Platform.OS === 'ios' ? 8 : 95,
     paddingHorizontal: 24,
     paddingBottom: 24
   },
   form: {
     width: '100%',
-    marginTop: 8,
+    marginTop: -4,
   },
   input: {
     marginBottom: 16,
@@ -535,16 +589,11 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   forgotPasswordButton: {
-    marginTop: 12,
-    marginBottom: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(245, 158, 11, 0.3)',
+    marginTop: 20,
+    marginBottom: 0,
+    paddingVertical: 8,
+    paddingHorizontal: 0,
     alignSelf: 'center',
-    width: '100%',
   },
   forgotPasswordContent: {
     flexDirection: 'row',
@@ -553,11 +602,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   forgotPasswordText: {
-    color: '#f59e0b',
-    fontSize: 14,
-    fontWeight: '700',
-    fontFamily: 'Poppins-SemiBold',
-    letterSpacing: 0.3,
+    color: '#94a3b8',
+    fontSize: 13,
+    fontWeight: '400',
+    fontFamily: 'Poppins-Medium',
+    letterSpacing: 0,
   },
   emailInfo: {
     flexDirection: 'row',
@@ -571,7 +620,7 @@ const styles = StyleSheet.create({
     color: '#cbd5e1',
     marginLeft: 12,
     fontSize: 15,
-    fontWeight: '500',
-    fontFamily: 'Poppins-Medium',
+    fontWeight: '600',
+    fontFamily: 'Poppins-SemiBold',
   },
 });

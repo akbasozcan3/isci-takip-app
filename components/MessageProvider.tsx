@@ -88,16 +88,16 @@ export function MessageProvider({ children }: { children: React.ReactNode }) {
       {queue.length > 0 && (
         <Animated.View
           pointerEvents="box-none"
-          style={{ 
-            position: 'absolute', 
-            top: 48, 
+          style={{
+            position: 'absolute',
+            top: 48,
             left: 20,
             right: 20,
             width: '90%',
             maxWidth: 400,
             alignSelf: 'center',
-            transform: [{ translateY: translate }], 
-            opacity 
+            transform: [{ translateY: translate }],
+            opacity
           }}
         >
           <View
@@ -135,8 +135,8 @@ export function MessageProvider({ children }: { children: React.ReactNode }) {
                 <Text style={{ color: '#cbd5e1', marginTop: 4, fontSize: 13, lineHeight: 18 }}>{queue[0].description}</Text>
               )}
             </View>
-            <Pressable 
-              onPress={() => animateOut(() => setQueue((q) => q.slice(1)))} 
+            <Pressable
+              onPress={() => animateOut(() => setQueue((q) => q.slice(1)))}
               hitSlop={10}
               style={{
                 padding: 4,
@@ -155,6 +155,9 @@ export function MessageProvider({ children }: { children: React.ReactNode }) {
 
 export function useMessage() {
   const ctx = useContext(MessageContext);
-  if (!ctx) throw new Error('useMessage must be used within MessageProvider');
+  if (!ctx) {
+    console.warn('[useMessage] MessageProvider not available, returning no-op');
+    return { show: () => { } };
+  }
   return ctx;
 }

@@ -59,12 +59,12 @@ export function useNetwork() {
       }
     });
 
-    // Periodic backend check (every 30 seconds)
+    // Periodic backend check (every 60 seconds - less aggressive)
     const backendCheckInterval = setInterval(() => {
       if (networkState.isConnected && networkState.isInternetReachable) {
         checkBackend();
       }
-    }, 30000);
+    }, 60000);
 
     return () => {
       unsubscribe();

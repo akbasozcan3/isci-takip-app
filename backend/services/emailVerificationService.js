@@ -4,6 +4,7 @@ const path = require('path');
 
 let transporter = null;
 let logoBase64 = null;
+let logoPath = null; // Logo file path for CID embedding
 let brandConfig = null;
 let smtpInitialized = false;
 
@@ -103,34 +104,40 @@ function loadLogo() {
     path.join(__dirname, '../../logo.png')
   ];
 
-  for (const logoPath of logoPaths) {
+  for (const testPath of logoPaths) {
     try {
-      const normalizedPath = path.normalize(logoPath);
+      const normalizedPath = path.normalize(testPath);
       if (fs.existsSync(normalizedPath)) {
         const logoData = fs.readFileSync(normalizedPath);
         const base64String = logoData.toString('base64');
         logoBase64 = `data:image/png;base64,${base64String}`;
+        logoPath = normalizedPath; // Store path for CID embedding
         console.log(`[Email Service] ✓ Logo loaded successfully from: ${normalizedPath}`);
         console.log(`[Email Service] Logo size: ${(logoData.length / 1024).toFixed(2)} KB, Base64 length: ${base64String.length} chars`);
+        console.log(`[Email Service] ✓ Logo path stored for CID embedding: ${logoPath}`);
         return;
       }
     } catch (err) {
-      console.warn(`[Email Service] Failed to load logo from ${logoPath}:`, err.message);
+      console.warn(`[Email Service] Failed to load logo from ${testPath}:`, err.message);
       continue;
     }
   }
 
-  if (!logoBase64) {
+  if (!logoBase64 || !logoPath) {
     console.warn('[Email Service] ⚠ Logo file "Nexora (2).png" not found in any expected location.');
     console.warn('[Email Service] Expected locations:');
     logoPaths.forEach(p => console.warn(`  - ${path.normalize(p)}`));
     console.warn('[Email Service] Using placeholder URL instead.');
     logoBase64 = brandConfig?.logoUrl || 'https://via.placeholder.com/150x150/06b6d4/ffffff?text=BAVAXE';
+    logoPath = null;
   }
 }
 
 function getEmailTemplate(type, data) {
-  const effectiveLogo = logoBase64 || brandConfig?.logoUrl || 'https://via.placeholder.com/150x150/06b6d4/ffffff?text=BAVAXE';
+  // Use CID reference for logo (professional method - works in all email clients)
+  // If logoPath exists, use CID, otherwise fallback to URL
+  const useCID = logoPath && fs.existsSync(logoPath);
+  const effectiveLogo = useCID ? 'cid:logo_cid' : (brandConfig?.logoUrl || 'https://via.placeholder.com/150x150/06b6d4/ffffff?text=BAVAXE');
   
   const { code, resetLink, resetToken, brandName, brandColorPrimary, brandColorSecondary, logo } = {
     code: data.code || '',
@@ -159,6 +166,22 @@ function getEmailTemplate(type, data) {
     };
   }
 
+  if (type === 'password-reset') {
+    return {
+      subject: `${brandName} - Şifre Sıfırlama Kodu`,
+      html: getVerificationEmailHTML(code, brandName, brandColorPrimary, brandColorSecondary, logo),
+      text: `${brandName} - Şifre Sıfırlama Kodu\n\nMerhaba,\n\nŞifrenizi sıfırlamak için aşağıdaki doğrulama kodunu kullanın:\n\nDoğrulama Kodu: ${code}\n\nBu kod 10 dakika süreyle geçerlidir.\n\n⚠️ Güvenlik Uyarısı: Bu kodu kimseyle paylaşmayın.\n\n© 2024 ${brandName} - Tüm hakları saklıdır.`
+    };
+  }
+
+  if (type === 'account_deletion') {
+    return {
+      subject: `${brandName} - Hesap Silme Doğrulama Kodu`,
+      html: getAccountDeletionEmailHTML(code, brandName, brandColorPrimary, brandColorSecondary, logo),
+      text: `${brandName} - Hesap Silme Doğrulama Kodu\n\nMerhaba,\n\nHesabınızı silmek için aşağıdaki doğrulama kodunu kullanın:\n\nDoğrulama Kodu: ${code}\n\n⚠️ ÖNEMLİ: Bu kodu onayladığınızda hesabınız ve tüm verileriniz KALICI olarak silinecektir.\n\nBu kod 10 dakika süreyle geçerlidir.\n\n⚠️ Güvenlik Uyarısı: Bu kodu kimseyle paylaşmayın. Eğer bu işlemi siz yapmadıysanız, lütfen hemen destek ekibimizle iletişime geçin.\n\n© 2024 ${brandName} - Tüm hakları saklıdır.`
+    };
+  }
+
   return null;
 }
 
@@ -177,8 +200,8 @@ function getVerificationEmailHTML(code, brandName, colorPrimary, colorSecondary,
     .email-container { background: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
     .header { background: linear-gradient(135deg, ${colorPrimary} 0%, ${colorSecondary} 100%); color: white; padding: 80px 60px; text-align: center; position: relative; }
     .header-icon { width: 160px; height: 160px; background: rgba(255,255,255,0.25); border-radius: 40px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 32px; }
-    .header-icon img { width: 120px; height: 120px; object-fit: contain; display: block; max-width: 100%; height: auto; }
-    .header h1 { font-size: 48px; font-weight: 900; margin-bottom: 16px; }
+    .header-icon img { width: 500px; height: 500px; object-fit: contain; display: block; max-width: 100%; height: auto; }
+    .header h1 { font-size: 20px; font-weight: 600; margin-bottom: 12px; opacity: 0.85; }
     .content { padding: 64px 60px; }
     .greeting { color: #0f172a; font-size: 28px; margin-bottom: 24px; font-weight: 900; }
     .instruction { color: #475569; font-size: 18px; margin-bottom: 48px; line-height: 1.8; }
@@ -189,7 +212,8 @@ function getVerificationEmailHTML(code, brandName, colorPrimary, colorSecondary,
     .footer { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 48px 60px; text-align: center; color: rgba(255,255,255,0.8); }
     @media only screen and (max-width: 600px) {
       .header { padding: 40px 30px; }
-      .header h1 { font-size: 32px; }
+      .header h1 { font-size: 18px; }
+      .header img { max-width: 100% !important; width: 100% !important; }
       .content { padding: 40px 30px; }
       .code { font-size: 48px; letter-spacing: 10px; }
     }
@@ -199,9 +223,15 @@ function getVerificationEmailHTML(code, brandName, colorPrimary, colorSecondary,
   <div class="email-wrapper">
     <div class="email-container">
       <div class="header">
-        <div class="header-icon"><img src="${logo}" alt="${brandName} Logo" style="display: block; max-width: 100%; height: auto;" /></div>
-        <h1>E-posta Doğrulama</h1>
-        <p style="font-size: 18px; opacity: 0.9;">${brandName} - GPS Takip Sistemi</p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 40px;">
+          <tr>
+            <td align="center" style="padding: 0;">
+              <img src="${logo}" alt="${brandName} Logo" width="500" height="auto" style="display: block; max-width: 500px; height: auto; margin: 0 auto;" />
+            </td>
+          </tr>
+        </table>
+        <h1 style="font-size: 20px; font-weight: 600; margin-bottom: 8px; opacity: 0.85;">E-posta Doğrulama</h1>
+        <p style="font-size: 14px; opacity: 0.75; margin-top: 0;">${brandName} - GPS Takip Sistemi</p>
       </div>
       <div class="content">
         <div class="greeting">Merhaba,</div>
@@ -245,7 +275,7 @@ function getResetEmailHTML(resetToken, brandName, colorPrimary, colorSecondary, 
     .email-container { background: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
     .header { background: linear-gradient(135deg, ${colorPrimary} 0%, ${colorSecondary} 100%); color: white; padding: 80px 60px; text-align: center; }
     .header-icon { width: 160px; height: 160px; background: rgba(255,255,255,0.25); border-radius: 40px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 32px; }
-    .header-icon img { width: 120px; height: 120px; object-fit: contain; display: block; max-width: 100%; height: auto; }
+    .header-icon img { width: 500px; height: 500px; object-fit: contain; display: block; max-width: 100%; height: auto; }
     .header h1 { font-size: 48px; font-weight: 900; margin-bottom: 16px; }
     .content { padding: 64px 60px; }
     .greeting { color: #0f172a; font-size: 28px; margin-bottom: 24px; font-weight: 900; }
@@ -272,7 +302,13 @@ function getResetEmailHTML(resetToken, brandName, colorPrimary, colorSecondary, 
   <div class="email-wrapper">
     <div class="email-container">
       <div class="header">
-        <div class="header-icon"><img src="${logo}" alt="${brandName} Logo" style="display: block; max-width: 100%; height: auto;" /></div>
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
+          <tr>
+            <td align="center" style="padding: 0;">
+              <img src="${logo}" alt="${brandName} Logo" width="300" height="auto" style="display: block; max-width: 300px; height: auto; margin: 0 auto;" />
+            </td>
+          </tr>
+        </table>
         <h1>Şifre Sıfırlama</h1>
         <p style="font-size: 18px; opacity: 0.9;">${brandName} - GPS Takip Sistemi</p>
       </div>
@@ -324,17 +360,122 @@ function getResetEmailHTML(resetToken, brandName, colorPrimary, colorSecondary, 
 </html>`;
 }
 
-async function sendVerificationEmail(email, code, retries = 3) {
+function getAccountDeletionEmailHTML(code, brandName, colorPrimary, colorSecondary, logo) {
+  return `<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${brandName} - Hesap Silme Doğrulama</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
+    <div style="background: linear-gradient(135deg, ${colorPrimary} 0%, ${colorSecondary} 100%); padding: 40px 20px; text-align: center;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
+        <tr>
+          <td align="center" style="padding: 0;">
+            <img src="${logo}" alt="${brandName}" width="300" height="auto" style="display: block; max-width: 300px; height: auto; margin: 0 auto;" />
+          </td>
+        </tr>
+      </table>
+      <h1 style="color: #ffffff; font-size: 28px; font-weight: 700; margin: 0;">Hesap Silme Doğrulama</h1>
+    </div>
+    
+    <div style="padding: 40px 30px;">
+      <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 20px; margin-bottom: 30px; border-radius: 8px;">
+        <h2 style="color: #dc2626; font-size: 20px; font-weight: 700; margin: 0 0 12px 0;">⚠️ ÖNEMLİ UYARI</h2>
+        <p style="color: #991b1b; font-size: 16px; line-height: 1.7; margin: 0; font-weight: 600;">
+          Hesabın ve tüm verilerin KALICI olarak silinecek
+        </p>
+      </div>
+
+      <p style="color: #374151; font-size: 16px; line-height: 1.7; margin-bottom: 30px;">
+        Merhaba,
+      </p>
+      
+      <p style="color: #374151; font-size: 16px; line-height: 1.7; margin-bottom: 30px;">
+        Hesabınızı silmek için aşağıdaki doğrulama kodunu kullanın:
+      </p>
+
+      <div style="text-align: center; margin: 40px 0;">
+        <div style="background: linear-gradient(135deg, ${colorPrimary} 0%, ${colorSecondary} 100%); display: inline-block; padding: 4px; border-radius: 12px;">
+          <div style="background-color: #ffffff; padding: 20px 40px; border-radius: 8px;">
+            <div style="font-size: 36px; font-weight: 700; color: ${colorPrimary}; letter-spacing: 8px; font-family: 'Courier New', monospace;">
+              ${code}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="background-color: #fffbeb; border: 2px solid #fbbf24; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+        <p style="color: #92400e; font-size: 15px; line-height: 1.7; margin: 0;">
+          <strong>Bu kodu onayladığınızda:</strong>
+        </p>
+        <ul style="color: #92400e; font-size: 15px; line-height: 1.9; margin: 12px 0 0 0; padding-left: 20px;">
+          <li>Tüm kişisel bilgileriniz silinecek</li>
+          <li>Konum geçmişi ve rotalar silinecek</li>
+          <li>Adım sayısı verileri silinecek</li>
+          <li>Gruplar ve paylaşımlar silinecek</li>
+          <li>Abonelik ve ödeme bilgileri silinecek</li>
+        </ul>
+        <p style="color: #92400e; font-size: 15px; line-height: 1.7; margin: 12px 0 0 0; font-weight: 600;">
+          Bu işlem geri alınamaz!
+        </p>
+      </div>
+
+      <p style="color: #6b7280; font-size: 14px; line-height: 1.7; margin-bottom: 20px;">
+        Bu kod 10 dakika süreyle geçerlidir.
+      </p>
+
+      <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 16px; border-radius: 8px; margin-top: 30px;">
+        <p style="color: #991b1b; font-size: 14px; line-height: 1.7; margin: 0;">
+          <strong>⚠️ Güvenlik Uyarısı:</strong> Bu kodu kimseyle paylaşmayın. Eğer bu işlemi siz yapmadıysanız, lütfen hemen destek ekibimizle iletişime geçin.
+        </p>
+      </div>
+    </div>
+    
+    <div style="background: linear-gradient(135deg, ${colorPrimary} 0%, ${colorSecondary} 100%); padding: 30px 20px; text-align: center; color: #ffffff;">
+      <div style="font-size: 24px; font-weight: 700; margin-bottom: 12px;">${brandName}</div>
+      <p style="margin: 0; font-size: 14px; opacity: 0.9;">© 2024 ${brandName} - Tüm hakları saklıdır.</p>
+      <p style="margin-top: 12px; font-size: 12px; opacity: 0.7;">Bu e-posta otomatik olarak gönderilmiştir. Lütfen yanıtlamayın.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+async function sendVerificationEmail(email, code, type = 'verification', retries = 3) {
+  // Initialize transporter if not already initialized
   if (!transporter) {
     transporter = initializeEmailService();
   }
   
+  // If transporter is still null, check if we're in development mode
     if (!transporter) {
     const smtpUser = process.env.SMTP_USER || '';
     const smtpPass = process.env.SMTP_PASS || '';
     
     if (!smtpUser || !smtpPass) {
+      // In development, return success with error flag so code can still be returned
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[Email Service] ⚠️ SMTP not configured - Development mode: Code will be returned in response`);
+        return { 
+          success: false, 
+          error: 'SMTP yapılandırılmamış',
+          devMode: true 
+        };
+      }
       throw new Error('SMTP yapılandırılmamış. Lütfen .env dosyasında SMTP_USER ve SMTP_PASS değişkenlerini ayarlayın.');
+    }
+    
+    // In development, return success with error flag
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[Email Service] ⚠️ SMTP connection failed - Development mode: Code will be returned in response`);
+      return { 
+        success: false, 
+        error: 'SMTP bağlantısı kurulamadı',
+        devMode: true 
+      };
     }
     
     throw new Error('SMTP bağlantısı kurulamadı. Lütfen SMTP ayarlarını kontrol edin.');
@@ -344,7 +485,18 @@ async function sendVerificationEmail(email, code, retries = 3) {
     throw new Error('Invalid email or code format. Code must be 6 digits.');
   }
 
-  const template = getEmailTemplate('verification', { code });
+  const template = getEmailTemplate(type, { code });
+  
+  // Prepare attachments with CID for logo (professional method - works in Gmail, Outlook, iOS Mail, Android Mail)
+  const attachments = [];
+  if (logoPath && fs.existsSync(logoPath)) {
+    attachments.push({
+      filename: 'logo.png',
+      path: logoPath,
+      cid: 'logo_cid' // This CID must match the one in HTML: cid:logo_cid
+    });
+    console.log(`[Email Service] ✓ Logo attached with CID: logo_cid from ${logoPath}`);
+  }
   
   for (let attempt = 1; attempt <= retries; attempt++) {
   try {
@@ -354,6 +506,7 @@ async function sendVerificationEmail(email, code, retries = 3) {
       subject: template.subject,
       html: template.html,
         text: template.text,
+        attachments: attachments.length > 0 ? attachments : undefined,
         priority: 'high',
         headers: {
           'X-Priority': '1',
@@ -369,6 +522,28 @@ async function sendVerificationEmail(email, code, retries = 3) {
       console.error(`[Email Service] ✗ Attempt ${attempt}/${retries} failed for ${email}:`, error.message);
       
       if (attempt === retries) {
+        // In development mode, return error object instead of throwing
+        if (process.env.NODE_ENV === 'development') {
+          let errorMessage = 'SMTP hatası';
+          if (error.code === 'EAUTH') {
+            errorMessage = 'SMTP authentication failed. Please check SMTP_USER and SMTP_PASS credentials.';
+          } else if (error.code === 'ECONNECTION') {
+            errorMessage = 'SMTP connection failed. Please check SMTP_HOST and SMTP_PORT settings.';
+          } else if (error.code === 'ETIMEDOUT') {
+            errorMessage = 'SMTP connection timeout. Please check your network connection.';
+          } else {
+            errorMessage = `Failed to send email after ${retries} attempts: ${error.message}`;
+          }
+          
+          console.warn(`[Email Service] ⚠️ Development mode: Returning error instead of throwing`);
+          return { 
+            success: false, 
+            error: errorMessage,
+            devMode: true 
+          };
+        }
+        
+        // In production, throw error
         if (error.code === 'EAUTH') {
           throw new Error('SMTP authentication failed. Please check SMTP_USER and SMTP_PASS credentials.');
         } else if (error.code === 'ECONNECTION') {
@@ -407,6 +582,16 @@ async function sendResetLinkEmail(email, resetLink, token, retries = 3) {
 
   const template = getEmailTemplate('reset', { resetToken: token });
   
+  // Prepare attachments with CID for logo (professional method)
+  const attachments = [];
+  if (logoPath && fs.existsSync(logoPath)) {
+    attachments.push({
+      filename: 'logo.png',
+      path: logoPath,
+      cid: 'logo_cid'
+    });
+  }
+  
   for (let attempt = 1; attempt <= retries; attempt++) {
   try {
       const result = await transporter.sendMail({
@@ -415,6 +600,7 @@ async function sendResetLinkEmail(email, resetLink, token, retries = 3) {
       subject: template.subject,
       html: template.html,
         text: template.text,
+        attachments: attachments.length > 0 ? attachments : undefined,
         priority: 'high',
         headers: {
           'X-Priority': '1',

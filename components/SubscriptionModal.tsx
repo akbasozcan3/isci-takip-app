@@ -1,7 +1,6 @@
-// Abonelik Modal - Uygulama açılışında bir kez gösterilir
+// Premium Subscription Modal - Modern Minimalist Design
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -14,7 +13,9 @@ import {
   Text,
   View
 } from 'react-native';
-import { authFetch } from '../utils/auth';
+import { LinearGradient } from 'expo-linear-gradient';
+import { PremiumBackground } from './PremiumBackground';
+import { getApiBase } from '../utils/api';
 import PaymentScreen from './PaymentScreen';
 
 interface Plan {
@@ -43,32 +44,83 @@ interface Props {
 
 const STORAGE_KEY = 'subscription_modal_shown';
 
+const FALLBACK_PLANS: Plan[] = [
+  {
+    id: 'free',
+    title: 'Free',
+    priceLabel: 'Ücretsiz',
+    description: 'Başlangıç için temel özellikler',
+    features: [
+      'Temel konum takibi',
+      '1 çalışma alanı',
+      'Standart destek',
+      '7 günlük veri saklama',
+      '50 istek/dakika',
+      '10 aktivite limiti'
+    ]
+  },
+  {
+    id: 'plus',
+    title: 'Plus',
+    priceLabel: '$20 / ay',
+    monthlyPrice: 20,
+    badge: 'Popüler',
+    description: 'Profesyoneller için gelişmiş özellikler',
+    features: [
+      'Öncelikli destek',
+      '5 çalışma alanı',
+      'Gerçek zamanlı takip',
+      'Gelişmiş raporlama',
+      '90 günlük veri saklama',
+      '200 istek/dakika',
+      '50 aktivite limiti',
+      '2000 konum geçmişi'
+    ]
+  },
+  {
+    id: 'business',
+    title: 'Business',
+    priceLabel: '$50 / ay',
+    monthlyPrice: 50,
+    badge: 'Önerilen',
+    recommended: true,
+    description: 'Kurumsal düzey güvenlik ve yönetim',
+    features: [
+      'Sınırsız çalışma alanı',
+      'Takım rol yönetimi',
+      'Kurumsal güvenlik raporları',
+      'Özel müşteri yöneticisi',
+      'API erişimi',
+      'Sınırsız veri saklama',
+      '500 istek/dakika',
+      '200 aktivite limiti',
+      '10000 konum geçmişi',
+      'Sınırsız export'
+    ]
+  }
+];
+
 export function useSubscriptionModal() {
   const [visible, setVisible] = React.useState(false);
   const [subscription, setSubscription] = React.useState<Subscription | null>(null);
 
   const checkAndShow = React.useCallback(async () => {
     try {
-      // Kullanıcının mevcut aboneliğini kontrol et
       const response = await authFetch('/me/subscription');
       if (response.ok) {
         const data = await response.json();
         setSubscription(data.subscription);
-        
-        // Free plan ise modal'ı göster (her zaman)
+
         if (!data.subscription || data.subscription.planId === 'free') {
-          // Daha önce bugün gösterilmiş mi kontrol et
           const shown = await AsyncStorage.getItem(STORAGE_KEY);
           const today = new Date().toDateString();
-          
-          // Her gün sadece 1 kez göster
+
           if (shown !== today) {
             setVisible(true);
             await AsyncStorage.setItem(STORAGE_KEY, today);
           }
         }
       } else {
-        // API hatası durumunda da göster (free plan varsayımı)
         const shown = await AsyncStorage.getItem(STORAGE_KEY);
         const today = new Date().toDateString();
         if (shown !== today) {
@@ -77,12 +129,9 @@ export function useSubscriptionModal() {
         }
       }
     } catch (error: any) {
-      // Silently handle network errors - don't spam console
       const { isNetworkError } = await import('../utils/network');
       if (!isNetworkError(error)) {
-        console.error('[SubscriptionModal] Check error:', error);
       }
-      // Hata durumunda da göster (free plan varsayımı)
       try {
         const shown = await AsyncStorage.getItem(STORAGE_KEY);
         const today = new Date().toDateString();
@@ -119,27 +168,66 @@ export default function SubscriptionModal({ visible, onClose, onSubscriptionChan
   const fetchPlans = async () => {
     try {
       setLoading(true);
-      const [plansRes, subscriptionRes] = await Promise.all([
-        authFetch('/plans'),
-        authFetch('/me/subscription')
-      ]);
-      
-      if (plansRes.ok) {
-        const plansData = await plansRes.json();
-        if (Array.isArray(plansData.plans) && plansData.plans.length > 0) {
-          setPlans(plansData.plans);
-        }
-        setCurrentPlan(plansData.currentPlan || 'free');
+
+      const apiBase = getApiBase();
+      const plansUrl = `${apiBase}/api/plans`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const plansRes = await fetch(plansUrl, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!plansRes.ok) {
+        console.warn('[SubscriptionModal] Plans fetch failed:', plansRes.status);
+        setPlans(FALLBACK_PLANS);
+        setLoading(false);
+        return;
       }
-      
-      if (subscriptionRes.ok) {
-        const subData = await subscriptionRes.json();
-        if (subData?.subscription?.planId) {
-          setCurrentPlan(subData.subscription.planId);
-        }
+
+      let plansData: any = {};
+      try {
+        const text = await plansRes.text();
+        plansData = text ? JSON.parse(text) : {};
+      } catch (parseError) {
+        console.error('[SubscriptionModal] Plans parse error:', parseError);
+        setPlans(FALLBACK_PLANS);
+        setLoading(false);
+        return;
       }
-    } catch (error) {
+
+      const plansArray = plansData.plans || plansData.data?.plans || [];
+
+      if (Array.isArray(plansArray) && plansArray.length > 0) {
+        setPlans(plansArray);
+        setCurrentPlan(plansData.currentPlan || plansData.data?.currentPlan || 'free');
+      } else {
+        console.warn('[SubscriptionModal] Plans array empty, using fallback');
+        setPlans(FALLBACK_PLANS);
+        setCurrentPlan('free');
+      }
+
+      try {
+        const subscriptionRes = await authFetch('/me/subscription');
+        if (subscriptionRes.ok) {
+          const subData = await subscriptionRes.json();
+          if (subData?.subscription?.planId || subData?.data?.subscription?.planId) {
+            setCurrentPlan(subData.subscription?.planId || subData.data?.subscription?.planId);
+          }
+        }
+      } catch (subError) {
+        console.warn('[SubscriptionModal] Subscription fetch error:', subError);
+      }
+    } catch (error: any) {
       console.error('[SubscriptionModal] Fetch plans error:', error);
+      if (error.name !== 'AbortError') {
+        setPlans(FALLBACK_PLANS);
+      }
     } finally {
       setLoading(false);
     }
@@ -166,16 +254,15 @@ export default function SubscriptionModal({ visible, onClose, onSubscriptionChan
   const handlePaymentSuccess = async () => {
     setShowPayment(false);
     setSelectedPlan(null);
-    
+
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
     try {
       const subRes = await authFetch('/me/subscription');
       if (subRes.ok) {
         const subData = await subRes.json();
         onSubscriptionChange?.(subData.subscription);
-        
-        // Update OneSignal segment when subscription changes
+
         if (subData.subscription?.planId) {
           const { updateSubscriptionSegment } = await import('../utils/onesignalSegments');
           updateSubscriptionSegment(subData.subscription.planId as 'free' | 'plus' | 'business');
@@ -183,7 +270,6 @@ export default function SubscriptionModal({ visible, onClose, onSubscriptionChan
         onClose();
       }
     } catch (e) {
-      console.error('[SubscriptionModal] Subscription check error:', e);
     }
   };
 
@@ -209,70 +295,95 @@ export default function SubscriptionModal({ visible, onClose, onSubscriptionChan
         onPress={() => !isCurrent && handleSelectPlan(plan.id)}
         disabled={isCurrent || processingPlan !== null}
       >
+        {/* Gradient Background for Recommended */}
         {isRecommended && (
-          <View style={styles.recommendedBadge}>
-            <Ionicons name="star" size={12} color="#fff" />
-            <Text style={styles.recommendedText}>ÖNERİLEN</Text>
+          <LinearGradient
+            colors={['#6366f1', '#8b5cf6', '#a855f7']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        )}
+
+        {/* Badge */}
+        {isRecommended && (
+          <View style={styles.badge}>
+            <Ionicons name="sparkles" size={14} color="#fbbf24" />
+            <Text style={styles.badgeText}>ÖNERİLEN</Text>
           </View>
         )}
 
-        <View style={styles.planHeader}>
-          <Text style={[styles.planTitle, isRecommended && styles.planTitleLight]}>
-            {plan.title}
-          </Text>
-          <Text style={[styles.planPrice, isRecommended && styles.planPriceLight]}>
-            {plan.priceLabel}
-          </Text>
-        </View>
+        <View style={styles.planContent}>
+          {/* Header */}
+          <View style={styles.planHeader}>
+            <Text style={[styles.planTitle, !isRecommended && styles.planTitleDark]}>
+              {plan.title}
+            </Text>
+            <Text style={[styles.planPrice, !isRecommended && styles.planPriceDark]}>
+              {plan.priceLabel}
+            </Text>
+          </View>
 
-        {plan.description && (
-          <Text style={[styles.planDesc, isRecommended && styles.planDescLight]}>
-            {plan.description}
-          </Text>
-        )}
+          {/* Description */}
+          {plan.description && (
+            <Text style={[styles.planDesc, !isRecommended && styles.planDescDark]}>
+              {plan.description}
+            </Text>
+          )}
 
-        <View style={styles.featureList}>
-          {plan.features.slice(0, 4).map((feature, idx) => (
-            <View key={idx} style={styles.featureRow}>
-              <Ionicons
-                name="checkmark-circle"
-                size={16}
-                color={isRecommended ? '#fff' : '#10b981'}
-              />
-              <Text style={[styles.featureText, isRecommended && styles.featureTextLight]}>
-                {feature}
-              </Text>
+          {/* Features */}
+          <View style={styles.featureList}>
+            {plan.features.slice(0, 5).map((feature, idx) => (
+              <View key={idx} style={styles.featureRow}>
+                <View style={[styles.checkIcon, !isRecommended && styles.checkIconDark]}>
+                  <Ionicons
+                    name="checkmark"
+                    size={14}
+                    color={isRecommended ? '#fff' : '#10b981'}
+                  />
+                </View>
+                <Text style={[styles.featureText, !isRecommended && styles.featureTextDark]}>
+                  {feature}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          {/* CTA */}
+          {isCurrent ? (
+            <View style={styles.currentBadge}>
+              <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+              <Text style={styles.currentText}>Aktif Plan</Text>
             </View>
-          ))}
+          ) : (
+            <Pressable
+              style={[
+                styles.selectButton,
+                isRecommended && styles.selectButtonRecommended
+              ]}
+              onPress={() => handleSelectPlan(plan.id)}
+              disabled={processingPlan !== null}
+            >
+              {processingPlan === plan.id ? (
+                <ActivityIndicator color={isRecommended ? '#7c3aed' : '#fff'} />
+              ) : (
+                <>
+                  <Text style={[
+                    styles.selectButtonText,
+                    isRecommended && styles.selectButtonTextRecommended
+                  ]}>
+                    {isFree ? 'Ücretsiz Devam Et' : 'Hemen Başla'}
+                  </Text>
+                  <Ionicons
+                    name="arrow-forward"
+                    size={18}
+                    color={isRecommended ? '#7c3aed' : '#fff'}
+                  />
+                </>
+              )}
+            </Pressable>
+          )}
         </View>
-
-        {isCurrent ? (
-          <View style={styles.currentBadge}>
-            <Ionicons name="checkmark-circle" size={18} color="#10b981" />
-            <Text style={styles.currentText}>Mevcut Plan</Text>
-          </View>
-        ) : (
-          <Pressable
-            style={[
-              styles.selectButton,
-              isRecommended && styles.selectButtonRecommended,
-              isFree && styles.selectButtonFree
-            ]}
-            onPress={() => handleSelectPlan(plan.id)}
-            disabled={processingPlan !== null}
-          >
-            {processingPlan === plan.id ? (
-              <ActivityIndicator color={isRecommended ? '#7c3aed' : '#fff'} />
-            ) : (
-              <Text style={[
-                styles.selectButtonText,
-                isRecommended && styles.selectButtonTextRecommended
-              ]}>
-                {isFree ? 'Ücretsiz Devam Et' : 'Planı Seç'}
-              </Text>
-            )}
-          </Pressable>
-        )}
       </Pressable>
     );
   };
@@ -286,30 +397,31 @@ export default function SubscriptionModal({ visible, onClose, onSubscriptionChan
         onRequestClose={onClose}
       >
         <View style={styles.container}>
-        <LinearGradient
-          colors={['#0f172a', '#1e293b']}
-          style={styles.gradient}
-        >
+          <PremiumBackground color="#6366f1" lineCount={12} circleCount={6} />
+
           {/* Header */}
-          <View style={styles.header}>
+          <LinearGradient
+            colors={['rgba(15, 23, 42, 0.95)', 'rgba(15, 23, 42, 0.8)', 'transparent']}
+            style={styles.header}
+          >
             <View style={styles.headerContent}>
-              <View style={styles.iconWrapper}>
+              <View style={styles.iconContainer}>
                 <LinearGradient
-                  colors={['#7c3aed', '#a855f7']}
+                  colors={['#6366f1', '#8b5cf6']}
                   style={styles.iconGradient}
                 >
-                  <Ionicons name="rocket" size={32} color="#fff" />
+                  <Ionicons name="rocket-outline" size={36} color="#fff" />
                 </LinearGradient>
               </View>
               <Text style={styles.title}>Premium Planlar</Text>
               <Text style={styles.subtitle}>
-                Ekibinizi profesyonelce yönetin, tüm özelliklerin kilidini açın
+                Sınırsız özelliklere erişin, ekibinizi profesyonelce yönetin
               </Text>
             </View>
             <Pressable onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color="#94a3b8" />
+              <Ionicons name="close" size={26} color="#cbd5e1" />
             </Pressable>
-          </View>
+          </LinearGradient>
 
           {/* Plans */}
           <ScrollView
@@ -319,7 +431,7 @@ export default function SubscriptionModal({ visible, onClose, onSubscriptionChan
           >
             {loading ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#7c3aed" />
+                <ActivityIndicator size="large" color="#6366f1" />
                 <Text style={styles.loadingText}>Planlar yükleniyor...</Text>
               </View>
             ) : plans.length === 0 ? (
@@ -330,324 +442,342 @@ export default function SubscriptionModal({ visible, onClose, onSubscriptionChan
             ) : (
               <>
                 {plans.filter(p => p.id !== 'free').map(renderPlan)}
-                
-                {/* Free option at bottom */}
+
+                {/* Free option */}
                 <Pressable
                   style={styles.freeOption}
                   onPress={onClose}
                 >
                   <Text style={styles.freeOptionText}>
-                    Ücretsiz planla devam et
+                    Şimdilik ücretsiz planla devam et
                   </Text>
                   <Ionicons name="arrow-forward" size={18} color="#64748b" />
                 </Pressable>
               </>
             )}
 
-            {/* Features comparison */}
-            <View style={styles.comparisonSection}>
-              <Text style={styles.comparisonTitle}>Neden Premium?</Text>
-              <View style={styles.comparisonGrid}>
-                <View style={styles.comparisonItem}>
-                  <Ionicons name="location" size={24} color="#06b6d4" />
-                  <Text style={styles.comparisonLabel}>Gerçek Zamanlı Takip</Text>
-                </View>
-                <View style={styles.comparisonItem}>
-                  <Ionicons name="people" size={24} color="#10b981" />
-                  <Text style={styles.comparisonLabel}>Sınırsız Ekip</Text>
-                </View>
-                <View style={styles.comparisonItem}>
-                  <Ionicons name="analytics" size={24} color="#f59e0b" />
-                  <Text style={styles.comparisonLabel}>Detaylı Raporlar</Text>
-                </View>
-                <View style={styles.comparisonItem}>
-                  <Ionicons name="shield-checkmark" size={24} color="#7c3aed" />
-                  <Text style={styles.comparisonLabel}>Kurumsal Güvenlik</Text>
-                </View>
+            {/* Features Grid */}
+            <View style={styles.featuresGrid}>
+              <Text style={styles.gridTitle}>Neden Premium?</Text>
+              <View style={styles.gridContainer}>
+                <FeatureCard icon="flash" color="#f59e0b" label="10x Hızlı" />
+                <FeatureCard icon="shield-checkmark" color="#10b981" label="Güvenli" />
+                <FeatureCard icon="people" color="#6366f1" label="Takım" />
+                <FeatureCard icon="analytics" color="#ec4899" label="Raporlar" />
               </View>
             </View>
 
-            {/* Trust badges */}
+            {/* Trust Badges */}
             <View style={styles.trustSection}>
-              <View style={styles.trustBadge}>
-                <Ionicons name="lock-closed" size={16} color="#64748b" />
-                <Text style={styles.trustText}>256-bit SSL</Text>
-              </View>
-              <View style={styles.trustBadge}>
-                <Ionicons name="card" size={16} color="#64748b" />
-                <Text style={styles.trustText}>Güvenli Ödeme</Text>
-              </View>
-              <View style={styles.trustBadge}>
-                <Ionicons name="refresh" size={16} color="#64748b" />
-                <Text style={styles.trustText}>İptal Garantisi</Text>
-              </View>
+              <TrustBadge icon="lock-closed" text="256-bit SSL" />
+              <TrustBadge icon="card" text="Güvenli Ödeme" />
+              <TrustBadge icon="refresh" text="İptal Garantisi" />
             </View>
           </ScrollView>
-        </LinearGradient>
-      </View>
-    </Modal>
+        </View>
+      </Modal>
 
-    {selectedPlan && (
-      <PaymentScreen
-        visible={showPayment}
-        planId={selectedPlan.id}
-        planName={selectedPlan.title}
-        amount={selectedPlan.monthlyPrice || 0}
-        currency="TRY"
-        onSuccess={handlePaymentSuccess}
-        onCancel={handlePaymentCancel}
-      />
-    )}
+      {selectedPlan && (
+        <PaymentScreen
+          visible={showPayment}
+          planId={selectedPlan.id}
+          planName={selectedPlan.title}
+          amount={selectedPlan.monthlyPrice || 0}
+          currency="TRY"
+          onSuccess={handlePaymentSuccess}
+          onCancel={handlePaymentCancel}
+        />
+      )}
     </>
+  );
+}
+
+function FeatureCard({ icon, color, label }: any) {
+  return (
+    <View style={styles.featureCard}>
+      <View style={[styles.featureIcon, { backgroundColor: `${color}20` }]}>
+        <Ionicons name={icon} size={24} color={color} />
+      </View>
+      <Text style={styles.featureLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function TrustBadge({ icon, text }: any) {
+  return (
+    <View style={styles.trustBadge}>
+      <Ionicons name={icon} size={14} color="#64748b" />
+      <Text style={styles.trustText}>{text}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a'
-  },
-  gradient: {
-    flex: 1
+    backgroundColor: '#0f172a',
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingHorizontal: 24,
-    paddingBottom: 24
+    paddingBottom: 32,
   },
   headerContent: {
-    flex: 1,
-    alignItems: 'center'
+    alignItems: 'center',
   },
-  iconWrapper: {
-    marginBottom: 16
+  iconContainer: {
+    marginBottom: 20,
   },
   iconGradient: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
+    width: 80,
+    height: 80,
+    borderRadius: 12,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '900',
     color: '#fff',
-    marginBottom: 8,
-    textAlign: 'center'
+    marginBottom: 12,
+    letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 15,
+    fontSize: 16,
     color: '#94a3b8',
     textAlign: 'center',
-    lineHeight: 22,
-    paddingHorizontal: 20
+    lineHeight: 24,
+    paddingHorizontal: 20,
   },
   closeButton: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 60 : 40,
     right: 24,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
   },
   scrollView: {
-    flex: 1
+    flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 40
+    paddingBottom: 40,
   },
   loadingContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60
+    paddingVertical: 60,
   },
   loadingText: {
-    color: '#94a3b8',
-    marginTop: 12
+    color: '#64748b',
+    marginTop: 16,
+    fontSize: 15,
   },
   planCard: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: 16,
     marginBottom: 16,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: 'rgba(255,255,255,0.03)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)'
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   planCardRecommended: {
-    backgroundColor: '#7c3aed',
-    borderColor: '#7c3aed'
+    borderWidth: 0,
   },
   planCardCurrent: {
     borderColor: '#10b981',
-    borderWidth: 2
+    borderWidth: 2,
   },
-  recommendedBadge: {
+  badge: {
     position: 'absolute',
-    top: -10,
-    right: 20,
+    top: 16,
+    right: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#f59e0b',
+    gap: 6,
+    backgroundColor: 'rgba(251, 191, 36, 0.2)',
     paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12
+    paddingVertical: 6,
+    borderRadius: 8,
+    zIndex: 10,
   },
-  recommendedText: {
-    color: '#fff',
+  badgeText: {
+    color: '#fbbf24',
     fontSize: 11,
-    fontWeight: '800'
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  planContent: {
+    padding: 24,
   },
   planHeader: {
-    marginBottom: 12
+    marginBottom: 12,
   },
   planTitle: {
-    fontSize: 22,
-    fontWeight: '800',
+    fontSize: 24,
+    fontWeight: '900',
     color: '#fff',
-    marginBottom: 4
+    marginBottom: 6,
   },
-  planTitleLight: {
-    color: '#fff'
+  planTitleDark: {
+    color: '#f1f5f9',
   },
   planPrice: {
-    fontSize: 28,
+    fontSize: 36,
     fontWeight: '900',
-    color: '#7c3aed'
+    color: '#fff',
+    letterSpacing: -1,
   },
-  planPriceLight: {
-    color: '#fff'
+  planPriceDark: {
+    color: '#6366f1',
   },
   planDesc: {
-    fontSize: 14,
-    color: '#94a3b8',
-    marginBottom: 16,
-    lineHeight: 20
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.7)',
+    marginBottom: 20,
+    lineHeight: 22,
   },
-  planDescLight: {
-    color: 'rgba(255,255,255,0.8)'
+  planDescDark: {
+    color: '#94a3b8',
   },
   featureList: {
-    gap: 10,
-    marginBottom: 16
+    gap: 12,
+    marginBottom: 24,
   },
   featureRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10
+    gap: 12,
+  },
+  checkIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkIconDark: {
+    backgroundColor: 'rgba(16,185,129,0.15)',
   },
   featureText: {
-    color: '#e2e8f0',
-    fontSize: 14,
-    flex: 1
+    color: '#fff',
+    fontSize: 15,
+    flex: 1,
+    fontWeight: '500',
   },
-  featureTextLight: {
-    color: 'rgba(255,255,255,0.9)'
+  featureTextDark: {
+    color: '#e2e8f0',
   },
   currentBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(16,185,129,0.1)',
-    borderRadius: 12
+    gap: 10,
+    paddingVertical: 16,
+    backgroundColor: 'rgba(16,185,129,0.12)',
+    borderRadius: 12,
   },
   currentText: {
     color: '#10b981',
-    fontWeight: '700'
+    fontWeight: '700',
+    fontSize: 16,
   },
   selectButton: {
-    paddingVertical: 14,
-    borderRadius: 12,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#7c3aed'
+    gap: 10,
+    paddingVertical: 16,
+    borderRadius: 12,
+    backgroundColor: '#6366f1',
   },
   selectButtonRecommended: {
-    backgroundColor: '#fff'
-  },
-  selectButtonFree: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)'
+    backgroundColor: '#fff',
   },
   selectButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '800'
+    fontWeight: '800',
   },
   selectButtonTextRecommended: {
-    color: '#7c3aed'
+    color: '#6366f1',
   },
   freeOption: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 16,
-    marginTop: 8
+    paddingVertical: 20,
+    marginTop: 8,
   },
   freeOptionText: {
     color: '#64748b',
     fontSize: 15,
-    fontWeight: '600'
+    fontWeight: '600',
   },
-  comparisonSection: {
-    marginTop: 32,
-    paddingTop: 24,
+  featuresGrid: {
+    marginTop: 40,
+    paddingTop: 32,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.1)'
+    borderTopColor: 'rgba(255,255,255,0.06)',
   },
-  comparisonTitle: {
-    fontSize: 18,
+  gridTitle: {
+    fontSize: 20,
     fontWeight: '800',
     color: '#fff',
     textAlign: 'center',
-    marginBottom: 20
+    marginBottom: 24,
   },
-  comparisonGrid: {
+  gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between'
+    justifyContent: 'space-between',
   },
-  comparisonItem: {
+  featureCard: {
     width: '48%',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
     borderRadius: 12,
-    padding: 16,
+    padding: 20,
     alignItems: 'center',
-    marginBottom: 12
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
-  comparisonLabel: {
-    color: '#94a3b8',
-    fontSize: 13,
-    marginTop: 8,
-    textAlign: 'center'
+  featureIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  featureLabel: {
+    color: '#cbd5e1',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   trustSection: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 16,
-    marginTop: 24,
-    flexWrap: 'wrap'
+    gap: 20,
+    marginTop: 32,
+    flexWrap: 'wrap',
   },
   trustBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6
+    gap: 6,
   },
   trustText: {
     color: '#64748b',
-    fontSize: 12
-  }
+    fontSize: 13,
+    fontWeight: '500',
+  },
 });
-

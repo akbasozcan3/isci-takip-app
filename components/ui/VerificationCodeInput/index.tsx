@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 
 interface VerificationCodeInputProps {
@@ -37,37 +37,34 @@ export const VerificationCodeInput: React.FC<VerificationCodeInputProps> = ({
     onChangeText(cleaned);
   };
 
-  const handleDigitPress = (index: number) => {
+  const handleDigitPress = () => {
     inputRef.current?.focus();
-    if (index < digits.length) {
-      const newValue = digits.slice(0, index).join('');
-      onChangeText(newValue);
-    }
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.digitsContainer}>
+      <TouchableOpacity
+        activeOpacity={1}
+        onPress={handleDigitPress}
+        style={styles.digitsContainer}
+      >
         {digits.map((digit, index) => (
-          <Pressable
+          <View
             key={`digit-${index}`}
-            onPress={() => handleDigitPress(index)}
             style={[
               styles.digitBox,
               {
                 backgroundColor: verified
-                  ? theme.colors.semantic.success + '33'
+                  ? theme.colors.success + '15'
                   : digit
-                  ? theme.colors.primary.main + '33'
-                  : theme.colors.surface.default,
+                    ? theme.colors.primary + '15'
+                    : theme.colors.surface,
                 borderColor: verified
-                  ? theme.colors.semantic.success
+                  ? theme.colors.success
                   : digit
-                  ? theme.colors.primary.main
-                  : theme.colors.border.default,
+                    ? theme.colors.primary
+                    : theme.colors.border,
               },
-              verified && digit && styles.digitVerified,
-              digit && !verified && styles.digitFilled,
             ]}
           >
             <Text
@@ -75,14 +72,14 @@ export const VerificationCodeInput: React.FC<VerificationCodeInputProps> = ({
                 styles.digitText,
                 {
                   color: verified
-                    ? theme.colors.semantic.success
-                    : theme.colors.text.primary,
+                    ? theme.colors.success
+                    : theme.colors.text,
                 },
               ]}
             >
               {digit}
             </Text>
-          </Pressable>
+          </View>
         ))}
         {emptyDigits.map((_, index) => (
           <View
@@ -90,17 +87,17 @@ export const VerificationCodeInput: React.FC<VerificationCodeInputProps> = ({
             style={[
               styles.digitBox,
               {
-                backgroundColor: theme.colors.surface.default,
-                borderColor: theme.colors.border.default,
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
               },
             ]}
           >
-            <Text style={[styles.digitText, { color: theme.colors.text.primary }]}>
-              {''}
+            <Text style={[styles.digitText, { color: 'transparent' }]}>
+              0
             </Text>
           </View>
         ))}
-      </View>
+      </TouchableOpacity>
       <TextInput
         ref={inputRef}
         style={styles.hiddenInput}
@@ -114,7 +111,7 @@ export const VerificationCodeInput: React.FC<VerificationCodeInputProps> = ({
       />
       {loading && (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color={theme.colors.primary.main} />
+          <ActivityIndicator size="small" color={theme.colors.primary} />
         </View>
       )}
     </View>
@@ -127,27 +124,23 @@ const styles = StyleSheet.create({
   },
   digitsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
+    justifyContent: 'center',
+    gap: 8,
   },
   digitBox: {
-    flex: 1,
-    height: 68,
-    borderRadius: 18,
-    borderWidth: 2,
+    width: 42,
+    height: 52,
+    borderRadius: 10,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 50,
-  },
-  digitFilled: {
-  },
-  digitVerified: {
   },
   digitText: {
-    fontSize: 32,
-    fontWeight: '900',
-    fontFamily: 'Poppins-ExtraBold',
-    letterSpacing: 1,
+    fontSize: 24,
+    fontWeight: '700',
+    fontFamily: 'Poppins-Bold',
+    letterSpacing: 0.5,
+    textAlign: 'center',
   },
   hiddenInput: {
     position: 'absolute',

@@ -36,7 +36,6 @@ export const AppFlow: React.FC<AppFlowProps> = ({ children }) => {
         setShowOnboarding(true);
       }
     } catch (error) {
-      console.error('Error checking onboarding status:', error);
       setShowOnboarding(true);
     } finally {
       setIsLoading(false);
@@ -53,7 +52,6 @@ export const AppFlow: React.FC<AppFlowProps> = ({ children }) => {
       setOnboardingCompleted(true);
       setShowOnboarding(false);
     } catch (error) {
-      console.error('Error saving onboarding status:', error);
       setOnboardingCompleted(true);
       setShowOnboarding(false);
     }
@@ -68,7 +66,7 @@ export const AppFlow: React.FC<AppFlowProps> = ({ children }) => {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.bg.primary }]}>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       {children}
     </View>
   );

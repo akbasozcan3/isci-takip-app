@@ -11,10 +11,10 @@ interface GPSThemeProviderProps {
 export const GPSThemeProvider: React.FC<GPSThemeProviderProps> = ({ children, variant = 'default' }) => {
   const theme = useTheme();
   const gradientColors: [string, string] = 
-    variant === 'gps' ? theme.colors.gradient.gps as [string, string] :
-    variant === 'success' ? theme.colors.gradient.success as [string, string] :
-    variant === 'danger' ? theme.colors.gradient.danger as [string, string] :
-    theme.colors.gradient.primary as [string, string];
+    variant === 'gps' ? (theme.colors.gradients.background.slice(0, 2) as [string, string]) :
+    variant === 'success' ? (theme.colors.gradients.success.slice(0, 2) as [string, string]) :
+    variant === 'danger' ? (theme.colors.gradients.error.slice(0, 2) as [string, string]) :
+    (theme.colors.gradients.primary.slice(0, 2) as [string, string]);
 
   return (
     <View style={styles.container}>

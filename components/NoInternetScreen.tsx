@@ -69,15 +69,15 @@ export default function NoInternetScreen({
           {/* Tips */}
           <View style={styles.tipsContainer}>
             <View style={styles.tipItem}>
-              <Ionicons name="checkmark-circle" size={20} color="#06b6d4" />
+              <Ionicons name="checkmark-circle" size={20} color="#0EA5E9" />
               <Text style={styles.tipText}>Wi-Fi veya mobil veri açık mı?</Text>
             </View>
             <View style={styles.tipItem}>
-              <Ionicons name="checkmark-circle" size={20} color="#06b6d4" />
+              <Ionicons name="checkmark-circle" size={20} color="#0EA5E9" />
               <Text style={styles.tipText}>Uçak modu kapalı mı?</Text>
             </View>
             <View style={styles.tipItem}>
-              <Ionicons name="checkmark-circle" size={20} color="#06b6d4" />
+              <Ionicons name="checkmark-circle" size={20} color="#0EA5E9" />
               <Text style={styles.tipText}>Sinyal gücünüz yeterli mi?</Text>
             </View>
           </View>
@@ -90,7 +90,7 @@ export default function NoInternetScreen({
             activeOpacity={0.8}
           >
             <LinearGradient
-              colors={['#06b6d4', '#0ea5a4']}
+              colors={['#0EA5E9', '#0ea5a4']}
               style={styles.retryButtonGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
@@ -184,7 +184,7 @@ const styles = StyleSheet.create({
     maxWidth: 300,
     borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#06b6d4',
+    shadowColor: '#0EA5E9',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,

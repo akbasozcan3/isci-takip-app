@@ -19,19 +19,15 @@ import {
     StatusBar,
     StyleSheet,
     Text,
-    View
+    View,
+    Dimensions
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { io, Socket } from 'socket.io-client';
 import { Toast, useToast } from '../components/Toast';
 import { getApiBase } from '../utils/api';
 import { getMapFeatures, getMapLayers, type MapFeatures } from '../utils/mapFeatures';
-// Avoid importing native-only maps module on web to prevent bundling errors
-const Maps: any = Platform.OS === 'web' ? null : require('react-native-maps');
-const MapView: any = Platform.OS === 'web' ? View : Maps.default;
-const Marker: any = Platform.OS === 'web' ? View : Maps.Marker;
-const Circle: any = Platform.OS === 'web' ? View : Maps.Circle;
-// Google Maps provider kullanmıyoruz
+import LeafletMap from '../components/leaflet-map';
 
 const API_BASE = getApiBase();
 const BACKGROUND_LOCATION_TASK = 'GROUP_BACKGROUND_LOCATION_TASK';
@@ -173,13 +169,13 @@ export default function GroupMapScreen() {
     const [showMemberModal, setShowMemberModal] = React.useState(false);
     const [refreshing, setRefreshing] = React.useState(false);
     const [myLocation, setMyLocation] = React.useState<Location.LocationObject | null>(null);
+    const [mapLoading, setMapLoading] = React.useState<boolean>(true);
 
     const [isSharing, setIsSharing] = React.useState(false);
     const [sharingLoading, setSharingLoading] = React.useState(false);
     const [persistShare, setPersistShare] = React.useState(false);
 
     const [userId, setUserId] = React.useState('');
-    const [mapType, setMapType] = React.useState<'standard' | 'hybrid'>('standard');
     const [mapFeatures, setMapFeatures] = React.useState<MapFeatures | null>(null);
     const [availableLayers, setAvailableLayers] = React.useState<Record<string, any>>({});
     
@@ -193,7 +189,6 @@ export default function GroupMapScreen() {
     const subscriptionRef = React.useRef<Location.LocationSubscription | null>(null);
     const resendIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
     const lastPayloadRef = React.useRef<any | null>(null);
-    const mapRef = React.useRef<typeof MapView | null>(null);
 
     // Türkiye merkez koordinatları - Profesyonel GPS takip için
     const TURKEY_CENTER = { latitude: 39.0, longitude: 35.2433 };
@@ -203,6 +198,33 @@ export default function GroupMapScreen() {
         latitudeDelta: 13.0, 
         longitudeDelta: 20.0 
     };
+    
+    // Responsive map height calculation (professional defaults)
+    const windowHeight = Dimensions.get('window').height;
+    const MAP_MIN_HEIGHT = 160; // small devices
+    const MAP_MAX_HEIGHT = Math.round(windowHeight * 0.55); // allow up to 55% of screen
+    // estimated chrome (header + paddings) and footer (members panel)
+    const EST_HEADER = (StatusBar.currentHeight ?? 24) + 120; // header area
+    const EST_FOOTER = 160; // members panel and margins
+    const initialMapHeight = Math.max(MAP_MIN_HEIGHT, Math.min(MAP_MAX_HEIGHT, windowHeight - EST_HEADER - EST_FOOTER));
+    const [mapHeight, setMapHeight] = React.useState<number>(initialMapHeight);
+
+    React.useEffect(() => {
+        const handle = ({ window }: { window: { height: number; width: number } }) => {
+            const wh = window.height;
+            const maxH = Math.round(wh * 0.55);
+            const est = Math.max(MAP_MIN_HEIGHT, Math.min(maxH, wh - EST_HEADER - EST_FOOTER));
+            setMapHeight(est);
+        };
+        // Dimensions API differences across RN versions
+        const sub: any = Dimensions.addEventListener ? Dimensions.addEventListener('change', handle) : null;
+        if (!sub) {
+            // fallback for older RN: keep no-op (listener not critical)
+        }
+        return () => {
+            try { if (sub && sub.remove) sub.remove(); } catch {}
+        };
+    }, []);
     
 
     // --- initial load: workerId + persisted preference ---
@@ -479,12 +501,25 @@ export default function GroupMapScreen() {
                         });
                     }
                     setLocations(locationsMap);
+                    // first successful load -> hide map loading indicator
+                    setMapLoading(false);
                 }
             }
         } catch (e) { 
             console.warn('Load locations error:', e); 
+            // tolerate errors but stop showing initial loader after a moment
+            setTimeout(() => setMapLoading(false), 1000);
         }
     }, [groupId]);
+
+    // Poll locations periodically as a robust fallback (uses socket for realtime)
+    React.useEffect(() => {
+        if (!groupId) return;
+        const id = setInterval(() => {
+            loadLocations().catch(() => {});
+        }, 10000); // every 10s
+        return () => clearInterval(id);
+    }, [groupId, loadLocations]);
 
     React.useEffect(() => {
         if (!groupId) return;
@@ -575,12 +610,6 @@ export default function GroupMapScreen() {
         }
         
         if (allCoords.length === 0) return;
-        try {
-            mapRef.current?.fitToCoordinates(allCoords, {
-                edgePadding: { top: 60, left: 60, right: 60, bottom: 60 },
-                animated: true,
-            });
-        } catch {}
     }, [myLocation, locations, groupInfo]);
 
     React.useEffect(() => {
@@ -594,12 +623,6 @@ export default function GroupMapScreen() {
     const focusOnMember = React.useCallback((member: MemberWithLocation) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         if (member.location) {
-            mapRef.current?.animateToRegion({
-                latitude: member.location.lat,
-                longitude: member.location.lng,
-                latitudeDelta: 0.005,
-                longitudeDelta: 0.005
-            }, 500);
         }
         setSelectedMember(member);
         setShowMemberModal(true);
@@ -797,7 +820,7 @@ export default function GroupMapScreen() {
         <SafeAreaView style={styles.container} edges={["top"]}>
             <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-            <LinearGradient colors={["#06b6d4", "#0ea5a4"]} style={styles.header} start={[0, 0]} end={[1, 1]}>
+            <LinearGradient colors={["#0EA5E9", "#0ea5a4"]} style={styles.header} start={[0, 0]} end={[1, 1]}>
                 <View style={styles.headerContent}>
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                         <Pressable onPress={() => {
@@ -834,10 +857,8 @@ export default function GroupMapScreen() {
                                 style={[styles.actionButton]}
                                 accessibilityLabel="Harita türü"
                             >
-                                <Ionicons name={mapType === 'standard' ? 'map-outline' : 'map'} size={18} color="#042f35" />
                             </Pressable>
                         )}
-                        
                         {mapFeatures?.exportMap && (
                             <Pressable
                                 onPress={async () => {
@@ -870,7 +891,7 @@ export default function GroupMapScreen() {
                             style={[styles.persistBtn, persistShare && styles.persistBtnActive]}
                             accessibilityLabel="Kalıcı paylaşım"
                         >
-                            <Ionicons name="save" size={16} color={persistShare ? '#fff' : '#06b6d4'} />
+                            <Ionicons name="save" size={16} color={persistShare ? '#fff' : '#0EA5E9'} />
                         </Pressable>
 
                         <Pressable
@@ -880,9 +901,9 @@ export default function GroupMapScreen() {
                             disabled={sharingLoading}
                         >
                             {sharingLoading ? (
-                                <ActivityIndicator size="small" color={isSharing ? '#fff' : '#06b6d4'} />
+                                <ActivityIndicator size="small" color={isSharing ? '#fff' : '#0EA5E9'} />
                             ) : (
-                                <Ionicons name={isSharing ? 'location' : 'location-outline'} size={18} color={isSharing ? '#fff' : '#06b6d4'} />
+                                <Ionicons name={isSharing ? 'location' : 'location-outline'} size={18} color={isSharing ? '#fff' : '#0EA5E9'} />
                             )}
                         </Pressable>
                     </View>
@@ -890,128 +911,67 @@ export default function GroupMapScreen() {
             </LinearGradient>
 
             <View style={styles.mapContainer}>
-                <MapView
-                    ref={mapRef}
-                    style={styles.map}
-                    initialRegion={groupInfo?.lat && groupInfo?.lng 
-                        ? { latitude: groupInfo.lat, longitude: groupInfo.lng, latitudeDelta: 0.01, longitudeDelta: 0.01 }
-                        : TURKEY_REGION}
-                    mapType={mapType}
-                    showsUserLocation={false}
-                    showsMyLocationButton={true}
-                    showsCompass={true}
-                    showsScale={true}
-                    loadingEnabled={true}
-                    loadingIndicatorColor="#06b6d4"
-                    loadingBackgroundColor="rgba(15,23,42,0.9)"
-                    onMapReady={() => {
-                        // Harita hazır olduğunda grup varsa ona odaklan, yoksa Türkiye'ye
+                <LeafletMap
+                    centerLat={groupInfo?.lat ?? 38.9637}
+                    centerLng={groupInfo?.lng ?? 35.2433}
+                    height={mapHeight}
+                    onReady={() => setMapLoading(false)}
+                    showMarkers
+                    markers={(() => {
+                        const allMarkers = [];
+                        
+                        // Grup merkezi
                         if (groupInfo?.lat && groupInfo?.lng) {
-                            setTimeout(() => {
-                                mapRef.current?.animateToRegion({
-                                    latitude: groupInfo.lat!,
-                                    longitude: groupInfo.lng!,
-                                    latitudeDelta: 0.01,
-                                    longitudeDelta: 0.01
-                                }, 1000);
-                            }, 500);
-                        } else if (mapRef.current) {
-                            setTimeout(() => {
-                                mapRef.current?.animateToRegion(TURKEY_REGION, 1000);
-                            }, 500);
+                            allMarkers.push({
+                                lat: groupInfo.lat,
+                                lng: groupInfo.lng,
+                                label: groupInfo.name,
+                                color: '#7c3aed',
+                                icon: '🚩'
+                            });
                         }
-                    }}
-                >
-                    {/* Group center + geofence */}
-                    {groupInfo?.lat && groupInfo?.lng && (
-                        <>
-                            <Marker coordinate={{ latitude: groupInfo.lat, longitude: groupInfo.lng }} title={groupInfo.name} description={groupInfo.address}>
-                                <View style={styles.centerMarker}><Ionicons name="flag" size={20} color="#fff" /></View>
-                            </Marker>
-                            <Circle
-                                center={{ latitude: groupInfo.lat, longitude: groupInfo.lng }}
-                                radius={Math.max(groupInfo.workRadius ?? 150, 50)}
-                                strokeColor="rgba(124,58,237,0.4)"
-                                fillColor="rgba(124,58,237,0.12)"
-                                strokeWidth={2}
-                            />
-                        </>
-                    )}
 
-                    {/* My location marker (visible to me) */}
-                    {myLocation && (
-                        <Marker 
-                            coordinate={{ latitude: myLocation.coords.latitude, longitude: myLocation.coords.longitude }} 
-                            title="Benim Konumum"
-                            description={`Doğruluk: ${Math.round(myLocation.coords.accuracy || 0)}m`}
-                        >
-                            <View style={styles.myMarkerWrap}>
-                                <View style={styles.myMarkerDot}>
-                                    <Ionicons name="navigate" size={18} color="#fff" />
-                                </View>
-                            </View>
-                        </Marker>
-                    )}
-                    
-                    {/* My accuracy circle */}
-                    {myLocation && myLocation.coords.accuracy && (
-                        <Circle 
-                            center={{ latitude: myLocation.coords.latitude, longitude: myLocation.coords.longitude }} 
-                            radius={Math.min(myLocation.coords.accuracy, 250)} 
-                            strokeColor="rgba(6,182,212,0.5)" 
-                            fillColor="rgba(6,182,212,0.15)" 
-                            strokeWidth={2} 
-                        />
-                    )}
-
-                    {/* Other members */}
-                    {Object.entries(locations).map(([uid, loc]) => {
-                        const isMe = uid === userId;
-                        // skip showing my own location twice
-                        if (isMe) return null;
-                        
-                        // Find member info
-                        const member = membersWithLocations.find(m => m.userId === uid);
-                        const memberName = member?.displayName || uid.slice(0, 8);
-                        const isAdmin = member?.role === 'admin';
-                        // Compute distance/status relative to group center
-                        let distance: number | undefined = undefined;
-                        let inWork = false;
-                        if (groupInfo?.lat && groupInfo?.lng) {
-                            distance = haversineMeters(groupInfo.lat, groupInfo.lng, loc.lat, loc.lng);
-                            const radius = groupInfo.workRadius ?? 150;
-                            inWork = distance <= radius;
+                        // Benim konumum
+                        if (myLocation) {
+                            allMarkers.push({
+                                lat: myLocation.coords.latitude,
+                                lng: myLocation.coords.longitude,
+                                label: 'Benim Konumum',
+                                color: '#0EA5E9',
+                                icon: '📍'
+                            });
                         }
-                        
-                        const geocodeInfo = loc.geocode;
-                        const cityProvince = geocodeInfo 
-                            ? `${geocodeInfo.city || ''}${geocodeInfo.province ? `, ${geocodeInfo.province}` : ''}`.trim()
-                            : '';
-                        const locationDesc = cityProvince 
-                            ? `${cityProvince} • Mesafe: ${fmtMeters(distance)} • ${new Date(loc.timestamp).toLocaleTimeString('tr-TR')}`
-                            : `Mesafe: ${fmtMeters(distance)} • Zaman: ${new Date(loc.timestamp).toLocaleTimeString('tr-TR')}`;
-                        
-                        return (
-                            <Marker 
-                                key={uid} 
-                                coordinate={{ latitude: loc.lat, longitude: loc.lng }} 
-                                title={`${isAdmin ? '👑 ' : ''}${memberName}${inWork ? ' • 🟢 İşte' : ' • 🔴 Dışarıda'}`}
-                                description={locationDesc}
-                            >
-                                <View style={[styles.memberMarker, isAdmin && styles.adminMarker, inWork ? undefined : { backgroundColor: '#ef4444' }]}>
-                                    <Ionicons name={isAdmin ? "shield-checkmark" : "person"} size={16} color="#fff" />
-                                </View>
-                            </Marker>
-                        );
-                    })}
 
-                    {/* accuracy circles */}
-                    {Object.entries(locations).map(([uid, loc]) => (
-                        loc.accuracy && loc.accuracy > 0 ? (
-                            <Circle key={`acc-${uid}`} center={{ latitude: loc.lat, longitude: loc.lng }} radius={Math.min(loc.accuracy, 250)} strokeColor="rgba(6,182,212,0.25)" fillColor="rgba(6,182,212,0.08)" strokeWidth={1} />
-                        ) : null
-                    ))}
-                </MapView>
+                        // Diğer üyelerin konumları
+                        Object.entries(locations).forEach(([uid, loc]) => {
+                            if (uid !== userId) {
+                                const member = membersWithLocations.find(m => m.userId === uid);
+                                const isAdmin = member?.role === 'admin';
+                                let inWork = false;
+                                if (groupInfo?.lat && groupInfo?.lng) {
+                                    const distance = haversineMeters(groupInfo.lat, groupInfo.lng, loc.lat, loc.lng);
+                                    inWork = distance <= (groupInfo.workRadius ?? 150);
+                                }
+                                
+                                allMarkers.push({
+                                    lat: loc.lat,
+                                    lng: loc.lng,
+                                    label: member?.displayName || uid.slice(0, 8),
+                                    color: inWork ? '#10b981' : '#ef4444',
+                                    icon: isAdmin ? '👑' : '👤'
+                                });
+                            }
+                        });
+                        
+                        return allMarkers;
+                    })()}
+                />
+
+                {mapLoading && (
+                    <View style={styles.mapLoaderOverlay} pointerEvents="none">
+                        <ActivityIndicator size="large" color="#0EA5E9" />
+                    </View>
+                )}
 
                 <View style={styles.statusBar}>
                     <View style={styles.statusItem}>
@@ -1038,7 +998,7 @@ export default function GroupMapScreen() {
                 transform: [{ translateY: slideAnim }, { scale: statsScaleAnim }]
             }]}>
                 <View style={styles.statCard}>
-                    <Ionicons name="people" size={20} color="#06b6d4" />
+                    <Ionicons name="people" size={20} color="#0EA5E9" />
                     <Text style={styles.statValue}>{membersWithLocations.length}</Text>
                     <Text style={styles.statLabel}>Toplam Üye</Text>
                 </View>
@@ -1102,7 +1062,7 @@ export default function GroupMapScreen() {
                             {member.location && (
                                 <>
                                     {member.location.geocode && (
-                                        <Text style={[styles.memberLocation, { color: '#06b6d4', fontWeight: '700' }]}>
+                                        <Text style={[styles.memberLocation, { color: '#0EA5E9', fontWeight: '700' }]}>
                                             {member.location.geocode.city || ''}
                                             {member.location.geocode.province ? `, ${member.location.geocode.province}` : ''}
                                         </Text>
@@ -1180,14 +1140,14 @@ export default function GroupMapScreen() {
                                             {selectedMember.location.geocode && (
                                                 <>
                                                     <View style={styles.infoRow}>
-                                                        <Ionicons name="business" size={20} color="#06b6d4" />
+                                                        <Ionicons name="business" size={20} color="#0EA5E9" />
                                                         <Text style={styles.infoLabel}>Şehir:</Text>
                                                         <Text style={styles.infoValue}>
                                                             {selectedMember.location.geocode.city || 'Bilinmiyor'}
                                                         </Text>
                                                     </View>
                                                     <View style={styles.infoRow}>
-                                                        <Ionicons name="map" size={20} color="#06b6d4" />
+                                                        <Ionicons name="map" size={20} color="#0EA5E9" />
                                                         <Text style={styles.infoLabel}>İl:</Text>
                                                         <Text style={styles.infoValue}>
                                                             {selectedMember.location.geocode.province || 'Bilinmiyor'}
@@ -1205,7 +1165,7 @@ export default function GroupMapScreen() {
                                                 </>
                                             )}
                                             <View style={styles.infoRow}>
-                                                <Ionicons name="location" size={20} color="#06b6d4" />
+                                                <Ionicons name="location" size={20} color="#0EA5E9" />
                                                 <Text style={styles.infoLabel}>Koordinat:</Text>
                                                 <Text style={styles.infoValue}>
                                                     {selectedMember.location.lat.toFixed(6)}, {selectedMember.location.lng.toFixed(6)}
@@ -1309,7 +1269,7 @@ const styles = StyleSheet.create({
     centerMarker: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#ef4444', alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff' },
 
     myMarkerWrap: { alignItems: 'center', justifyContent: 'center' },
-    myMarkerDot: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#06b6d4', alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff' },
+    myMarkerDot: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#0EA5E9', alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff' },
 
     memberMarker: { padding: 8, borderRadius: 12, backgroundColor: '#10b981', borderWidth: 2, borderColor: '#fff' },
     adminMarker: { backgroundColor: '#f59e0b' },
@@ -1336,7 +1296,7 @@ const styles = StyleSheet.create({
     memberCard: { alignItems: 'center', marginRight: 16, minWidth: 80 },
     memberAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#334155', alignItems: 'center', justifyContent: 'center', marginBottom: 8, position: 'relative' },
     memberAvatarOnline: { backgroundColor: '#065f46' },
-    memberAvatarText: { fontSize: 14, fontWeight: 'bold', color: '#06b6d4' },
+    memberAvatarText: { fontSize: 14, fontWeight: 'bold', color: '#0EA5E9' },
     onlineIndicator: { position: 'absolute', bottom: 2, right: 2, width: 12, height: 12, borderRadius: 6, backgroundColor: '#10b981', borderWidth: 2, borderColor: '#fff' },
     memberName: { fontSize: 12, fontWeight: '700', color: '#fff', marginBottom: 2, textAlign: 'center' },
     memberRole: { fontSize: 10, color: '#94a3b8', marginBottom: 2 },
@@ -1349,7 +1309,7 @@ const styles = StyleSheet.create({
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
     modalAvatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#334155', alignItems: 'center', justifyContent: 'center', position: 'relative' },
     modalAvatarOnline: { backgroundColor: '#065f46' },
-    modalAvatarText: { fontSize: 24, fontWeight: 'bold', color: '#06b6d4' },
+    modalAvatarText: { fontSize: 24, fontWeight: 'bold', color: '#0EA5E9' },
     onlineIndicatorLarge: { position: 'absolute', bottom: 4, right: 4, width: 16, height: 16, borderRadius: 8, backgroundColor: '#10b981', borderWidth: 3, borderColor: '#fff' },
     modalClose: { padding: 8 },
     modalName: { fontSize: 24, fontWeight: '900', color: '#fff', marginBottom: 4 },
@@ -1359,6 +1319,7 @@ const styles = StyleSheet.create({
     infoLabel: { fontSize: 14, fontWeight: '700', color: '#94a3b8', width: 120 },
     infoValue: { fontSize: 14, color: '#fff', flex: 1 },
     infoValueOnline: { color: '#10b981', fontWeight: 'bold' },
-    focusButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#06b6d4', paddingVertical: 16, borderRadius: 12, marginTop: 24 },
+    focusButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#0EA5E9', paddingVertical: 16, borderRadius: 12, marginTop: 24 },
     focusButtonText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
+    mapLoaderOverlay: { position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(15,23,42,0.55)', zIndex: 40 },
 });

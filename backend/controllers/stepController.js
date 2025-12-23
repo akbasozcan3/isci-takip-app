@@ -627,9 +627,17 @@ class StepController {
   }
 
   async startTracking(req, res) {
+    console.log(`\n========================================`);
+    console.log(`[StepController] 📥 START TRACKING REQUEST RECEIVED`);
+    console.log(`[StepController] 📍 Path: ${req.path}`);
+    console.log(`[StepController] 📍 Method: ${req.method}`);
+    console.log(`[StepController] 📍 IP: ${req.ip || req.connection.remoteAddress}`);
+    console.log(`========================================\n`);
+    
     try {
       const userId = getUserIdFromToken(req);
       if (!userId) {
+        console.error(`[StepController] ❌ No userId found in token`);
         return res.status(401).json(ResponseFormatter.error('Kimlik doğrulama gerekli', 'AUTH_REQUIRED'));
       }
 
@@ -651,16 +659,53 @@ class StepController {
 
       let notificationResult = [];
       try {
+        console.log(`[StepController] 🔍 OneSignal servis durumu kontrol ediliyor...`);
+        const onesignalService = require('../services/onesignalService');
+        
+        // Smart reload: Otomatik olarak .env değişikliklerini algıla ve reload et
+        const reloadResult = onesignalService.checkAndReload();
+        if (reloadResult.reloaded) {
+          console.log(`[StepController] ✅ OneSignal servisi otomatik olarak yeniden yüklendi!`);
+        }
+        
+        const onesignalStatus = onesignalService.getStatus();
+        console.log(`[StepController] 🔍 OneSignal Status:`, JSON.stringify(onesignalStatus, null, 2));
+        
+        if (!onesignalStatus.enabled) {
+          if (onesignalStatus.needsReload) {
+            console.warn(`[StepController] ⚠️ OneSignal servisi reload edildi ama hala devre dışı. .env dosyasını kontrol edin.`);
+          } else {
+            console.error(`[StepController] ❌ OneSignal servisi devre dışı! .env dosyasını kontrol edin.`);
+          }
+        } else {
+          console.log(`[StepController] ✅ OneSignal servisi aktif ve hazır!`);
+        }
+        
         const result = await stepNotificationService.notifyTrackingStart(userId);
         notificationResult = result.channels || [];
+        
+        console.log(`[StepController] 📊 Notification result:`, JSON.stringify({
+          success: result.success,
+          channels: notificationResult,
+          error: result.error
+        }, null, 2));
         
         if (result.success) {
           console.log(`[StepController] ✅ Start notification sent successfully`);
         } else {
           console.warn(`[StepController] ⚠️ Start notification partially failed:`, result.error);
+          // Her kanalın durumunu logla
+          notificationResult.forEach((channel, index) => {
+            if (!channel.success) {
+              console.warn(`[StepController] ⚠️ Channel ${channel.channel} failed:`, channel.error);
+            } else {
+              console.log(`[StepController] ✅ Channel ${channel.channel} succeeded`);
+            }
+          });
         }
       } catch (err) {
         console.error(`[StepController] ❌ Start tracking notification error:`, err.message || err);
+        console.error(`[StepController] ❌ Error stack:`, err.stack);
         notificationResult = [];
       }
 

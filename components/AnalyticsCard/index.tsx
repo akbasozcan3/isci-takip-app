@@ -20,13 +20,12 @@ export function AnalyticsCard({ userId, dateRange = '7d' }: AnalyticsCardProps) 
 
   const loadAnalytics = React.useCallback(async () => {
     if (!userId) return;
-    
+
     try {
       setLoading(true);
       const data = await analyticsApi.getAnalytics(userId, dateRange);
       setAnalytics(data);
     } catch (error: any) {
-      console.error('[AnalyticsCard] Load error:', error);
       setAnalytics({
         summary: {
           total_locations: 0,
@@ -51,8 +50,8 @@ export function AnalyticsCard({ userId, dateRange = '7d' }: AnalyticsCardProps) 
   if (loading) {
     return (
       <Card variant="elevated" style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary.main} />
-        <Text style={[styles.loadingText, { color: theme.colors.text.tertiary }]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text style={[styles.loadingText, { color: theme.colors.textTertiary }]}>
           Analitik yükleniyor...
         </Text>
       </Card>
@@ -93,78 +92,78 @@ export function AnalyticsCard({ userId, dateRange = '7d' }: AnalyticsCardProps) 
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <LinearGradient
-            colors={theme.colors.gradient.primary as [string, string]}
+            colors={theme.colors.gradients.primary.slice(0, 2) as [string, string]}
             style={styles.iconWrapper}
           >
-            <Ionicons name="analytics" size={24} color={theme.colors.text.primary} />
+            <Ionicons name="analytics" size={32} color={theme.colors.text} />
           </LinearGradient>
           <View>
-            <Text style={[styles.title, { color: theme.colors.text.primary }]}>
+            <Text style={[styles.title, { color: theme.colors.text }]}>
               Gelişmiş Analitik
             </Text>
-            <Text style={[styles.subtitle, { color: theme.colors.text.tertiary }]}>
+            <Text style={[styles.subtitle, { color: theme.colors.textTertiary }]}>
               AI destekli analiz
             </Text>
           </View>
         </View>
         <Pressable
           onPress={() => router.push('/(tabs)/analytics' as any)}
-          style={[styles.viewAllButton, { backgroundColor: theme.colors.primary.main + '1A', borderColor: theme.colors.primary.main + '33' }]}
+          style={[styles.viewAllButton, { backgroundColor: theme.colors.primary + '1A', borderColor: theme.colors.primary + '33' }]}
         >
-          <Text style={[styles.viewAllText, { color: theme.colors.primary.main }]}>
+          <Text style={[styles.viewAllText, { color: theme.colors.primary }]}>
             Detaylar
           </Text>
-          <Ionicons name="arrow-forward" size={16} color={theme.colors.primary.main} />
+          <Ionicons name="arrow-forward" size={18} color={theme.colors.primary} />
         </Pressable>
       </View>
 
       <View style={styles.statsGrid}>
-        <View style={[styles.statItem, { backgroundColor: theme.colors.bg.secondary, borderColor: theme.colors.border.default }]}>
-          <Text style={[styles.statValue, { color: theme.colors.text.primary }]}>
+        <View style={[styles.statItem, { backgroundColor: theme.colors.backgroundSecondary, borderColor: theme.colors.border }]}>
+          <Text style={[styles.statValue, { color: theme.colors.text }]}>
             {formatNumber(summary.total_distance)} km
           </Text>
-          <Text style={[styles.statLabel, { color: theme.colors.text.tertiary }]}>Mesafe</Text>
+          <Text style={[styles.statLabel, { color: theme.colors.textTertiary }]}>Mesafe</Text>
         </View>
-        <View style={[styles.statItem, { backgroundColor: theme.colors.bg.secondary, borderColor: theme.colors.border.default }]}>
-          <Text style={[styles.statValue, { color: theme.colors.text.primary }]}>
+        <View style={[styles.statItem, { backgroundColor: theme.colors.backgroundSecondary, borderColor: theme.colors.border }]}>
+          <Text style={[styles.statValue, { color: theme.colors.text }]}>
             {formatInteger(summary.active_days)}
           </Text>
-          <Text style={[styles.statLabel, { color: theme.colors.text.tertiary }]}>Aktif Gün</Text>
+          <Text style={[styles.statLabel, { color: theme.colors.textTertiary }]}>Aktif Gün</Text>
         </View>
-        <View style={[styles.statItem, { backgroundColor: theme.colors.bg.secondary, borderColor: theme.colors.border.default }]}>
-          <Text style={[styles.statValue, { color: theme.colors.text.primary }]}>
+        <View style={[styles.statItem, { backgroundColor: theme.colors.backgroundSecondary, borderColor: theme.colors.border }]}>
+          <Text style={[styles.statValue, { color: theme.colors.text }]}>
             {formatNumber(summary.average_daily_distance)} km
           </Text>
-          <Text style={[styles.statLabel, { color: theme.colors.text.tertiary }]}>Ortalama</Text>
+          <Text style={[styles.statLabel, { color: theme.colors.textTertiary }]}>Ortalama</Text>
         </View>
       </View>
 
       {insights.length > 0 && (
-        <View style={[styles.insightsContainer, { borderTopColor: theme.colors.border.default }]}>
-          <Text style={[styles.insightsTitle, { color: theme.colors.text.primary }]}>Öngörüler</Text>
+        <View style={[styles.insightsContainer, { borderTopColor: theme.colors.border }]}>
+          <Text style={[styles.insightsTitle, { color: theme.colors.text }]}>Öngörüler</Text>
           {insights.slice(0, 2).map((insight, idx) => {
             if (!insight || typeof insight !== 'object') return null;
             const severity = insight.severity || 'info';
             const message = String(insight.message || '');
             if (!message) return null;
-            
+
             return (
               <View
                 key={idx}
                 style={[
                   styles.insightItem,
                   {
-                    backgroundColor: theme.colors.bg.secondary,
-                    borderColor: theme.colors.border.default,
+                    backgroundColor: theme.colors.backgroundSecondary,
+                    borderColor: theme.colors.border,
                   },
                 ]}
               >
                 <Ionicons
                   name={severity === 'warning' ? 'warning' : 'information-circle'}
                   size={16}
-                  color={severity === 'warning' ? theme.colors.semantic.warning : theme.colors.semantic.info}
+                  color={severity === 'warning' ? theme.colors.warning : theme.colors.info}
                 />
-                <Text style={[styles.insightText, { color: theme.colors.text.secondary }]}>
+                <Text style={[styles.insightText, { color: theme.colors.textSecondary }]}>
                   {message}
                 </Text>
               </View>
@@ -178,20 +177,20 @@ export function AnalyticsCard({ userId, dateRange = '7d' }: AnalyticsCardProps) 
           style={[
             styles.predictionContainer,
             {
-              backgroundColor: theme.colors.semantic.success + '1A',
-              borderColor: theme.colors.semantic.success + '33',
+              backgroundColor: theme.colors.success + '1A',
+              borderColor: theme.colors.success + '33',
             },
           ]}
         >
-          <Ionicons name="trending-up" size={18} color={theme.colors.semantic.success} />
-          <Text style={[styles.predictionText, { color: theme.colors.semantic.success }]}>
+          <Ionicons name="trending-up" size={18} color={theme.colors.success} />
+          <Text style={[styles.predictionText, { color: theme.colors.success }]}>
             Tahmini günlük mesafe:{' '}
             {formatNumber(
               typeof predictions.estimated_daily_distance === 'number'
                 ? predictions.estimated_daily_distance
                 : typeof predictions.estimated_daily_distance === 'string'
-                ? parseFloat(predictions.estimated_daily_distance) || 0
-                : 0
+                  ? parseFloat(predictions.estimated_daily_distance) || 0
+                  : 0
             )}{' '}
             km
           </Text>
@@ -226,35 +225,47 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   iconWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 56,
+    height: 56,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#0369a1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   title: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '900',
-    fontFamily: 'Poppins-Bold',
+    fontFamily: 'Poppins-ExtraBold',
+    letterSpacing: 0.3,
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: 13,
     marginTop: 2,
     fontFamily: 'Poppins-Regular',
+    opacity: 0.7,
   },
   viewAllButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
     borderWidth: 1,
+    shadowColor: '#0369a1',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
   viewAllText: {
-    fontSize: 12,
-    fontWeight: '800',
-    fontFamily: 'Poppins-Bold',
+    fontSize: 13,
+    fontWeight: '900',
+    fontFamily: 'Poppins-ExtraBold',
   },
   statsGrid: {
     flexDirection: 'row',
@@ -265,15 +276,15 @@ const styles = StyleSheet.create({
   statItem: {
     flex: 1,
     minWidth: '45%',
-    borderRadius: 16,
+    borderRadius: 12,
     padding: 16,
     alignItems: 'center',
     borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 4,
   },
   statValue: {
     fontSize: 24,

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Dimensions, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -13,7 +13,7 @@ interface ToastProps {
 }
 
 export function Toast({ message, type, visible, onHide, duration = 3000 }: ToastProps) {
-  const translateY = React.useRef(new Animated.Value(50)).current;
+  const translateY = React.useRef(new Animated.Value(0)).current;
   const opacity = React.useRef(new Animated.Value(0)).current;
   const scale = React.useRef(new Animated.Value(0.8)).current;
 
@@ -51,7 +51,7 @@ export function Toast({ message, type, visible, onHide, duration = 3000 }: Toast
   const hideToast = () => {
     Animated.parallel([
       Animated.timing(translateY, {
-        toValue: 50,
+        toValue: 0,
         duration: 300,
         useNativeDriver: true,
       }),
@@ -95,16 +95,19 @@ export function Toast({ message, type, visible, onHide, duration = 3000 }: Toast
       case 'info':
       default:
         return { 
-          bg: '#06b6d4', 
+          bg: '#0EA5E9', 
           icon: 'information-circle' as const,
-          shadowColor: '#06b6d4',
+          shadowColor: '#0EA5E9',
         };
     }
   };
 
   const config = getConfig();
+  const screenWidth = Dimensions.get('window').width;
+  const toastWidth = Math.min(360, screenWidth - 40);
 
   return (
+    <View style={styles.wrapper} pointerEvents="box-none">
     <Animated.View
       style={[
         styles.container,
@@ -113,6 +116,7 @@ export function Toast({ message, type, visible, onHide, duration = 3000 }: Toast
           transform: [{ translateY }, { scale }],
           opacity,
           shadowColor: config.shadowColor,
+            width: toastWidth,
         },
       ]}
       pointerEvents="box-none"
@@ -121,28 +125,35 @@ export function Toast({ message, type, visible, onHide, duration = 3000 }: Toast
         <View style={styles.iconContainer}>
           <Ionicons name={config.icon} size={22} color="#fff" />
         </View>
-        <Text style={styles.message}>{message}</Text>
+        <View style={styles.messageContainer}>
+          <Text style={styles.message} numberOfLines={3}>{message}</Text>
+        </View>
         <Pressable onPress={hideToast} style={styles.closeButton}>
           <Ionicons name="close" size={18} color="#fff" />
         </Pressable>
       </View>
     </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  wrapper: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 50,
-    left: 20,
-    right: 20,
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     zIndex: 9999,
+    pointerEvents: 'box-none',
+  },
+  container: {
     borderRadius: 20,
     paddingVertical: 18,
     paddingHorizontal: 20,
-    alignSelf: 'center',
-    maxWidth: 400,
-    width: '90%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.35,
@@ -151,12 +162,15 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.2)',
     backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    alignSelf: 'center',
   },
   content: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
+    width: '100%',
+    position: 'relative',
+    minHeight: 50,
   },
   iconContainer: {
     width: 32,
@@ -165,21 +179,32 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'absolute',
+    left: 20,
+  },
+  messageContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 60,
   },
   message: {
-    flex: 1,
     color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     lineHeight: 22,
     textAlign: 'center',
     fontFamily: 'Poppins-SemiBold',
-    letterSpacing: 0.2,
+    letterSpacing: 0.3,
+    textAlignVertical: 'center',
+    width: '100%',
   },
   closeButton: {
     padding: 6,
     borderRadius: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    position: 'absolute',
+    right: 20,
   },
 });
 

@@ -17,7 +17,6 @@ try {
   const expoAv = require('expo-av');
   VideoComponent = expoAv.Video;
 } catch (error) {
-  console.warn('expo-av not available, VideoPlayer will show placeholder');
 }
 
 interface VideoPlayerProps {
@@ -84,16 +83,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }
     } else if (status.error) {
       setIsLoading(false);
-      console.error('Video playback error:', status.error);
     }
   };
 
   // If VideoComponent is not available, show placeholder
   if (!VideoComponent) {
     return (
-      <View style={[styles.container, style, { backgroundColor: theme.colors.bg.secondary, alignItems: 'center', justifyContent: 'center' }]}>
-        <Ionicons name="videocam-outline" size={48} color={theme.colors.text.tertiary} />
-        <Text style={{ color: theme.colors.text.tertiary, marginTop: 8 }}>Video player unavailable</Text>
+      <View style={[styles.container, style, { backgroundColor: theme.colors.backgroundSecondary, alignItems: 'center', justifyContent: 'center' }]}>
+        <Ionicons name="videocam-outline" size={48} color={theme.colors.textTertiary} />
+        <Text style={{ color: theme.colors.textTertiary, marginTop: 8 }}>Video player unavailable</Text>
       </View>
     );
   }
@@ -124,7 +122,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             style={styles.playButton}
             onPress={handlePlayPause}
           >
-            <View style={[styles.playButtonCircle, { backgroundColor: theme.colors.primary.main }]}>
+            <View style={[styles.playButtonCircle, { backgroundColor: theme.colors.primary }]}>
               <Ionicons name="play" size={40} color="#ffffff" />
             </View>
           </Pressable>

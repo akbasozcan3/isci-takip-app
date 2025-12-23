@@ -45,8 +45,11 @@ class PricingService {
   formatPrice(planId, currency = 'USD') {
     const price = this.getPrice(planId, 'USD');
     
-    if (!price || !price.usd && !price.try) {
-      console.error(`[PricingService] Invalid planId: ${planId}`);
+    if (!price || (!price.usd && !price.try && planId !== 'free')) {
+      // Only log error for non-free plans
+      if (planId !== 'free') {
+        console.error(`[PricingService] Invalid planId: ${planId}`);
+      }
       return {
         priceLabel: '$0 / ay',
         monthlyPrice: 0,

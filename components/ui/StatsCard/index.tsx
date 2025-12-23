@@ -82,7 +82,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   };
 
   const sizeStyles = getSizeStyles();
-  const defaultIconColor = iconColor || theme.colors.primary.main;
+  const defaultIconColor = iconColor || theme.colors.primary;
 
   const content = (
     <View style={styles.content}>
@@ -91,7 +91,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
           style={[
             styles.title,
             {
-              color: theme.colors.text.secondary,
+              color: theme.colors.textSecondary,
               fontSize: sizeStyles.titleSize,
             },
           ]}
@@ -104,7 +104,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
               styles.iconContainer,
               {
                 backgroundColor: `${defaultIconColor}20`,
-                borderRadius: theme.radius.md,
+                borderRadius: theme.borderRadius.md,
                 padding: 6,
               },
             ]}
@@ -119,7 +119,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
           style={[
             styles.value,
             {
-              color: theme.colors.text.primary,
+              color: theme.colors.text,
               fontSize: sizeStyles.valueSize,
             },
           ]}
@@ -131,15 +131,15 @@ export const StatsCard: React.FC<StatsCardProps> = ({
             <Ionicons
               name={trend.isPositive ? 'trending-up' : 'trending-down'}
               size={14}
-              color={trend.isPositive ? theme.colors.semantic.success : theme.colors.semantic.danger}
+              color={trend.isPositive ? theme.colors.success : theme.colors.error}
             />
             <Text
               style={[
                 styles.trendText,
                 {
                   color: trend.isPositive
-                    ? theme.colors.semantic.success
-                    : theme.colors.semantic.danger,
+                    ? theme.colors.success
+                    : theme.colors.error,
                 },
               ]}
             >
@@ -154,7 +154,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
           style={[
             styles.subtitle,
             {
-              color: theme.colors.text.tertiary,
+              color: theme.colors.textTertiary,
               fontSize: sizeStyles.titleSize - 1,
             },
           ]}
@@ -169,15 +169,15 @@ export const StatsCard: React.FC<StatsCardProps> = ({
     styles.card,
     {
       padding: sizeStyles.padding,
-      borderRadius: theme.radius.lg,
+      borderRadius: theme.borderRadius.lg,
     },
     variant === 'outlined' && {
       borderWidth: 1,
-      borderColor: theme.colors.border.default,
+      borderColor: theme.colors.border,
       backgroundColor: 'transparent',
     },
     variant === 'default' && {
-      backgroundColor: theme.colors.surface.elevated,
+      backgroundColor: theme.colors.surfaceElevated,
     },
   ];
 
@@ -195,7 +195,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
       >
         <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
           <LinearGradient
-            colors={theme.colors.gradient.primary}
+            colors={theme.colors.gradients.primary.slice(0, 2) as [string, string]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={[cardStyle, { overflow: 'hidden' }]}

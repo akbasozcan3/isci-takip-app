@@ -23,12 +23,15 @@ import {
   TextInput,
   View
 } from 'react-native';
+import Reanimated, { FadeInDown, FadeInUp, Layout, SlideInUp } from 'react-native-reanimated';
 import type { Region } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState } from '../../components/EmptyState';
 import LeafletMap from '../../components/leaflet-map';
 import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
 import ProfileBadge from '../../components/ProfileBadge';
+import { UnifiedHeader } from '../../components/UnifiedHeader';
+import { useProfile } from '../../contexts/ProfileContext';
 import { SkeletonList } from '../../components/SkeletonLoader';
 import { authFetch } from '../../utils/auth';
 
@@ -85,13 +88,13 @@ function ConfirmModal({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <Pressable style={styles.confirmOverlay} onPress={onCancel}>
         <Animated.View style={[styles.confirmCard, { transform: [{ scale }] }]}>
-          <LinearGradient colors={['#111827', '#0b1220']} style={styles.confirmHeader}>
+          <View style={styles.confirmHeader}>
             <View style={styles.confirmIconWrap}>
-              <Ionicons name={destructive ? 'warning' : 'help-circle'} size={28} color={destructive ? '#f97316' : '#06b6d4'} />
+              <Ionicons name={destructive ? 'warning' : 'help-circle'} size={28} color={destructive ? '#f97316' : '#0EA5E9'} />
             </View>
             <Text style={styles.confirmTitle}>{title}</Text>
             {description ? <Text style={styles.confirmDesc}>{description}</Text> : null}
-          </LinearGradient>
+          </View>
 
           <View style={styles.confirmActions}>
             <Pressable onPress={onCancel} style={({ pressed }) => [styles.confirmCancel, pressed && { opacity: 0.9 }]}>
@@ -131,6 +134,7 @@ function CreateGroupModal({ visible, onClose, onGroupCreated, onMessage }: Creat
   const [userId, setUserId] = React.useState('');
   const [hasLocationPermission, setHasLocationPermission] = React.useState<boolean>(false);
   const [localError, setLocalError] = React.useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = React.useState<{ name?: string; address?: string; location?: string }>(() => ({}));
 
   React.useEffect(() => {
     if (!visible) return;
@@ -234,8 +238,19 @@ function CreateGroupModal({ visible, onClose, onGroupCreated, onMessage }: Creat
 
   const createGroup = async () => {
     setLocalError(null);
-    if (!groupName.trim() || !address.trim() || !selectedLocation || !userId) {
-      setLocalError('Lütfen tüm alanları doldurun.');
+    setFieldErrors({});
+    const name = groupName.trim();
+    const addr = address.trim();
+    const errors: typeof fieldErrors = {};
+    if (!name) errors.name = 'Grup adı gerekli.';
+    if (!addr) errors.address = 'Adres gerekli.';
+    if (!selectedLocation) errors.location = 'Lütfen haritadan bir konum seçin.';
+    if (!userId) {
+      setLocalError('Kullanıcı bilgisi bulunamadı. Lütfen tekrar giriş yapın.');
+      return;
+    }
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
       return;
     }
     setLoading(true);
@@ -254,21 +269,31 @@ function CreateGroupModal({ visible, onClose, onGroupCreated, onMessage }: Creat
       });
 
       if (response.ok) {
-        const data = await response.json();
-        const group = data.data || data;
+        let data = null;
+        try { data = await response.json(); } catch (err) { data = null; }
+        const group = (data && (data.data || data)) || {};
         onGroupCreated(group);
         onClose();
         setGroupName('');
         setAddress('');
         setSelectedLocation(null);
         setLocalError(null);
-        onMessage('success', `Grup başarıyla oluşturuldu. Grup kodunuz: ${group.code}`);
+        onMessage('success', `Grup başarıyla oluşturuldu. Grup kodunuz: ${group.code || ''}`);
       } else {
-        const err = await response.json().catch(() => ({ error: 'Grup oluşturulamadı.' }));
-        let msg = err.error || 'Grup oluşturulamadı.';
-        msg = String(msg);
-        if (msg.toLowerCase().includes('name') && msg.toLowerCase().includes('required')) msg = 'Grup adı ve kullanıcı bilgisi zorunludur.';
-        setLocalError(msg);
+        const errBody = await response.json().catch(() => ({} as any));
+        // Parse common error shapes: { error: 'msg' } or { errors: { field: ['msg'] } }
+        let serverMsg = (errBody && (errBody.error || errBody.message)) || '';
+        if (!serverMsg && errBody && errBody.errors && typeof errBody.errors === 'object') {
+          // Map field errors
+          const fe: any = {};
+          Object.entries(errBody.errors).forEach(([k, v]) => {
+            fe[k] = Array.isArray(v) ? String(v[0]) : String(v || 'Hatalı alan');
+          });
+          setFieldErrors(prev => ({ ...prev, ...fe }));
+          serverMsg = Object.values(fe)[0] || 'Doğrulama hatası.';
+        }
+        if (!serverMsg) serverMsg = 'Grup oluşturulamadı.';
+        setLocalError(String(serverMsg));
       }
     } catch (error) {
       console.error('[CreateGroupModal] createGroup error', error);
@@ -281,24 +306,24 @@ function CreateGroupModal({ visible, onClose, onGroupCreated, onMessage }: Creat
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
       <SafeAreaView style={styles.modalContainer}>
-        <LinearGradient colors={["#06b6d4", "#0ea5a4"]} style={styles.modalHeader}>
+        <View style={styles.modalHeader}>
           <View style={styles.modalHeaderContent}>
             <View style={styles.modalHeaderLeft}>
-              <View style={styles.modalHeaderIcon}><Ionicons name="add-circle" size={24} color="#06b6d4" /></View>
+              <View style={styles.modalHeaderIcon}><Ionicons name="add-circle" size={24} color="#0EA5E9" /></View>
               <Text style={styles.modalTitle}>Yeni Grup Oluştur</Text>
             </View>
             <Pressable onPress={onClose} style={styles.closeButton}><Ionicons name="close-circle" size={28} color="#fff" /></Pressable>
           </View>
-        </LinearGradient>
+        </View>
 
-        <ScrollView style={styles.modalContent}>
+        <ScrollView style={styles.modalContent} contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
           <View style={styles.formGroup}>
-            <Text style={styles.label}>Grup Adı <Text style={{color:'#dc2626'}}>*</Text></Text>
+            <Text style={styles.label}>Grup Adı <Text style={{ color: '#dc2626' }}>*</Text></Text>
             <TextInput style={styles.input} placeholder="Grup Adını Girin" placeholderTextColor={'#64748b'} value={groupName} onChangeText={setGroupName} maxLength={40} autoFocus />
           </View>
 
           <View style={styles.formGroup}>
-            <Text style={styles.label}>Adres <Text style={{color:'#dc2626'}}>*</Text></Text>
+            <Text style={styles.label}>Adres <Text style={{ color: '#dc2626' }}>*</Text></Text>
             <View style={styles.addressRow}>
               <TextInput style={[styles.input, { flex: 1 }]} placeholder="Adres Girin veya Haritadan Seçin" value={address} placeholderTextColor={'#64748b'} onChangeText={setAddress} maxLength={120} />
               <Pressable onPress={geocodeAddress} style={styles.geocodeButton}><Ionicons name="search" size={20} color="#fff" /></Pressable>
@@ -306,12 +331,12 @@ function CreateGroupModal({ visible, onClose, onGroupCreated, onMessage }: Creat
           </View>
 
           <View style={styles.formGroup}>
-            <Text style={styles.label}>Konum Seçimi <Text style={{color:'#dc2626'}}>*</Text></Text>
+            <Text style={styles.label}>Konum Seçimi <Text style={{ color: '#dc2626' }}>*</Text></Text>
             <Text style={styles.helpText}>Haritaya dokunarak grup konumunu seçin</Text>
             <View style={styles.mapContainer}>
               {mapRegion && <LeafletMap centerLat={mapRegion.latitude} centerLng={mapRegion.longitude} onSelect={handleMapSelect} height={220} />}
             </View>
-            {selectedLocation && <Text style={{color:'#15803d', marginTop:6, fontSize:13, textAlign:'center'}}>Seçilen konum: {selectedLocation.lat.toFixed(5)}, {selectedLocation.lng.toFixed(5)}</Text>}
+            {selectedLocation && <Text style={{ color: '#15803d', marginTop: 6, fontSize: 13, textAlign: 'center' }}>Seçilen konum: {selectedLocation.lat.toFixed(5)}, {selectedLocation.lng.toFixed(5)}</Text>}
           </View>
 
           <Pressable onPress={createGroup} style={({ pressed }) => [styles.createButton, loading && styles.createButtonDisabled, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]} disabled={loading}>
@@ -340,6 +365,7 @@ function JoinGroupModal({ visible, onClose, onJoined, onMessage }: JoinGroupModa
   const [userId, setUserId] = React.useState('');
   const [groupInfo, setGroupInfo] = React.useState<any>(null);
   const [localError, setLocalError] = React.useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = React.useState<{ code?: string; name?: string }>(() => ({}));
 
   React.useEffect(() => {
     (async () => {
@@ -356,7 +382,12 @@ function JoinGroupModal({ visible, onClose, onJoined, onMessage }: JoinGroupModa
   }, []);
 
   const checkGroupInfo = async () => {
-    if (!groupCode.trim()) return;
+    setLocalError(null);
+    setFieldErrors({});
+    if (!groupCode.trim()) {
+      setFieldErrors({ code: 'Lütfen grup kodunu girin.' });
+      return;
+    }
     try {
       const response = await authFetch(`/groups/${groupCode}/info`);
       if (response.ok) {
@@ -376,8 +407,14 @@ function JoinGroupModal({ visible, onClose, onJoined, onMessage }: JoinGroupModa
 
   const joinGroup = async () => {
     setLocalError(null);
-    if (!groupCode.trim() || !displayName.trim()) {
-      setLocalError('Lütfen tüm alanları doldurun.');
+    setFieldErrors({});
+    const code = groupCode.trim();
+    const name = displayName.trim();
+    const errors: any = {};
+    if (!code) errors.code = 'Grup kodu gerekli.';
+    if (!name) errors.name = 'İsminiz gerekli.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
       return;
     }
     setLoading(true);
@@ -398,14 +435,20 @@ function JoinGroupModal({ visible, onClose, onJoined, onMessage }: JoinGroupModa
         setLocalError(null);
         onMessage('success', 'Katılma isteğiniz başarıyla gönderildi. Onay bekleniyor.');
       } else {
-        const error = await response.json().catch(() => ({ error: 'Gruba katılamadı' }));
-        let msg = error.error || 'Gruba katılamadı';
-        const lower = String(msg).toLowerCase();
-        if (lower.includes('eksik bilgi') || lower.includes('user') || lower.includes('displayname')) msg = 'Lütfen grup kodunu ve isminizi eksiksiz giriniz.';
-        else if (lower.includes('already a member')) msg = 'Zaten bu grubun üyesisiniz.';
-        else if (lower.includes('request already pending')) msg = 'Zaten bir katılma isteğiniz var. Lütfen onay bekleyin.';
-        else if (lower.includes('group not found')) msg = 'Grup bulunamadı. Lütfen kodu kontrol edin.';
-        setLocalError(msg);
+        const errBody = await response.json().catch(() => ({} as any));
+        let serverMsg = (errBody && (errBody.error || errBody.message)) || '';
+        if (!serverMsg && errBody && errBody.errors) {
+          const fe: any = {};
+          Object.entries(errBody.errors).forEach(([k, v]) => { fe[k] = Array.isArray(v) ? String(v[0]) : String(v || 'Hata'); });
+          setFieldErrors(prev => ({ ...prev, ...fe }));
+          serverMsg = Object.values(fe)[0] || serverMsg;
+        }
+        const lower = String(serverMsg).toLowerCase();
+        if (!serverMsg) serverMsg = 'Gruba katılamadı';
+        if (lower.includes('already a member')) serverMsg = 'Zaten bu grubun üyesisiniz.';
+        else if (lower.includes('request already pending')) serverMsg = 'Zaten bir katılma isteğiniz var. Lütfen onay bekleyin.';
+        else if (lower.includes('group not found')) serverMsg = 'Grup bulunamadı. Lütfen kodu kontrol edin.';
+        setLocalError(serverMsg);
       }
     } catch (error) {
       console.error('[JoinGroupModal] joinGroup error', error);
@@ -418,7 +461,7 @@ function JoinGroupModal({ visible, onClose, onJoined, onMessage }: JoinGroupModa
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
       <SafeAreaView style={styles.modalContainer}>
-        <LinearGradient colors={["#7c3aed", "#6d28d9"]} style={styles.modalHeader}>
+        <View style={styles.modalHeader}>
           <View style={styles.modalHeaderContent}>
             <View style={styles.modalHeaderLeft}>
               <View style={styles.modalHeaderIcon}><Ionicons name="person-add" size={24} color="#7c3aed" /></View>
@@ -426,7 +469,7 @@ function JoinGroupModal({ visible, onClose, onJoined, onMessage }: JoinGroupModa
             </View>
             <Pressable onPress={onClose} style={styles.closeButton}><Ionicons name="close-circle" size={28} color="#fff" /></Pressable>
           </View>
-        </LinearGradient>
+        </View>
 
         <ScrollView style={styles.modalContent}>
           <View style={styles.formGroup}>
@@ -435,6 +478,7 @@ function JoinGroupModal({ visible, onClose, onJoined, onMessage }: JoinGroupModa
               <TextInput style={[styles.input, { flex: 1 }]} placeholder="ABC123" placeholderTextColor={'#64748b'} value={groupCode} onChangeText={setGroupCode} autoCapitalize="characters" maxLength={6} />
               <Pressable onPress={checkGroupInfo} style={styles.checkButton}><Ionicons name="search" size={20} color="#fff" /></Pressable>
             </View>
+            {fieldErrors.code ? <Text style={styles.fieldErrorText}>{fieldErrors.code}</Text> : null}
           </View>
 
           {groupInfo && (
@@ -454,11 +498,18 @@ function JoinGroupModal({ visible, onClose, onJoined, onMessage }: JoinGroupModa
           <View style={styles.formGroup}>
             <Text style={styles.label}>İsminiz *</Text>
             <TextInput style={styles.input} placeholder="Görünecek isminizi girin" value={displayName} onChangeText={setDisplayName} />
+            {fieldErrors.name ? <Text style={styles.fieldErrorText}>{fieldErrors.name}</Text> : null}
           </View>
 
           <Pressable onPress={joinGroup} style={({ pressed }) => [styles.joinButton, loading && styles.joinButtonDisabled, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]} disabled={loading || !groupCode.trim() || !displayName.trim()}>
             {loading ? <ActivityIndicator color="#fff" size="small" /> : (<><Ionicons name="send" size={18} color="#fff" /><Text style={styles.joinButtonText}>Katılma İsteği Gönder</Text></>)}
           </Pressable>
+
+          {loading && (
+            <View style={styles.modalLoadingOverlay} pointerEvents="none">
+              <ActivityIndicator size="large" color="#7c3aed" />
+            </View>
+          )}
 
           {localError ? (<View style={styles.errorCard}><Ionicons name="alert-circle" size={20} color="#dc2626" /><Text style={styles.errorText}>{localError}</Text></View>) : null}
         </ScrollView>
@@ -469,17 +520,47 @@ function JoinGroupModal({ visible, onClose, onJoined, onMessage }: JoinGroupModa
 
 /* ---------- Main Screen ---------- */
 export default function GroupsScreen() {
-  const [groups, setGroups] = React.useState<Group[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [groups, setGroups] = React.useState<any[]>([]);
+  const [userId, setUserId] = React.useState<string>('');
+  const [profileName, setProfileName] = React.useState<string>(''); // Profil ismi state'i
+  const { avatarUrl } = useProfile();
   const [showCreateModal, setShowCreateModal] = React.useState(false);
   const [showJoinModal, setShowJoinModal] = React.useState(false);
-  const [userId, setUserId] = React.useState('');
-  const [profileName, setProfileName] = React.useState<string>('');
-  const [message, setMessage] = React.useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
-  const [confirmState, setConfirmState] = React.useState<{ visible: boolean; title: string; description?: string; destructive?: boolean; onConfirm?: () => Promise<void> }>({ visible: false, title: '', description: '', destructive: false });
+  const [message, setMessage] = React.useState<{ type: 'error' | 'success' | 'info', text: string } | null>(null);
   const messageOpacity = React.useRef(new Animated.Value(0)).current;
-  const messageTranslateY = React.useRef(new Animated.Value(-16)).current;
+  const messageTranslateY = React.useRef(new Animated.Value(-20)).current;
+  const [confirmState, setConfirmState] = React.useState<{
+    visible: boolean;
+    title: string;
+    description?: string;
+    destructive?: boolean;
+    onConfirm?: () => void;
+  }>({ visible: false, title: '' });
+
+  // İsim baş harflerini hesapla (diğer sayfalardaki gibi)
+  const initials = React.useMemo(() => {
+    if (!profileName) return '';
+    return profileName
+      .split(' ')
+      .map((s) => s[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+  }, [profileName]);
+
+  // Refs
+  const isMounted = React.useRef(true);
+  const activeRequestId = React.useRef(0);
+  const currentController = React.useRef<AbortController | null>(null);
+
+  React.useEffect(() => {
+    return () => {
+      isMounted.current = false;
+      try { currentController.current?.abort(); } catch { }
+    };
+  }, []);
 
   const showMessage = (type: 'success' | 'error' | 'info', text: string) => {
     setMessage({ type, text });
@@ -500,15 +581,38 @@ export default function GroupsScreen() {
     const loadUserId = async () => {
       try {
         const stored = await SecureStore.getItemAsync('workerId');
+
+        // ÖNCE SecureStore'dan displayName oku (index.tsx'deki gibi)
+        const storedDisplayName = await SecureStore.getItemAsync('displayName');
+        if (storedDisplayName) {
+          console.log('[GroupsScreen] Loaded from SecureStore:', storedDisplayName);
+          setProfileName(storedDisplayName);
+        }
+
         if (stored) {
           setUserId(stored);
           try {
             const r = await authFetch('/users/me');
+            console.log('[GroupsScreen] /users/me response status:', r.status);
             if (r.ok) {
               const { user } = await r.json();
-              if (user && user.name) setProfileName(user.name);
+              console.log('[GroupsScreen] user data:', user);
+              if (user) {
+                // displayName öncelikli, yoksa name, yoksa email kullan
+                const profileDisplayName = user.displayName || user.name || user.email || '';
+                console.log('[GroupsScreen] profileDisplayName:', profileDisplayName);
+                if (profileDisplayName) {
+                  setProfileName(profileDisplayName);
+                  console.log('[GroupsScreen] setProfileName called with:', profileDisplayName);
+                  // SecureStore'a da kaydet (index.tsx'deki gibi)
+                  await SecureStore.setItemAsync('displayName', profileDisplayName);
+                  console.log('[GroupsScreen] SecureStore updated');
+                }
+              }
             }
-          } catch (err) { /* ignore */ }
+          } catch (err) {
+            console.error('[GroupsScreen] authFetch error:', err);
+          }
         } else {
           // No auth in app: create and persist a stable anonymous id once
           const anonId = `anon-${Platform.OS}-${Math.floor(Math.random() * 1e9)}`;
@@ -522,7 +626,7 @@ export default function GroupsScreen() {
         setUserId(fallbackId);
       }
     };
-    loadUserId();
+    loadUserId(); // Fonksiyonu çağır
   }, []);
 
   // Global app data clear handler
@@ -535,79 +639,138 @@ export default function GroupsScreen() {
         setShowCreateModal(false);
         setShowJoinModal(false);
         setRefreshing(false);
-      } catch {}
+      } catch { }
     });
     return () => { sub.remove?.(); };
   }, []);
 
   React.useEffect(() => {
     if (userId) {
+      console.log('[GroupsScreen] userId updated, loading groups:', userId);
       loadGroups();
     } else {
-      // userId yoksa hemen loading'i false yap
+      console.log('[GroupsScreen] userId is empty');
+      setGroups([]); // Clear groups when no userId
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   // Ekran odaklandığında (tab'a geri dönüldüğünde) grupları yenile
   useFocusEffect(
     React.useCallback(() => {
       if (userId) {
+        console.log('[GroupsScreen] Screen focused, reloading groups');
         loadGroups();
       }
       // no cleanup necessary
       return undefined;
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userId])
   );
 
   const loadGroups = React.useCallback(async () => {
     if (!userId) {
+      console.log('[GroupsScreen] userId is empty, skipping group load');
+      setGroups([]);
       setLoading(false);
       return;
     }
+
+    const requestId = ++activeRequestId.current;
+    console.log('[GroupsScreen] Loading groups for userId:', userId, 'requestId:', requestId);
+
+    // Abort any previous request
+    try { currentController.current?.abort(); } catch { }
+    const controller = new AbortController();
+    currentController.current = controller;
+
     setLoading(true);
     try {
-      // Timeout ekle (10 saniye)
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      
-      const response = await authFetch(`/groups/user/${userId}/active`);
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // Reduced to 5s
+      const response = await authFetch(`/groups/user/${userId}`, { signal: controller.signal });
       clearTimeout(timeoutId);
-      
-      if (response.ok) {
-        const data = await response.json();
-        const userGroups = data.data || data;
-        setGroups(Array.isArray(userGroups) ? userGroups : []);
-      } else {
-        setGroups([]);
+
+      // If a newer request started after this one, ignore this response
+      if (requestId !== activeRequestId.current) {
+        console.log('[GroupsScreen] Ignoring stale response for requestId:', requestId);
+        return;
       }
-    } catch (error) {
-      console.error('[GroupsScreen] loadGroups error', error);
-      setGroups([]);
-      // Hata durumunda loading'i hemen false yap
-      setLoading(false);
-      if (error instanceof Error) {
-        if (error.message.includes('Network request failed') || error.message.includes('Failed to fetch') || error.name === 'AbortError') {
-          showMessage('error', 'Bağlantı hatası. Lütfen internet bağlantınızı kontrol edin.');
-        } else if (error.message.includes('fetch')) {
-          showMessage('error', 'Ağ hatası: Gruplar yüklenemedi');
+
+      console.log('[GroupsScreen] Groups response status:', response.status);
+
+      // Handle 404 - endpoint doesn't exist yet
+      if (response.status === 404) {
+        console.log('[GroupsScreen] Groups endpoint not yet implemented, showing empty state');
+        if (isMounted.current && requestId === activeRequestId.current) {
+          setGroups([]);
+          setLoading(false);
         }
+        return;
       }
-      return;
+
+      if (response.ok) {
+        const data = await response.json().catch(() => null);
+        console.log('[GroupsScreen] Groups response data:', data);
+        const userGroups = Array.isArray(data) ? data : (data && (data.data || data.groups) ? (data.data || data.groups) : []);
+        console.log('[GroupsScreen] Parsed groups:', userGroups);
+        if (isMounted.current && requestId === activeRequestId.current) setGroups(Array.isArray(userGroups) ? userGroups : []);
+      } else {
+        console.warn('[GroupsScreen] Groups fetch failed with status:', response.status);
+        if (isMounted.current && requestId === activeRequestId.current) setGroups([]);
+      }
+    } catch (error: any) {
+      if (error && error.name === 'AbortError') {
+        console.log('[GroupsScreen] loadGroups aborted (timeout or requestId):', requestId);
+      } else {
+        console.error('[GroupsScreen] loadGroups error:', error);
+      }
+      // Show empty state instead of keeping loading
+      if (isMounted.current && requestId === activeRequestId.current) setGroups([]);
+    } finally {
+      if (isMounted.current && requestId === activeRequestId.current) setLoading(false);
+      if (currentController.current === controller) currentController.current = null;
     }
-    setLoading(false);
-  }, [userId, showMessage]);
+  }, [userId]);
+
+  const loadActivities = React.useCallback(async () => {
+    if (!userId) return;
+
+    try {
+      const response = await authFetch(`/groups/user/${userId}/activities?limit=10`);
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log('[Groups] Activities endpoint not implemented');
+          setActivities([]);
+          return;
+        }
+        throw new Error('Failed to load activities');
+      }
+
+      const data = await response.json();
+      const activitiesData: ActivityItem[] = Array.isArray(data)
+        ? data
+        : (data.data || data.activities || []);
+
+      setActivities(activitiesData);
+    } catch (error) {
+      console.error('[Groups] Load activities error:', error);
+      setActivities([]);
+    }
+  }, [userId]);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
-      await loadGroups();
+      await loadGroups(); // Only load groups for now
+      // await loadActivities(); // Temporarily disabled
     } catch (e) {
-      // ignore
+      console.error('Refresh error:', e);
     } finally {
       setRefreshing(false);
     }
-  }, [userId]);
+  }, [loadGroups]);
 
   // doLeave/doDelete perform the network calls (used by ConfirmModal onConfirm)
   const doLeave = async (group: Group) => {
@@ -714,6 +877,7 @@ export default function GroupsScreen() {
     console.log('[Groups] Group created:', group);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setGroups(prev => [...prev, group]);
+    setLoading(false); // Ensure loading is false
     showMessage('success', `Grup oluşturuldu. Kodunuz: ${group.code}`);
   };
 
@@ -722,348 +886,588 @@ export default function GroupsScreen() {
     setTimeout(() => loadGroups(), 1000);
   };
 
-  return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-
-      <LinearGradient 
-        colors={["#06b6d4", "#0ea5a4"]} 
-        style={styles.header}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+  const renderGroupItem = ({ item, index }: { item: any; index: number }) => (
+    <Reanimated.View
+      entering={FadeInDown.delay(index * 100).springify()}
+      layout={Layout.springify()}
+      style={styles.groupCardWrapper}
+    >
+      <Pressable
+        style={({ pressed }) => [styles.groupCard, pressed && styles.groupCardPressed]}
+        onPress={() => router.push(`/groups/${item.code}/chat`)}
       >
-        <View style={styles.headerContent}>
-          <View style={styles.headerTextContainer}>
-            <Text style={styles.title}>Gruplarım</Text>
-            <Text style={styles.subtitle}>Konum paylaşım gruplarını yönetin</Text>
-          </View>
-          <View style={styles.headerButtons}>
-            <View style={styles.headerIconContainer}>
-              <NetworkStatusIcon size={20} />
+        <LinearGradient
+          colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.02)']}
+          style={styles.groupCardGradient}
+        >
+          <View style={styles.groupCardHeader}>
+            <View style={styles.groupIconWrapper}>
+              <LinearGradient
+                colors={['#0EA5E9', '#6366f1']}
+                style={styles.groupIconGradient}
+              >
+                <Text style={styles.groupIconText}>
+                  {item.name ? item.name.slice(0, 2).toUpperCase() : '??'}
+                </Text>
+              </LinearGradient>
             </View>
-            <Pressable 
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push('/(tabs)/profile');
-              }}
-              style={({ pressed }) => [
-                styles.headerIconContainer,
-                styles.profileButton,
-                pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }
-              ]}
-              android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true }}
-            >
-              {profileName ? (
-                <ProfileBadge name={profileName} size={40} />
-              ) : (
-                <View style={[styles.profileButtonFallback, { width: 40, height: 40, borderRadius: 20 }]}>
-                  <Ionicons name="person" size={20} color="#fff" />
-                </View>
-              )}
-            </Pressable>
-            <Pressable 
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setShowJoinModal(true);
-              }} 
-              style={({ pressed }) => [
-                styles.headerIconContainer,
-                styles.headerJoinButton,
-                pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }
-              ]}
-              android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true }}
-            >
-              <Ionicons name="person-add" size={18} color="#fff" />
-            </Pressable>
-            <Pressable 
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setShowCreateModal(true);
-              }} 
-              style={({ pressed }) => [
-                styles.headerIconContainer,
-                styles.headerCreateButton,
-                pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }
-              ]}
-              android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true }}
-            >
-              <Ionicons name="add" size={20} color="#fff" />
-            </Pressable>
-          </View>
-        </View>
-      </LinearGradient>
-
-      {message && (
-        <Animated.View pointerEvents="none" style={[styles.messageBar, message.type === 'success' ? styles.messageSuccess : message.type === 'error' ? styles.messageError : styles.messageInfo, { opacity: messageOpacity, transform: [{ translateY: messageTranslateY }] }]}>
-          <Text style={styles.messageText}>{message.text}</Text>
-        </Animated.View>
-      )}
-
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={{ paddingBottom: 60 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {loading ? <SkeletonList count={3} /> : groups.length === 0 ? (
-          <EmptyState
-            icon="people-outline"
-            title="Henüz grup yok"
-            description="Yeni bir grup oluşturarak konum paylaşımına başlayın veya mevcut bir gruba katılın"
-            actionText="Grup Oluştur"
-            onAction={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowCreateModal(true); }}
-            secondaryActionText="Gruba Katıl"
-            onSecondaryAction={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowJoinModal(true); }}
-          />
-        ) : (
-          groups.map((group) => (
-            <View key={group.id} style={styles.groupCard}>
-              <View style={styles.groupHeader}>
-                <Text style={styles.groupName}>{group.name}</Text>
-                <View style={styles.groupCode}><Text style={styles.groupCodeText}>{group.code}</Text></View>
+            <View style={styles.groupCardInfo}>
+              <Text style={styles.groupName} numberOfLines={1}>{item.name}</Text>
+              <View style={styles.groupMetaRow}>
+                <Ionicons name="location-sharp" size={12} color="#94a3b8" />
+                <Text style={styles.groupAddress} numberOfLines={1}>
+                  {item.address || 'Konum belirtilmemiş'}
+                </Text>
               </View>
+            </View>
+            <View style={styles.groupArrow}>
+              <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.3)" />
+            </View>
+          </View>
 
-              <Text style={styles.groupAddress}>{group.address}</Text>
-              <Text style={styles.groupDate}>{new Date(group.createdAt).toLocaleDateString('tr-TR')}</Text>
-
-              <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push({ pathname: '/group-map', params: { groupId: group.id, groupCode: group.code } }); }} style={({ pressed }) => [styles.mapButton, pressed && { transform: [{ scale: 0.97 }], opacity: 0.9 }]} android_ripple={{ color: 'rgba(255,255,255,0.2)' }}>
-                <Ionicons name="map" size={16} color="#fff" /><Text style={styles.mapButtonText}>Haritayı Aç</Text>
+          <View style={styles.groupCardFooter}>
+            <View style={styles.groupMemberBadge}>
+              <Ionicons name="people" size={14} color="#0EA5E9" />
+              <Text style={styles.groupMemberText}>
+                {item.memberCount || 1} Üye
+              </Text>
+            </View>
+            {!item.isAdmin && (
+              <Pressable
+                onPress={(e) => { e.stopPropagation(); leaveGroup(item); }}
+                style={styles.leaveButton}
+              >
+                <Text style={styles.leaveButtonText}>Ayrıl</Text>
               </Pressable>
+            )}
+          </View>
+        </LinearGradient>
+      </Pressable>
+    </Reanimated.View>
+  );
 
-              <View style={styles.groupActionsRow}>
-                <Pressable onPress={() => leaveGroup(group)} style={({ pressed }) => [styles.leaveButton, pressed && { opacity: 0.9 }]}><Ionicons name="log-out-outline" size={16} color="#ef4444" /><Text style={styles.leaveButtonText}>Ayrıl</Text></Pressable>
+  return (
+    <View style={{ flex: 1 }}>
+      <LinearGradient
+        colors={['#020617', '#0f172a', '#1e293b']}
+        locations={[0, 0.5, 1]}
+        style={{ flex: 1 }}
+      >
+        <SafeAreaView style={styles.container} edges={["top"]}>
+          <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+
+          {/* DEBUG: profileName değerini göster */}
+          {console.log('[GroupsScreen] Rendering with profileName:', profileName)}
+
+          <UnifiedHeader
+            title="Gruplarım"
+            subtitle={`${groups.length} aktif grup`}
+            brandLabel="BAVAXE"
+            gradientColors={['#14b8a6', '#06b6d4', '#0891b2']} // Premium cyan/turquoise gradient
+            profileName={profileName}
+            avatarUrl={avatarUrl}
+            onProfilePress={() => router.push('/(tabs)/profile')}
+            showNetwork
+            actions={
+              <Pressable
+                style={({ pressed }) => [
+                  styles.headerAddButton,
+                  pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }
+                ]}
+                onPress={() => setShowCreateModal(true)}
+              >
+                <LinearGradient
+                  colors={['rgba(255,255,255,0.25)', 'rgba(255,255,255,0.15)']}
+                  style={styles.headerAddGradient}
+                >
+                  <Ionicons name="add" size={24} color="#fff" />
+                </LinearGradient>
+              </Pressable>
+            }
+          />
+
+          <Reanimated.FlatList
+            data={groups}
+            keyExtractor={(item) => item.id}
+            renderItem={renderGroupItem}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0EA5E9" />
+            }
+            ListEmptyComponent={
+              !loading ? (
+                <EmptyState
+                  icon="people"
+                  title="Henüz Bir Grupta Değilsiniz"
+                  message="Yeni bir ekip oluşturun veya mevcut bir ekibe katılın."
+                  actionLabel="Grup Oluştur"
+                  onAction={() => setShowCreateModal(true)}
+                  secondaryActionLabel="Kodu ile Katıl"
+                  onSecondaryAction={() => setShowJoinModal(true)}
+                />
+              ) : null
+            }
+            ListHeaderComponent={
+              <View style={styles.listHeaderActions}>
+                <Pressable
+                  style={({ pressed }) => [styles.joinActionCard, pressed && { opacity: 0.9 }]}
+                  onPress={() => setShowJoinModal(true)}
+                >
+                  <LinearGradient
+                    colors={['rgba(99, 102, 241, 0.1)', 'rgba(99, 102, 241, 0.05)']}
+                    style={styles.joinActionGradient}
+                  >
+                    <View style={styles.joinActionIcon}>
+                      <Ionicons name="qr-code-outline" size={24} color="#8b5cf6" />
+                    </View>
+                    <View style={styles.joinActionContent}>
+                      <Text style={styles.joinActionTitle}>Kod ile Katıl</Text>
+                      <Text style={styles.joinActionDesc}>Size verilen davet kodunu kullanın</Text>
+                    </View>
+                    <Ionicons name="arrow-forward" size={20} color="#8b5cf6" />
+                  </LinearGradient>
+                </Pressable>
               </View>
-            </View>
-          ))
+            }
+          />
+        </SafeAreaView>
+
+        {/* Mesaj Toast Animasyonu */}
+        {message && (
+          <Animated.View style={[styles.toastMessage, { opacity: messageOpacity, transform: [{ translateY: messageTranslateY }] }]}>
+            <LinearGradient
+              colors={message.type === 'error' ? ['#ef4444', '#dc2626'] : ['#10b981', '#059669']}
+              style={styles.toastGradient}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            >
+              <Ionicons name={message.type === 'error' ? 'alert-circle' : 'checkmark-circle'} size={20} color="#fff" />
+              <Text style={styles.toastText}>{message.text}</Text>
+            </LinearGradient>
+          </Animated.View>
         )}
-      </ScrollView>
 
-      <CreateGroupModal visible={showCreateModal} onClose={() => setShowCreateModal(false)} onGroupCreated={handleGroupCreated} onMessage={showMessage} />
-      <JoinGroupModal visible={showJoinModal} onClose={() => setShowJoinModal(false)} onJoined={handleJoined} onMessage={showMessage} />
+        {/* Modals */}
+        <CreateGroupModal
+          visible={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onGroupCreated={(group) => {
+            setGroups(prev => [group, ...prev]);
+            // showMessage handled inside modal via prop usually, ensuring it bubbles up
+          }}
+          onMessage={showMessage}
+        />
 
-      <ConfirmModal
-        visible={confirmState.visible}
-        title={confirmState.title}
-        description={confirmState.description}
-        destructive={confirmState.destructive}
-        onCancel={() => setConfirmState(s => ({ ...s, visible: false }))}
-        onConfirm={() => { if (confirmState.onConfirm) confirmState.onConfirm(); }}
-      />
-    </SafeAreaView>
+        <JoinGroupModal
+          visible={showJoinModal}
+          onClose={() => setShowJoinModal(false)}
+          onJoined={(code) => {
+            loadGroups();
+          }}
+          onMessage={showMessage}
+        />
+
+        <ConfirmModal
+          visible={confirmState.visible}
+          title={confirmState.title}
+          description={confirmState.description}
+          destructive={confirmState.destructive}
+          onConfirm={() => {
+            confirmState.onConfirm?.();
+            setConfirmState(prev => ({ ...prev, visible: false }));
+          }}
+          onCancel={() => setConfirmState(prev => ({ ...prev, visible: false }))}
+        />
+
+      </LinearGradient>
+    </View>
   );
 }
 
-/* ---------- Styles (kept polished) ---------- */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
-  header: { 
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 8 : 8, 
-    paddingHorizontal: 20, 
-    paddingBottom: 20, 
-    borderBottomLeftRadius: 24, 
-    borderBottomRightRadius: 24,
+  container: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+  },
+  listContent: {
+    padding: 20,
+    paddingTop: 8,
+  },
+  listHeaderActions: {
+    marginBottom: 24,
+  },
+  headerAddButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  headerAddGradient: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  joinActionCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.2)',
+  },
+  joinActionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 16,
+  },
+  joinActionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.2)',
+  },
+  joinActionContent: {
+    flex: 1,
+  },
+  joinActionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
+    fontFamily: 'Poppins-Bold',
+  },
+  joinActionDesc: {
+    fontSize: 13,
+    color: '#cbd5e1',
+    fontFamily: 'Poppins-Regular',
+    marginTop: 2,
+  },
+
+  // Group Card Styles
+  groupCardWrapper: {
+    marginBottom: 12,
+  },
+  groupCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    elevation: 4,
     shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  groupCardPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.9,
+  },
+  groupCardGradient: {
+    padding: 16,
+  },
+  groupCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  groupIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  groupIconGradient: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupIconText: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#fff',
+    fontFamily: 'Poppins-Bold',
+  },
+  groupCardInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  groupName: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    color: '#fff',
+    fontFamily: 'Poppins-Bold',
+  },
+  groupMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  groupAddress: {
+    fontSize: 13,
+    color: '#94a3b8',
+    flex: 1,
+    fontFamily: 'Poppins-Regular',
+  },
+  groupArrow: {
+    padding: 4,
+  },
+  groupCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.05)',
+  },
+  groupMemberBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(14, 165, 233, 0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(14, 165, 233, 0.2)',
+  },
+  groupMemberText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0EA5E9',
+    fontFamily: 'Poppins-SemiBold',
+  },
+
+  // Toast
+  toastMessage: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    right: 20,
+    zIndex: 9999,
+    borderRadius: 12,
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 8,
   },
-  headerContent: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'space-between',
-    minHeight: 60,
+  toastGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
   },
-  headerTextContainer: {
-    flex: 1,
-    marginRight: 12,
-  },
-  title: { 
-    fontSize: 28, 
-    fontWeight: '900', 
-    color: '#fff', 
-    letterSpacing: 0.3, 
-    fontFamily: 'Poppins-Bold',
-    marginBottom: 4,
-  },
-  subtitle: { 
-    fontSize: 13, 
-    color: 'rgba(255,255,255,0.95)', 
-    fontWeight: '600', 
-    fontFamily: 'Poppins-SemiBold',
-    letterSpacing: 0.2,
-  },
-
-  messageBar: { 
-    position: 'absolute', 
-    top: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 80 : 100, 
-    left: 20,
-    right: 20,
-    width: '90%',
-    maxWidth: 400,
-    alignSelf: 'center',
-    zIndex: 999, 
-    paddingVertical: 14, 
-    paddingHorizontal: 16, 
-    borderRadius: 16, 
-    alignItems: 'center', 
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    elevation: 18,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  messageText: { 
-    color: '#fff', 
-    fontWeight: '700', 
-    textAlign: 'center', 
-    fontFamily: 'Poppins-SemiBold',
+  toastText: {
+    color: '#fff',
     fontSize: 14,
-    letterSpacing: 0.3,
-    lineHeight: 20,
-  },
-  messageSuccess: { 
-    backgroundColor: '#16a34a',
-    shadowColor: '#16a34a',
-    borderTopWidth: 2,
-    borderTopColor: 'rgba(22, 163, 74, 0.5)',
-  },
-  messageError: { 
-    backgroundColor: '#dc2626',
-    shadowColor: '#dc2626',
-    borderTopWidth: 2,
-    borderTopColor: 'rgba(220, 38, 38, 0.5)',
-  },
-  messageInfo: { 
-    backgroundColor: '#2563eb',
-    shadowColor: '#2563eb',
-    borderTopWidth: 2,
-    borderTopColor: 'rgba(37, 99, 235, 0.5)',
+    fontWeight: '600',
+    flex: 1,
+    fontFamily: 'Poppins-Medium',
   },
 
-  headerButtons: { 
-    flexDirection: 'row', 
-    gap: 10, 
-    alignItems: 'center',
-    justifyContent: 'flex-end',
+  // Modal & Form Styles (kept but improved colors where applicable)
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#0f172a',
   },
-  headerIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+  modalHeader: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  modalHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalHeaderIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(14, 165, 233, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
-  profileButton: {
-    borderRadius: 24,
-    overflow: 'hidden',
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    fontFamily: 'Poppins-Bold',
   },
-  profileButtonFallback: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
+  closeButton: {
+    padding: 4,
+  },
+  modalContent: {
+    flex: 1,
+    padding: 20,
+  },
+  formGroup: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#cbd5e1',
+    marginBottom: 8,
+    fontFamily: 'Poppins-Medium',
+  },
+  input: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 12,
+    padding: 14,
+    color: '#fff',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    fontSize: 15,
+    fontFamily: 'Poppins-Regular',
+  },
+  addressRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  geocodeButton: {
+    borderWidth: 1,
+    borderColor: 'rgba(6, 182, 212, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  mapContainer: { height: 220, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+
+  createButton: {
+    backgroundColor: '#0EA5E9',
+    padding: 18,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.3)',
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6
   },
-  profileBadge: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-  profileBadgeText: { color: '#fff', fontWeight: '900', fontSize: 14, fontFamily: 'Poppins-Bold' },
-  headerButton: { 
-    width: 44, 
-    height: 44, 
-    borderRadius: 22, 
-    alignItems: 'center', 
+  createButtonDisabled: { opacity: 0.5 },
+  createButtonText: { color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
+
+  errorCard: {
+    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+    borderColor: 'rgba(220, 38, 38, 0.2)',
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
+    gap: 12
   },
-  headerCreateButton: { 
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  }, 
-  headerJoinButton: { 
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
+  errorText: { color: '#ef4444', fontWeight: '700', flex: 1, fontSize: 14, textAlign: 'center', fontFamily: 'Poppins-Bold' },
+
+  codeRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  checkButton: {
+    backgroundColor: 'rgba(6, 182, 212, 0.1)',
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(6, 182, 212, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center'
   },
 
-  content: { flex: 1, padding: 12, backgroundColor: '#0f172a' },
-
-  emptyState: { alignItems: 'center', marginTop: 100, paddingHorizontal: 32 },
-
-  groupCard: { 
-    backgroundColor: '#1e293b', 
-    borderRadius: 24, 
-    padding: 24, 
-    marginBottom: 16, 
-    borderWidth: 1, 
-    borderColor: '#334155',
+  groupInfoCard: {
+    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)'
   },
-  groupHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  groupName: { fontSize: 18, fontWeight: '900', color: '#fff', flex: 1, letterSpacing: 0.4, fontFamily: 'Poppins-Bold' },
-  groupCode: { backgroundColor: '#e6f5f4', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  groupCodeText: { fontSize: 12, fontWeight: '900', color: '#06b6d4', letterSpacing: 0.4, fontFamily: 'Poppins-Bold' },
-  groupAddress: { fontSize: 14, color: '#94a3b8', marginBottom: 4, fontWeight: '500', fontFamily: 'Poppins-Medium' },
-  groupDate: { fontSize: 12, color: '#64748b', fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
-
-  mapButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#06b6d4', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, marginTop: 10, gap: 6 },
-  mapButtonText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 0.3, fontFamily: 'Poppins-Bold' },
-
-  groupActionsRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 6, marginTop: 8 },
-  leaveButton: { backgroundColor: 'transparent', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, borderWidth: 1, borderColor: '#ef4444', flexDirection: 'row', alignItems: 'center', gap: 6 },
-  leaveButtonText: { color: '#ef4444', fontSize: 12, fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
-  deleteButton: { backgroundColor: '#dc2626', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  deleteButtonText: { color: '#fff', fontSize: 12, fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
-
-  modalContainer: { flex: 1, backgroundColor: '#0f172a' },
-  modalHeader: { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 20 : 20, paddingHorizontal: 20, paddingBottom: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
-  modalHeaderContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  modalHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  modalHeaderIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  modalTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5, fontFamily: 'Poppins-Bold' },
-  closeButton: { padding: 4 },
-  modalContent: { flex: 1, padding: 16 },
-  formGroup: { marginBottom: 20 },
-  label: { fontSize: 16, fontWeight: '800', color: '#fff', marginBottom: 8, fontFamily: 'Poppins-ExtraBold' },
-  helpText: { fontSize: 12, color: '#94a3b8', marginBottom: 8, fontFamily: 'Poppins-Regular' },
-  input: { borderWidth: 1, borderColor: '#334155', borderRadius: 14, padding: 16, fontSize: 16, backgroundColor: '#1e293b', color: '#fff', fontWeight: '600', fontFamily: 'Poppins-SemiBold' },
-  addressRow: { flexDirection: 'row', alignItems: 'center' },
-  geocodeButton: { backgroundColor: '#06b6d4', padding: 12, borderRadius: 8, marginLeft: 8 },
-  mapContainer: { height: 200, borderRadius: 8, overflow: 'hidden' },
-  createButton: { backgroundColor: '#06b6d4', padding: 18, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, marginTop: 24 },
-  createButtonDisabled: { opacity: 0.6 },
-  createButtonText: { color: '#fff', fontSize: 17, fontWeight: '900', letterSpacing: 0.3, fontFamily: 'Poppins-Bold' },
-  errorCard: { backgroundColor: '#fee2e2', borderColor: '#fca5a5', borderWidth: 1, borderRadius: 12, padding: 14, marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
-  errorText: { color: '#b91c1c', fontWeight: '800', flex: 1, fontSize: 14, textAlign: 'center', fontFamily: 'Poppins-ExtraBold' },
-
-  codeRow: { flexDirection: 'row', alignItems: 'center' },
-  checkButton: { backgroundColor: '#06b6d4', padding: 12, borderRadius: 8, marginLeft: 8 },
-  groupInfoCard: { backgroundColor: '#f0fdf4', borderRadius: 8, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: '#bbf7d0' },
   groupInfoHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  groupInfoTitle: { fontSize: 16, fontWeight: 'bold', color: '#15803d', marginLeft: 8 },
-  groupInfoAddress: { fontSize: 14, color: '#64748b', marginBottom: 8 },
-  groupInfoFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  groupInfoMembers: { fontSize: 12, color: '#64748b' },
-  groupInfoStatus: { fontSize: 12, color: '#16a34a', fontWeight: '600' },
-  joinButton: { backgroundColor: '#7c3aed', padding: 18, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, marginTop: 24 },
-  joinButtonDisabled: { opacity: 0.6 },
-  joinButtonText: { color: '#fff', fontSize: 17, fontWeight: '900', letterSpacing: 0.3 },
+  groupInfoTitle: { fontSize: 18, fontWeight: '800', color: '#10b981', marginLeft: 10, fontFamily: 'Poppins-Bold' },
+  groupInfoAddress: { fontSize: 14, color: '#94a3b8', marginBottom: 12, fontFamily: 'Poppins-Regular' },
+  groupInfoMembers: { fontSize: 13, color: '#e2e8f0', fontFamily: 'Poppins-Medium' },
+  groupInfoStatus: { fontSize: 13, color: '#10b981', fontWeight: '700', fontFamily: 'Poppins-Bold' },
+
+  joinButton: {
+    backgroundColor: '#7c3aed',
+    padding: 18,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+    shadowColor: '#7c3aed',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6
+  },
+  joinButtonDisabled: { opacity: 0.5 },
+  joinButtonText: { color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: 0.5, fontFamily: 'Poppins-ExtraBold' },
+  fieldErrorText: { color: '#ef4444', marginTop: 8, fontSize: 13, textAlign: 'left', fontFamily: 'Poppins-SemiBold' },
 
   /* Confirm modal styles */
-  confirmOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 20 },
-  confirmCard: { width: '100%', maxWidth: 520, borderRadius: 14, overflow: 'hidden', backgroundColor: '#071028', borderWidth: 1, borderColor: '#182033' },
-  confirmHeader: { padding: 18, alignItems: 'center' },
-  confirmIconWrap: { marginBottom: 8, backgroundColor: 'rgba(255,255,255,0.04)', padding: 12, borderRadius: 12 },
-  confirmTitle: { color: '#fff', fontSize: 18, fontWeight: '900', marginBottom: 6, textAlign: 'center', fontFamily: 'Poppins-Bold' },
-  confirmDesc: { color: '#94a3b8', fontSize: 13, textAlign: 'center', fontFamily: 'Poppins-Regular' },
-  confirmActions: { flexDirection: 'row', justifyContent: 'space-between', padding: 12, gap: 12 },
-  confirmCancel: { flex: 1, backgroundColor: 'transparent', borderRadius: 10, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#334155' },
-  confirmCancelText: { color: '#fff', fontWeight: '800', fontFamily: 'Poppins-ExtraBold' },
-  confirmButton: { flex: 1, borderRadius: 10, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
-  confirmButtonPrimary: { backgroundColor: '#06b6d4' },
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    // backdropFilter removed for native compatibility
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)'
+  },
+  confirmHeader: { padding: 24, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)' },
+  confirmIconWrap: {
+    marginBottom: 16,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)'
+  },
+  confirmTitle: { color: '#fff', fontSize: 20, fontWeight: '900', marginBottom: 8, textAlign: 'center', fontFamily: 'Poppins-Bold' },
+  confirmDesc: { color: '#94a3b8', fontSize: 14, textAlign: 'center', fontFamily: 'Poppins-Regular', lineHeight: 22 },
+  confirmActions: { flexDirection: 'row', justifyContent: 'space-between', padding: 20, gap: 16 },
+  confirmCancel: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)'
+  },
+  confirmCancelText: { color: '#e2e8f0', fontWeight: '700', fontFamily: 'Poppins-Bold', fontSize: 15 },
+  confirmButton: { flex: 1, borderRadius: 16, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
+  confirmButtonPrimary: { backgroundColor: '#0EA5E9' },
   confirmButtonDanger: { backgroundColor: '#dc2626' },
-  confirmButtonText: { color: '#fff', fontWeight: '900', fontFamily: 'Poppins-Bold' },
+  confirmButtonText: { color: '#fff', fontWeight: '900', fontFamily: 'Poppins-ExtraBold', fontSize: 15 },
+  modalLoadingOverlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(2,6,23,0.7)', alignItems: 'center', justifyContent: 'center', borderRadius: 0 },
 });

@@ -51,8 +51,10 @@ export const Toast: React.FC<ToastProps> = ({
         }, duration);
         return () => clearTimeout(timer);
       }
+      return undefined;
     } else {
       hide();
+      return undefined;
     }
   }, [visible, duration]);
 
@@ -77,22 +79,22 @@ export const Toast: React.FC<ToastProps> = ({
     switch (type) {
       case 'success':
         return {
-          backgroundColor: theme.colors.semantic.success,
+          backgroundColor: theme.colors.success,
           icon: 'checkmark-circle' as const,
         };
       case 'error':
         return {
-          backgroundColor: theme.colors.semantic.danger,
+          backgroundColor: theme.colors.error,
           icon: 'close-circle' as const,
         };
       case 'warning':
         return {
-          backgroundColor: theme.colors.semantic.warning,
+          backgroundColor: theme.colors.warning,
           icon: 'warning' as const,
         };
       default:
         return {
-          backgroundColor: theme.colors.primary.main,
+          backgroundColor: theme.colors.primary,
           icon: 'information-circle' as const,
         };
     }
@@ -165,6 +167,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '600',
+    textAlign: 'center',
   },
   closeButton: {
     marginLeft: 12,

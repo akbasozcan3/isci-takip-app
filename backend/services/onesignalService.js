@@ -98,8 +98,8 @@ class OneSignalService {
     userIds = [],
     playerIds = [],
     segments = [],
-    title,
-    message,
+    title = '',
+    message = '',
     data = {},
     url = null,
     deepLink = null,
@@ -130,17 +130,23 @@ class OneSignalService {
       return { success: false, error: 'Either userIds, playerIds, or segments must be provided' };
     }
 
-    // Validate content
-    if (!title || !message) {
-      return { success: false, error: 'Title and message are required' };
+    // Validate content - ensure title and message are strings
+    const titleStr = typeof title === 'string' ? title.trim() : String(title || '').trim();
+    const messageStr = typeof message === 'string' ? message.trim() : String(message || '').trim();
+    
+    if (!titleStr || titleStr.length === 0) {
+      return { success: false, error: 'Title is required and must be a non-empty string' };
+    }
+    if (!messageStr || messageStr.length === 0) {
+      return { success: false, error: 'Message is required and must be a non-empty string' };
     }
 
     // Build notification payload according to OneSignal REST API v1
     // IMPORTANT: app_id MUST be the first field and MUST be valid
     const notification = {
       app_id: String(this.appId).trim(), // Ensure it's a string and trimmed
-      headings: { en: String(title).substring(0, 100) },
-      contents: { en: String(message).substring(0, 500) },
+      headings: { en: titleStr.substring(0, 100) },
+      contents: { en: messageStr.substring(0, 500) },
       priority: Math.min(Math.max(priority, 0), 10),
       sound: sound || 'default',
       // Android specific settings
@@ -230,11 +236,106 @@ class OneSignalService {
     }
   }
 
+  /**
+   * Reload configuration from environment variables
+   * Useful when .env file is updated without server restart
+   */
+  reload() {
+    console.log('[OneSignalService] 🔄 Reloading configuration from environment...');
+    const oldEnabled = this.enabled;
+    const oldApiKey = this.apiKey;
+    
+    // Reload from environment
+    this.appId = (process.env.ONESIGNAL_APP_ID || '4a846145-621c-4a0d-a29f-0598da946c50').trim();
+    const rawApiKey = process.env.ONESIGNAL_REST_API_KEY;
+    
+    if (!rawApiKey || rawApiKey === 'YOUR_ONESIGNAL_REST_API_KEY' || rawApiKey.trim().length === 0) {
+      this.apiKey = null;
+      this.enabled = false;
+      if (oldEnabled) {
+        console.warn('[OneSignalService] ⚠️ Service disabled after reload - API Key not found');
+      }
+      return { reloaded: false, enabled: false, reason: 'API Key not found' };
+    }
+    
+    this.apiKey = rawApiKey.trim().replace(/^["']|["']$/g, '').trim();
+    
+    // Validate
+    if (!this.appId || this.appId === 'YOUR_ONESIGNAL_APP_ID' || this.appId.length < 10) {
+      this.enabled = false;
+      return { reloaded: false, enabled: false, reason: 'Invalid App ID' };
+    }
+    
+    if (!this.apiKey || this.apiKey === 'YOUR_ONESIGNAL_REST_API_KEY' || this.apiKey.length < 20) {
+      this.enabled = false;
+      return { reloaded: false, enabled: false, reason: 'Invalid API Key' };
+    }
+    
+    this.enabled = true;
+    
+    const wasReloaded = (oldApiKey !== this.apiKey) || (oldEnabled !== this.enabled);
+    if (wasReloaded) {
+      console.log('[OneSignalService] ✅ Configuration reloaded successfully');
+      console.log('[OneSignalService]   Enabled:', oldEnabled, '→', this.enabled);
+      if (oldApiKey !== this.apiKey) {
+        console.log('[OneSignalService]   API Key changed');
+      }
+    }
+    
+    return { reloaded: wasReloaded, enabled: this.enabled, apiKeyConfigured: !!this.apiKey };
+  }
+
+  /**
+   * Check and reload if needed (smart reload)
+   * Only reloads if environment variables have changed
+   */
+  checkAndReload() {
+    const currentApiKey = process.env.ONESIGNAL_REST_API_KEY;
+    const currentAppId = process.env.ONESIGNAL_APP_ID;
+    
+    // Normalize API key for comparison (remove quotes, trim)
+    const normalizedCurrentApiKey = currentApiKey?.trim().replace(/^["']|["']$/g, '').trim();
+    const normalizedStoredApiKey = this.apiKey?.trim().replace(/^["']|["']$/g, '').trim();
+    
+    // Check if environment variables have changed
+    if (normalizedCurrentApiKey && 
+        normalizedCurrentApiKey !== normalizedStoredApiKey && 
+        normalizedCurrentApiKey !== 'YOUR_ONESIGNAL_REST_API_KEY' &&
+        normalizedCurrentApiKey.length > 20) {
+      console.log('[OneSignalService] 🔍 Environment variables changed, reloading...');
+      console.log('[OneSignalService]   Old API Key length:', normalizedStoredApiKey?.length || 0);
+      console.log('[OneSignalService]   New API Key length:', normalizedCurrentApiKey.length);
+      return this.reload();
+    }
+    
+    // If service is disabled but API key is now available, reload
+    if (!this.enabled && 
+        normalizedCurrentApiKey && 
+        normalizedCurrentApiKey !== 'YOUR_ONESIGNAL_REST_API_KEY' &&
+        normalizedCurrentApiKey.length > 20) {
+      console.log('[OneSignalService] 🔍 Service was disabled but API key is now available, reloading...');
+      return this.reload();
+    }
+    
+    return { reloaded: false, enabled: this.enabled };
+  }
+
   async sendToUser(userId, title, message, options = {}) {
     console.log(`[OneSignalService] 📤 sendToUser called:`, { userId, title, message, options });
     
+    // Smart reload: Check if environment variables have changed
+    const reloadResult = this.checkAndReload();
+    if (reloadResult.reloaded) {
+      console.log(`[OneSignalService] ✅ Configuration reloaded automatically!`);
+    }
+    
     if (!this.enabled) {
       console.error(`[OneSignalService] ❌ Service is disabled, cannot send notification`);
+      console.error(`[OneSignalService] 💡 .env dosyasını kontrol edin: ONESIGNAL_REST_API_KEY`);
+      const status = this.getStatus();
+      if (status.needsReload) {
+        console.error(`[OneSignalService] ⚠️ Environment variables changed but reload failed`);
+      }
       return { success: false, error: 'OneSignal service is disabled' };
     }
     
@@ -590,6 +691,14 @@ class OneSignalService {
   }
 
   getStatus() {
+    // Check current environment state
+    const envApiKey = process.env.ONESIGNAL_REST_API_KEY;
+    const envAppId = process.env.ONESIGNAL_APP_ID;
+    const envApiKeyConfigured = !!envApiKey && envApiKey !== 'YOUR_ONESIGNAL_REST_API_KEY' && envApiKey.trim().length > 0;
+    
+    // Check if there's a mismatch (service might need reload)
+    const needsReload = envApiKeyConfigured && (!this.enabled || this.apiKey !== envApiKey?.trim());
+    
     return {
       enabled: this.enabled,
       appId: this.appId,
@@ -597,7 +706,17 @@ class OneSignalService {
       apiKeyPrefix: this.apiKey ? this.apiKey.substring(0, 15) + '...' : 'Not configured',
       baseUrl: this.baseUrl,
       maxRetries: this.maxRetries,
-      requestTimeout: this.requestTimeout
+      requestTimeout: this.requestTimeout,
+      // Environment state
+      envApiKeyConfigured: envApiKeyConfigured,
+      envAppId: envAppId || 'Not set',
+      needsReload: needsReload,
+      // Status message
+      statusMessage: needsReload 
+        ? '⚠️ Environment variables changed - service needs reload (will auto-reload on next notification)'
+        : this.enabled 
+          ? '✅ Service is active and ready'
+          : '❌ Service is disabled - check .env file'
     };
   }
 }

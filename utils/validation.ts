@@ -134,3 +134,104 @@ export function sanitizeString(input: string): string {
     .substring(0, 10000);
 }
 
+// ============================================
+// Turkish Validation Functions (User-Facing)
+// ============================================
+
+export interface ValidationResult {
+  valid: boolean;
+  error?: string;
+}
+
+/**
+ * Validate email address format (Turkish)
+ */
+export function validateEmailTR(email: string): ValidationResult {
+  if (!email || !email.trim()) {
+    return { valid: false, error: 'E-posta adresi gereklidir' };
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email.trim())) {
+    return { valid: false, error: 'Geçerli bir e-posta adresi girin' };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validate password strength (Turkish)
+ */
+export function validatePasswordTR(password: string, minLength: number = 6): ValidationResult {
+  if (!password || !password.trim()) {
+    return { valid: false, error: 'Şifre gereklidir' };
+  }
+
+  if (password.length < minLength) {
+    return { valid: false, error: `Şifre en az ${minLength} karakter olmalıdır` };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validate password confirmation (Turkish)
+ */
+export function validatePasswordMatchTR(password: string, confirmPassword: string): ValidationResult {
+  if (password !== confirmPassword) {
+    return { valid: false, error: 'Şifreler eşleşmiyor' };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validate 6-digit verification code (Turkish)
+ */
+export function validateVerificationCodeTR(code: string): ValidationResult {
+  if (!email || !code.trim()) {
+    return { valid: false, error: 'Doğrulama kodu gereklidir' };
+  }
+
+  if (!/^\d{6}$/.test(code.trim())) {
+    return { valid: false, error: 'Lütfen 6 haneli doğrulama kodunu girin' };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Calculate password strength score (0-4)
+ */
+export function calculatePasswordStrength(password: string): number {
+  let score = 0;
+  if (!password) return 0;
+
+  if (password.length >= 6) score++;
+  if (password.length >= 10) score++;
+  if (/[A-Z]/.test(password)) score++;
+  if (/[0-9]/.test(password)) score++;
+  if (/[^A-Za-z0-9]/.test(password)) score++;
+
+  return Math.min(score, 4);
+}
+
+/**
+ * Get password strength label (Turkish)
+ */
+export function getPasswordStrengthLabel(score: number): string {
+  if (score === 0) return 'Şifre Giriniz';
+  if (score < 2) return 'Zayıf';
+  if (score < 3) return 'Orta';
+  return 'Güçlü';
+}
+
+/**
+ * Get password strength color
+ */
+export function getPasswordStrengthColor(score: number): string {
+  if (score === 0) return '#64748b';
+  if (score < 2) return '#ef4444';
+  if (score < 3) return '#0EA5E9';
+  return '#10b981';
+}

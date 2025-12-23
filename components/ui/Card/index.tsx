@@ -3,10 +3,10 @@ import React from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 
-interface CardProps {
+export interface CardProps {
   children?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
-  variant?: 'default' | 'elevated' | 'outlined' | 'gradient';
+  variant?: 'default' | 'elevated' | 'outlined' | 'gradient' | 'glass';
   padding?: 'none' | 'sm' | 'md' | 'lg';
 }
 
@@ -34,19 +34,27 @@ export const Card: React.FC<CardProps> = ({
   const cardStyle = [
     styles.base,
     {
-      backgroundColor: variant === 'elevated' ? theme.colors.surface.elevated : theme.colors.surface.default,
-      borderColor: theme.colors.border.default,
+      backgroundColor: variant === 'elevated' ? theme.colors.surfaceElevated : theme.colors.surface,
+      borderColor: theme.colors.border,
       padding: getPadding(),
     },
     variant === 'outlined' && { borderWidth: 1 },
     style,
   ];
 
+  if (variant === 'glass') {
+    return (
+      <View style={[styles.base, styles.glass, { padding: getPadding() }, style]}>
+        {children}
+      </View>
+    );
+  }
+
   if (variant === 'gradient') {
     return (
       <View style={[styles.base, { padding: getPadding() }, style]}>
         <LinearGradient
-          colors={theme.colors.gradient.dark as [string, string]}
+          colors={theme.colors.gradients.background.slice(0, 2) as [string, string]}
           style={StyleSheet.absoluteFill}
           start={[0, 0]}
           end={[1, 1]}
@@ -61,9 +69,19 @@ export const Card: React.FC<CardProps> = ({
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: 16,
+    borderRadius: 24,
     overflow: 'hidden',
   },
+  glass: {
+    backgroundColor: 'rgba(30, 41, 59, 0.4)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 4,
+  }
 });
 
 export default Card;

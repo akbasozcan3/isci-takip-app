@@ -53,7 +53,7 @@ export function ScrollIndicator() {
           },
         ]}
       >
-        <Ionicons name="chevron-down" size={24} color="#06b6d4" />
+        <Ionicons name="chevron-down" size={24} color="#0EA5E9" />
         <Text style={styles.text}>Aşağı kaydır</Text>
       </Animated.View>
       <View style={styles.line} />
@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 13,
-    color: '#06b6d4',
+    color: '#0EA5E9',
     fontFamily: 'Poppins-SemiBold',
     fontWeight: '600',
     letterSpacing: 0.3,

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Bavaxe",
     "slug": "isci-takip-paneli",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "scheme": "bavaxe",
     "userInterfaceStyle": "automatic",
@@ -27,6 +27,7 @@
         "NSLocationWhenInUseUsageDescription": "Konumunuzu iş takibi sırasında göstermek için kullanılır.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Konumunuz, görev takibi ve güvenlik için arka planda toplanır.",
         "NSLocationAlwaysUsageDescription": "Arka planda konum takibi için izin gereklidir.",
+        "NSMotionUsageDescription": "Adım sayacı özelliği için hareket sensörü kullanılır.",
         "UIRequiresFullScreen": false,
         "UIViewControllerBasedStatusBarAppearance": true,
         "ITSAppUsesNonExemptEncryption": false
@@ -49,6 +50,7 @@
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_LOCATION",
         "POST_NOTIFICATIONS",
+        "ACTIVITY_RECOGNITION",
         "INTERNET",
         "ACCESS_NETWORK_STATE"
       ],
@@ -90,9 +92,9 @@
       "typedRoutes": true
     },
     "extra": {
-      "apiBase": "http://192.168.1.102:4000",
-      "apiBaseDev": "http://192.168.1.102:4000",
-      "apiBaseIOS": "http://192.168.1.102:4000",
+      "apiBase": "http://192.168.1.95:4000",
+      "apiBaseDev": "http://10.0.2.2:4000",
+      "apiBaseIOS": "http://localhost:4000",
       "apiBaseWeb": "http://localhost:4000",
       "router": {},
       "eas": {

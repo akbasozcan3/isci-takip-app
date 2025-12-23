@@ -1,7 +1,7 @@
 function getLogger(context) {
   try {
-    const { createLogger } = require('./logger');
-    return createLogger(context);
+    const { getLogger: loggerGetter } = require('./logger');
+    return loggerGetter(context);
   } catch (err) {
     return {
       warn: (...args) => console.warn(`[${context}]`, ...args),

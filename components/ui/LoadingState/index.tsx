@@ -19,11 +19,11 @@ export const LoadingState: React.FC<LoadingStateProps> = ({
     <View style={styles.container}>
       <ActivityIndicator
         size={size}
-        color={theme.colors.primary.main}
+        color={theme.colors.primary}
         style={styles.spinner}
       />
       {message && (
-        <Text style={[styles.message, { color: theme.colors.text.secondary }]}>
+        <Text style={[styles.message, { color: theme.colors.textSecondary }]}>
           {message}
         </Text>
       )}
@@ -32,7 +32,7 @@ export const LoadingState: React.FC<LoadingStateProps> = ({
 
   if (fullScreen) {
     return (
-      <View style={[styles.fullScreen, { backgroundColor: theme.colors.bg.primary }]}>
+      <View style={[styles.fullScreen, { backgroundColor: theme.colors.background }]}>
         {content}
       </View>
     );

@@ -95,6 +95,13 @@ class NotificationService {
 
       const result = await retryService.execute(
         async () => {
+          // Ensure OneSignal service is up-to-date with latest environment variables
+          // This allows hot-reload without server restart
+          const reloadResult = onesignalService.checkAndReload();
+          if (reloadResult.reloaded) {
+            console.log(`[NotificationService] ✅ OneSignal configuration reloaded automatically`);
+          }
+          
           const sendResult = await onesignalService.sendToUser(
             userId,
             notification.title || notification.subject || 'Bildirim',
@@ -138,11 +145,14 @@ class NotificationService {
   }
 
   async send(userId, notification, channels = ['database']) {
+    console.log(`[NotificationService] 📤 send called:`, { userId, channels, notificationType: notification.type });
     const results = [];
 
     for (const channel of channels) {
+      console.log(`[NotificationService] 🔄 Processing channel: ${channel}`);
       const handler = this.channels.get(channel);
       if (handler) {
+        console.log(`[NotificationService] ✅ Handler found for channel: ${channel}`);
         try {
           const result = await retryService.execute(
             async () => await handler(userId, notification),
@@ -161,6 +171,7 @@ class NotificationService {
               }
             }
           );
+          console.log(`[NotificationService] ✅ Channel ${channel} succeeded:`, JSON.stringify(result, null, 2));
           results.push({ channel, success: true, result });
           
           if (channel === 'onesignal' && result) {
@@ -171,6 +182,8 @@ class NotificationService {
             });
           }
         } catch (error) {
+          console.error(`[NotificationService] ❌ Channel ${channel} failed:`, error.message);
+          console.error(`[NotificationService] ❌ Error stack:`, error.stack);
           if (channel === 'onesignal') {
             console.error(`[NotificationService] OneSignal failed for user ${userId}:`, error.message);
             activityLogService.logActivity(userId, 'notification', 'send_push_notification', {
@@ -183,10 +196,13 @@ class NotificationService {
           results.push({ channel, success: false, error: error.message });
         }
       } else {
+        console.error(`[NotificationService] ❌ Handler not found for channel: ${channel}`);
+        console.error(`[NotificationService] Available channels:`, Array.from(this.channels.keys()));
         results.push({ channel, success: false, error: `Channel ${channel} not registered` });
       }
     }
 
+    console.log(`[NotificationService] 📊 Final results:`, JSON.stringify(results, null, 2));
     return results;
   }
 

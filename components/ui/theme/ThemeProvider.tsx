@@ -1,6 +1,6 @@
 import React from 'react';
 import { ThemeContext } from './ThemeContext';
-import theme from './index';
+import { themeData } from './themeData';
 
 interface ThemeProviderProps {
   children: React.ReactNode;
@@ -8,7 +8,7 @@ interface ThemeProviderProps {
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   return (
-    <ThemeContext.Provider value={theme}>
+    <ThemeContext.Provider value={themeData}>
       {children}
     </ThemeContext.Provider>
   );

@@ -60,7 +60,7 @@ export const Shimmer: React.FC<ShimmerProps> = ({
           width,
           height,
           borderRadius,
-          backgroundColor: theme.colors.surface.elevated,
+          backgroundColor: theme.colors.surfaceElevated,
           overflow: 'hidden',
         },
         style,
@@ -72,7 +72,7 @@ export const Shimmer: React.FC<ShimmerProps> = ({
           {
             transform: [{ translateX }],
             opacity,
-            backgroundColor: theme.colors.primary.main,
+            backgroundColor: theme.colors.primary,
           },
         ]}
       />

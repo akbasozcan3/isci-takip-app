@@ -3,15 +3,35 @@
  * Monitors and optimizes memory usage
  */
 
-const { logger } = require('../utils/logger');
+let logger;
+try {
+  logger = require('../utils/logger');
+  if (!logger || typeof logger.info !== 'function') {
+    logger = {
+      info: (...args) => console.log('[MemoryOptimizer]', ...args),
+      warn: (...args) => console.warn('[MemoryOptimizer]', ...args),
+      error: (...args) => console.error('[MemoryOptimizer]', ...args),
+      debug: (...args) => console.log('[MemoryOptimizer]', ...args),
+    };
+  }
+} catch (err) {
+  logger = {
+    info: (...args) => console.log('[MemoryOptimizer]', ...args),
+    warn: (...args) => console.warn('[MemoryOptimizer]', ...args),
+    error: (...args) => console.error('[MemoryOptimizer]', ...args),
+    debug: (...args) => console.log('[MemoryOptimizer]', ...args),
+  };
+}
 
 class MemoryOptimizer {
   constructor() {
     this.monitoringInterval = null;
-    this.warningThreshold = 0.85; // 85% memory usage
-    this.criticalThreshold = 0.95; // 95% memory usage
+    this.warningThreshold = 0.95; // 95% memory usage (only warn at very high usage)
+    this.criticalThreshold = 0.98; // 98% memory usage (critical threshold)
     this.lastGC = Date.now();
     this.gcInterval = 5 * 60 * 1000; // 5 minutes
+    this.lastWarning = 0;
+    this.warningCooldown = 2 * 60 * 1000; // Only warn once every 2 minutes
   }
 
   /**
@@ -26,7 +46,11 @@ class MemoryOptimizer {
       this.checkMemory();
     }, 30000); // Every 30 seconds
 
-    logger.info('Memory optimizer started');
+    if (logger && typeof logger.info === 'function') {
+      logger.info('Memory optimizer started');
+    } else {
+      console.log('[MemoryOptimizer] Memory optimizer started');
+    }
   }
 
   /**
@@ -47,12 +71,31 @@ class MemoryOptimizer {
     const heapUsed = usage.heapUsed;
     const heapTotal = usage.heapTotal;
     const usagePercent = heapUsed / heapTotal;
+    const now = Date.now();
 
     if (usagePercent >= this.criticalThreshold) {
-      logger.error(`Critical memory usage detected - heapUsed: ${(heapUsed / 1024 / 1024).toFixed(2)}MB, heapTotal: ${(heapTotal / 1024 / 1024).toFixed(2)}MB, usagePercent: ${(usagePercent * 100).toFixed(2)}%`);
+      // Only log critical errors, not every check
+      if (!this.lastWarning || now - this.lastWarning > this.warningCooldown) {
+        this.lastWarning = now;
+        const errorMsg = `Critical memory usage detected - heapUsed: ${(heapUsed / 1024 / 1024).toFixed(2)}MB, heapTotal: ${(heapTotal / 1024 / 1024).toFixed(2)}MB, usagePercent: ${(usagePercent * 100).toFixed(2)}%`;
+        if (logger && typeof logger.error === 'function') {
+          logger.error(errorMsg);
+        } else {
+          console.error(`[MemoryOptimizer] ${errorMsg}`);
+        }
+      }
       this.forceGC();
     } else if (usagePercent >= this.warningThreshold) {
-      logger.warn(`High memory usage detected - heapUsed: ${(heapUsed / 1024 / 1024).toFixed(2)}MB, heapTotal: ${(heapTotal / 1024 / 1024).toFixed(2)}MB, usagePercent: ${(usagePercent * 100).toFixed(2)}%`);
+      // Only warn once per cooldown period
+      if (!this.lastWarning || now - this.lastWarning > this.warningCooldown) {
+        this.lastWarning = now;
+        const warnMsg = `High memory usage detected - heapUsed: ${(heapUsed / 1024 / 1024).toFixed(2)}MB, heapTotal: ${(heapTotal / 1024 / 1024).toFixed(2)}MB, usagePercent: ${(usagePercent * 100).toFixed(2)}%`;
+        if (logger && typeof logger.warn === 'function') {
+          logger.warn(warnMsg);
+        } else {
+          console.warn(`[MemoryOptimizer] ${warnMsg}`);
+        }
+      }
       
       // Trigger GC if enough time has passed
       if (Date.now() - this.lastGC > this.gcInterval) {
@@ -69,9 +112,18 @@ class MemoryOptimizer {
       try {
         global.gc();
         this.lastGC = Date.now();
-        logger.info('Garbage collection triggered');
+        if (logger && typeof logger.info === 'function') {
+          logger.info('Garbage collection triggered');
+        } else {
+          console.log('[MemoryOptimizer] Garbage collection triggered');
+        }
       } catch (error) {
-        logger.warn(`Failed to trigger GC: ${error.message || error}`);
+        const errorMsg = error?.message || String(error) || 'Unknown error';
+        if (logger && typeof logger.warn === 'function') {
+          logger.warn(`Failed to trigger GC: ${errorMsg}`);
+        } else {
+          console.warn(`[MemoryOptimizer] Failed to trigger GC: ${errorMsg}`);
+        }
       }
     }
   }
@@ -107,7 +159,11 @@ class MemoryOptimizer {
     // Force GC
     this.forceGC();
     
-    logger.info('Memory optimization completed');
+    if (logger && typeof logger.info === 'function') {
+      logger.info('Memory optimization completed');
+    } else {
+      console.log('[MemoryOptimizer] Memory optimization completed');
+    }
   }
 }
 

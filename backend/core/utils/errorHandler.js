@@ -1,4 +1,6 @@
 const crypto = require('crypto');
+const logger = require('./logger');
+const ResponseFormatter = require('./responseFormatter');
 
 class AppError extends Error {
   constructor(message, statusCode = 500, code = null, details = null) {
@@ -41,11 +43,12 @@ function createError(message, statusCode = 500, code = null, details = null) {
 }
 
 function handleError(err, req, res, next) {
-  const errorId = crypto.randomBytes(8).toString('hex');
+  const errorId = ResponseFormatter.generateErrorId();
   const timestamp = new Date().toISOString();
 
   if (err instanceof AppError) {
-    console.error(`[${timestamp}] [ERROR-${errorId}]`, {
+    logger.error('Operational error', {
+      errorId,
       message: err.message,
       code: err.code,
       statusCode: err.statusCode,
@@ -55,14 +58,13 @@ function handleError(err, req, res, next) {
       ip: req.ip
     });
 
-    return res.status(err.statusCode).json({
-      ...err.toJSON(),
-      errorId,
-      timestamp
-    });
+    return res.status(err.statusCode).json(
+      ResponseFormatter.error(err.message, err.code, err.details, errorId)
+    );
   }
 
-  console.error(`[${timestamp}] [ERROR-${errorId}]`, {
+  logger.error('Unexpected error', {
+    errorId,
     message: err.message,
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
     path: req.path,
@@ -73,14 +75,14 @@ function handleError(err, req, res, next) {
 
   const isDevelopment = process.env.NODE_ENV === 'development';
 
-  res.status(err.status || 500).json({
-    success: false,
-    error: isDevelopment ? err.message : 'Internal server error',
-    code: 'INTERNAL_SERVER_ERROR',
-    errorId,
-    timestamp,
-    ...(isDevelopment && { stack: err.stack })
-  });
+  res.status(err.status || 500).json(
+    ResponseFormatter.error(
+      isDevelopment ? err.message : 'Sunucu hatası oluştu. Lütfen daha sonra tekrar deneyin.',
+      'INTERNAL_SERVER_ERROR',
+      isDevelopment ? { stack: err.stack } : null,
+      errorId
+    )
+  );
 }
 
 function asyncHandler(fn) {

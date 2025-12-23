@@ -61,7 +61,7 @@ export default function NotFoundScreen(): React.JSX.Element {
       >
         <Animated.View style={{ transform: [{ rotate: spin }] }}>
           <LinearGradient
-            colors={['#06b6d4', '#7c3aed']}
+            colors={['#0EA5E9', '#7c3aed']}
             style={styles.iconContainer}
             start={[0, 0]}
             end={[1, 1]}
@@ -86,7 +86,7 @@ export default function NotFoundScreen(): React.JSX.Element {
           android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
         >
           <LinearGradient
-            colors={['#06b6d4', '#0891b2']}
+            colors={['#0EA5E9', '#0891b2']}
             style={styles.buttonGradient}
             start={[0, 0]}
             end={[1, 1]}
@@ -138,7 +138,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 24,
-    shadowColor: '#06b6d4',
+    shadowColor: '#0EA5E9',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.4,
     shadowRadius: 16,
@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
   button: {
     borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#06b6d4',
+    shadowColor: '#0EA5E9',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
     shadowRadius: 16,

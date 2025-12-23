@@ -33,11 +33,10 @@ function securityMiddleware(req, res, next) {
   
   if (blockedIPs.has(ip)) {
     logger.warn('Blocked IP attempt', { ip, path });
-    return res.status(403).json({
-      success: false,
-      error: 'Access denied',
-      code: 'IP_BLOCKED'
-    });
+    const ResponseFormatter = require('../utils/responseFormatter');
+    return res.status(403).json(
+      ResponseFormatter.error('Access denied', 'IP_BLOCKED')
+    );
   }
 
   const suspiciousContent = path + query + body + userAgent;
@@ -63,18 +62,16 @@ function securityMiddleware(req, res, next) {
       if (newCount >= 5) {
         blockedIPs.add(ip);
         logger.error('IP blocked due to suspicious activity', { ip });
-        return res.status(403).json({
-          success: false,
-          error: 'Suspicious activity detected',
-          code: 'SUSPICIOUS_ACTIVITY'
-        });
+        const ResponseFormatter = require('../utils/responseFormatter');
+        return res.status(403).json(
+          ResponseFormatter.error('Suspicious activity detected', 'SUSPICIOUS_ACTIVITY')
+        );
       }
       
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid request',
-        code: 'INVALID_INPUT'
-      });
+      const ResponseFormatter = require('../utils/responseFormatter');
+      return res.status(400).json(
+        ResponseFormatter.error('Invalid request', 'INVALID_INPUT')
+      );
     }
   }
 

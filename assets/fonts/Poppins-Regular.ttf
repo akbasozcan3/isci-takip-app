@@ -1,0 +1,3 @@
+// Placeholder font file - Replace with actual Poppins-Regular.ttf
+// Download from: https://fonts.google.com/specimen/Poppins
+module.exports = null;

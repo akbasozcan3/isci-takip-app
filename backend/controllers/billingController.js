@@ -1,5 +1,5 @@
-// Billing / Subscription Controller - iyzico Entegrasyonu
-// Kart bilgileri asla backend'den geçmez, sadece iyzico'nun güvenli sayfasında işlenir
+// Billing / Subscription Controller - Shopier Entegrasyonu
+// Ödeme işlemleri Shopier üzerinden yapılır
 
 const db = require('../config/database');
 const crypto = require('crypto');
@@ -12,31 +12,7 @@ const paymentRetry = require('../services/paymentRetryService');
 const { logPaymentAttempt } = require('../middleware/paymentSecurity');
 const ResponseFormatter = require('../core/utils/responseFormatter');
 const { createError } = require('../core/utils/errorHandler');
-
-let Iyzipay;
-let iyzipay;
-
-try {
-  Iyzipay = require('iyzipay');
-  
-  const iyzicoApiKey = process.env.IYZICO_API_KEY || 'sandbox-xxxxxxxx';
-  const iyzicoSecretKey = process.env.IYZICO_SECRET_KEY || 'sandbox-xxxxxxxx';
-  
-  iyzipay = new Iyzipay({
-    apiKey: iyzicoApiKey,
-    secretKey: iyzicoSecretKey,
-    uri: process.env.IYZICO_BASE_URL || 'https://sandbox-api.iyzipay.com'
-  });
-  
-  if (iyzicoApiKey !== 'sandbox-xxxxxxxx' && iyzicoSecretKey !== 'sandbox-xxxxxxxx') {
-    console.log('[Billing] iyzico SDK yüklendi (Production):', process.env.IYZICO_BASE_URL || 'https://api.iyzipay.com');
-  } else {
-    console.log('[Billing] iyzico SDK yüklendi (Sandbox):', process.env.IYZICO_BASE_URL || 'https://sandbox-api.iyzipay.com');
-  }
-} catch (err) {
-  console.warn('[Billing] iyzico SDK yüklenemedi, mock mod aktif:', err.message);
-  iyzipay = null;
-}
+const shopierService = require('../services/shopierService');
 
 const pricingService = require('../services/pricingService');
 
@@ -128,7 +104,7 @@ class BillingController {
   getPlan(planId) {
     const plan = this.plans.find(plan => plan.id === planId);
     if (!plan) return null;
-    
+
     const pricing = pricingService.formatPrice(planId, 'USD');
     return {
       ...plan,
@@ -170,15 +146,15 @@ class BillingController {
         ? db.getUserSubscription(user.id)
         : db.getDefaultSubscription();
       const history = user ? db.getBillingHistory(user.id) : [];
-      
+
       const SubscriptionModel = require('../core/database/models/subscription.model');
-      
+
       const enrichedPlans = this.plans.map(plan => {
         try {
           const limits = SubscriptionModel.getPlanLimits(plan.id);
           const isCurrent = subscription?.planId === plan.id;
           const pricing = pricingService.formatPrice(plan.id, 'USD');
-          
+
           return {
             id: plan.id,
             title: plan.title,
@@ -228,7 +204,7 @@ class BillingController {
         } : null,
         history: Array.isArray(history) ? history.slice(0, 10) : []
       };
-      
+
       const activityLogService = require('../services/activityLogService');
       if (user) {
         activityLogService.logActivity(user.id, 'billing', 'view_plans', {
@@ -256,7 +232,7 @@ class BillingController {
           features: Array.isArray(plan.features) ? plan.features : []
         };
       });
-      
+
       return res.json({
         success: true,
         plans: fallbackPlans,
@@ -304,7 +280,7 @@ class BillingController {
   }
 
   // POST /api/checkout veya /api/billing/checkout
-  // iyzico Checkout Form ile güvenli ödeme sayfası oluşturur
+  // Shopier ödeme linki oluşturur
   async checkout(req, res) {
     try {
       const user = this.requireUser(req, res);
@@ -324,246 +300,88 @@ class BillingController {
         return res.status(400).json(ResponseFormatter.error('Free plan için ödeme gerekli değil', 'FREE_PLAN_NO_PAYMENT'));
       }
 
-      const conversationId = crypto.randomBytes(16).toString('hex');
-      const basketId = 'B' + Date.now();
+      // Shopier ödeme linki oluştur
+      const result = shopierService.createPaymentLink(
+        user.id,
+        plan.id,
+        plan.monthlyPriceTRY,
+        {
+          userEmail: user.email,
+          userName: user.displayName || user.email,
+          userCreatedAt: user.createdAt,
+          clientIp: req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown'
+        }
+      );
 
-      const session = {
-        id: conversationId,
-        basketId,
-        userId: user.id,
-        userEmail: user.email,
+      // Activity log
+      const activityLogService = require('../services/activityLogService');
+      activityLogService.logActivity(user.id, 'billing', 'shopier_checkout', {
         planId: plan.id,
-        planName: plan.title,
-        amount: plan.monthlyPriceTRY,
-        currency: plan.currency,
-        status: 'pending',
-        createdAt: Date.now()
-      };
-      checkoutSessions.set(conversationId, session);
-
-      if (!iyzipay) {
-        const baseUrl = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 4000}`;
-        const mockUrl = `${baseUrl}/api/checkout/mock/${conversationId}`;
-        
-        return res.json(ResponseFormatter.success({
-          sessionId: conversationId,
-          checkoutUrl: mockUrl,
-          mode: 'mock',
-          message: 'iyzico SDK yüklü değil, mock ödeme sayfası kullanılıyor',
-          plan: {
-            id: plan.id,
-            title: plan.title,
-            amount: plan.monthlyPriceTRY,
-            currency: plan.currency
-          }
-        }));
-      }
-
-      const baseUrl = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 4000}`;
-      const callbackUrl = process.env.IYZICO_CALLBACK_URL || `${baseUrl}/api/payment/callback`;
-
-      const request = {
-        locale: Iyzipay.LOCALE.TR,
-        conversationId: conversationId,
-        price: plan.monthlyPriceTRY.toString(),
-        paidPrice: plan.monthlyPriceTRY.toString(),
-        currency: Iyzipay.CURRENCY.TRY,
-        basketId: basketId,
-        paymentGroup: Iyzipay.PAYMENT_GROUP.SUBSCRIPTION,
-        callbackUrl: callbackUrl,
-        enabledInstallments: [1],
-        buyer: {
-          id: user.id,
-          name: user.displayName?.split(' ')[0] || 'Kullanıcı',
-          surname: user.displayName?.split(' ').slice(1).join(' ') || 'Kullanıcı',
-          gsmNumber: '+905350000000',
-          email: user.email,
-          identityNumber: '11111111111',
-          lastLoginDate: new Date().toISOString().replace('T', ' ').substring(0, 19),
-          registrationDate: new Date(user.createdAt || Date.now()).toISOString().replace('T', ' ').substring(0, 19),
-          registrationAddress: 'Türkiye',
-          ip: req.ip || '127.0.0.1',
-          city: 'Istanbul',
-          country: 'Turkey',
-          zipCode: '34000'
-        },
-        shippingAddress: {
-          contactName: user.displayName || 'Kullanıcı',
-          city: 'Istanbul',
-          country: 'Turkey',
-          address: 'Türkiye',
-          zipCode: '34000'
-        },
-        billingAddress: {
-          contactName: user.displayName || 'Kullanıcı',
-          city: 'Istanbul',
-          country: 'Turkey',
-          address: 'Türkiye',
-          zipCode: '34000'
-        },
-        basketItems: [
-          {
-            id: plan.id,
-            name: `${plan.title} Plan - Aylık Abonelik`,
-            category1: 'Abonelik',
-            category2: 'Dijital Hizmet',
-            itemType: Iyzipay.BASKET_ITEM_TYPE.VIRTUAL,
-            price: plan.monthlyPriceTRY.toString()
-          }
-        ]
-      };
-
-      return new Promise((resolve) => {
-        iyzipay.checkoutFormInitialize.create(request, (err, result) => {
-          if (err) {
-            console.error('[Billing] iyzico error:', err);
-            return resolve(res.status(500).json(ResponseFormatter.error(
-              'Ödeme sayfası oluşturulamadı', 
-              'CHECKOUT_ERROR',
-              { details: err.message }
-            )));
-          }
-
-          if (result.status !== 'success') {
-            console.error('[Billing] iyzico result error:', result);
-            return resolve(res.status(400).json(ResponseFormatter.error(
-              result.errorMessage || 'Ödeme başlatılamadı',
-              result.errorCode || 'CHECKOUT_FAILED'
-            )));
-          }
-
-          console.log('[Billing] Checkout created:', conversationId);
-
-          session.token = result.token;
-          checkoutSessions.set(conversationId, session);
-
-          return resolve(res.json(ResponseFormatter.success({
-            sessionId: conversationId,
-            checkoutUrl: result.paymentPageUrl,
-            token: result.token,
-            mode: 'live',
-            plan: {
-              id: plan.id,
-              title: plan.title,
-              amount: plan.monthlyPriceTRY,
-              currency: plan.currency
-            }
-          })));
-        });
+        transactionId: result.transactionId,
+        amount: plan.monthlyPriceTRY
       });
+
+      return res.json(ResponseFormatter.success({
+        sessionId: result.transactionId,
+        checkoutUrl: result.paymentLink,
+        transactionId: result.transactionId,
+        gateway: 'shopier',
+        mode: 'live',
+        plan: {
+          id: plan.id,
+          title: plan.title,
+          amount: plan.monthlyPriceTRY,
+          currency: plan.currency
+        },
+        instructions: 'Bu linke tıklayarak Shopier üzerinden ödeme yapabilirsiniz. Ödeme sonrası aboneliğiniz otomatik olarak aktif edilecektir.'
+      }));
     } catch (error) {
       console.error('[BillingController] checkout error:', error);
-      return res.status(500).json(ResponseFormatter.error('Checkout oluşturulamadı', 'CHECKOUT_ERROR'));
+      return res.status(500).json(ResponseFormatter.error(
+        error.message || 'Checkout oluşturulamadı',
+        'CHECKOUT_ERROR'
+      ));
     }
   }
 
   async paymentCallback(req, res) {
-    const { token } = req.body || req.query || {};
-    const { type } = req.params || {};
+    // Shopier'de callback yerine webhook kullanılıyor
+    // Bu endpoint geriye dönük uyumluluk için tutuluyor
+    // Gerçek ödeme bildirimi /api/webhook/shopier üzerinden gelir
 
-    if (!token) {
-      const deepLink = mobileDeepLink.generatePaymentFailureLink('unknown', 'Token bulunamadı');
-      return res.redirect(deepLink);
-    }
+    const { transactionId, status } = req.query || {};
 
-    if (!iyzipay) {
-      const deepLink = mobileDeepLink.generatePaymentSuccessLink('mock', 'mock_payment', 'unknown');
-      return res.redirect(deepLink);
-    }
-
-    return new Promise((resolve) => {
-      iyzipay.checkoutForm.retrieve({
-        locale: Iyzipay.LOCALE.TR,
-        token: token
-      }, async (err, result) => {
-        if (err) {
-          paymentLogger.log('error', 'callback', 'Callback verification failed', { error: err.message });
-          const deepLink = mobileDeepLink.generatePaymentFailureLink('unknown', 'Ödeme doğrulanamadı');
-          return resolve(res.redirect(deepLink));
-        }
-
-        paymentLogger.logWebhook(result.conversationId || 'unknown', 'iyzico', 'callback', {
-          status: result.status,
-          paymentStatus: result.paymentStatus
-        });
-
-        if (result.status === 'success' && result.paymentStatus === 'SUCCESS') {
-          const conversationId = result.conversationId;
-          const session = checkoutSessions.get(conversationId);
-
-          if (session) {
-            const plan = this.getPlan(session.planId);
-            const transaction = paymentService.getTransaction(conversationId);
-            
-            if (transaction) {
-              paymentService.updateTransaction(conversationId, {
-                status: 'succeeded',
-                gatewayTransactionId: result.paymentId,
-                cardLast4: result.lastFourDigits,
-                cardBrand: result.cardAssociation
-              });
-            }
-
-            db.addBillingEvent(session.userId, {
-              type: 'payment',
-              planId: plan.id,
-              planName: plan.title,
-              amount: plan.monthlyPriceTRY,
-              currency: 'TRY',
-              interval: plan.interval,
-              provider: 'iyzico',
-              status: 'succeeded',
-              paymentId: result.paymentId,
-              conversationId: conversationId,
-              cardAssociation: result.cardAssociation,
-              cardFamily: result.cardFamily,
-              lastFourDigits: result.lastFourDigits,
-              description: `${plan.title} planı için ödeme tamamlandı`
-            });
-
-            const subscription = await subscriptionService.activateSubscription(
-              session.userId,
-              plan.id,
-              {
-                paymentId: result.paymentId,
-                transactionId: conversationId,
-                gateway: 'iyzico'
-              }
-            );
-
-            if (transaction) {
-              receiptService.createReceipt(session.userId, transaction, subscription);
-            }
-
-            session.status = 'completed';
-            checkoutSessions.set(conversationId, session);
-
-            paymentLogger.logPaymentSuccess(conversationId, result.paymentId, 'iyzico');
-          }
-
+    if (transactionId) {
+      // Transaction durumunu kontrol et
+      const transaction = shopierService.getTransaction(transactionId);
+      if (transaction) {
+        if (transaction.status === 'succeeded') {
           const deepLink = mobileDeepLink.generatePaymentSuccessLink(
-            conversationId,
-            result.paymentId,
-            session?.planId || 'unknown'
+            transactionId,
+            transaction.shopierTransactionId || 'shopier',
+            transaction.planId || 'unknown'
           );
-          return resolve(res.redirect(deepLink));
-        } else {
-          const errorMessage = result.errorMessage || 'Ödeme başarısız';
+          return res.redirect(deepLink);
+        } else if (transaction.status === 'failed') {
           const deepLink = mobileDeepLink.generatePaymentFailureLink(
-            result.conversationId || 'unknown',
-            errorMessage
+            transactionId,
+            'Ödeme başarısız'
           );
-          return resolve(res.redirect(deepLink));
+          return res.redirect(deepLink);
         }
-      });
-    });
+      }
+    }
+
+    // Varsayılan olarak başarısız sayfasına yönlendir
+    const deepLink = mobileDeepLink.generatePaymentFailureLink('unknown', 'Ödeme durumu belirlenemedi');
+    return res.redirect(deepLink);
   }
 
   async handleWebhook(req, res) {
     try {
       const { type, data, token } = req.body || {};
 
-      paymentLogger.logWebhook('webhook', 'iyzico', type || 'unknown', {
+      paymentLogger.logWebhook('webhook', 'shopier', type || 'unknown', {
         type,
         hasData: !!data,
         hasToken: !!token
@@ -645,80 +463,8 @@ class BillingController {
         }));
       }
 
-      if (token && iyzipay) {
-        return new Promise((resolve) => {
-          iyzipay.checkoutForm.retrieve({
-            locale: Iyzipay.LOCALE.TR,
-            token: token
-          }, async (err, result) => {
-            if (err) {
-              console.error('[Webhook] iyzico error:', err);
-              paymentLogger.log('error', 'webhook', 'Webhook işlenemedi', { error: err.message });
-              return resolve(res.status(500).json(ResponseFormatter.error('Webhook işlenemedi', 'WEBHOOK_ERROR')));
-            }
-
-            paymentLogger.logWebhook(result.conversationId || 'unknown', 'iyzico', 'webhook', {
-              status: result.status,
-              paymentStatus: result.paymentStatus
-            });
-
-            if (result.status === 'success' && result.paymentStatus === 'SUCCESS') {
-              const session = checkoutSessions.get(result.conversationId);
-              if (session && session.status !== 'completed') {
-                const plan = this.getPlan(session.planId);
-                
-                const transaction = paymentService.getTransaction(result.conversationId);
-                if (transaction) {
-                  paymentService.updateTransaction(result.conversationId, {
-                    status: 'succeeded',
-                    gatewayTransactionId: result.paymentId,
-                    cardLast4: result.lastFourDigits,
-                    cardBrand: result.cardAssociation
-                  });
-                }
-
-                db.addBillingEvent(session.userId, {
-                  type: 'payment',
-                  planId: plan.id,
-                  planName: plan.title,
-                  amount: plan.monthlyPriceTRY,
-                  currency: 'TRY',
-                  interval: plan.interval,
-                  provider: 'iyzico',
-                  status: 'succeeded',
-                  paymentId: result.paymentId,
-                  transactionId: result.conversationId,
-                  cardLast4: result.lastFourDigits,
-                  cardBrand: result.cardAssociation,
-                  description: `${plan.title} planı için ödeme tamamlandı`,
-                  timestamp: Date.now()
-                });
-
-                const subscription = await subscriptionService.activateSubscription(
-                  session.userId,
-                  plan.id,
-                  {
-                    paymentId: result.paymentId,
-                    transactionId: result.conversationId,
-                    gateway: 'iyzico'
-                  }
-                );
-
-                if (transaction) {
-                  receiptService.createReceipt(session.userId, transaction, subscription);
-                }
-
-                session.status = 'completed';
-                checkoutSessions.set(result.conversationId, session);
-
-                paymentLogger.logPaymentSuccess(result.conversationId, result.paymentId, 'iyzico');
-              }
-            }
-
-            return resolve(res.json(ResponseFormatter.success({ received: true })));
-          });
-        });
-      }
+      // Shopier webhook'ları /api/webhook/shopier endpoint'inde işleniyor
+      // Bu metod artık sadece mock ödemeler için kullanılıyor
 
       return res.json(ResponseFormatter.success({ message: 'Webhook received' }));
     } catch (error) {
@@ -883,7 +629,7 @@ class BillingController {
   async processPayment(req, res) {
     const startTime = Date.now();
     let transaction = null;
-    
+
     try {
       const user = this.requireUser(req, res);
       if (!user) return;
@@ -1041,17 +787,17 @@ class BillingController {
       });
 
       const errorMessage = error.message || 'Ödeme işlenirken bir hata oluştu';
-      
+
       const isCardError = error.message && (
-        error.message.includes('card') || 
-        error.message.includes('kart') || 
+        error.message.includes('card') ||
+        error.message.includes('kart') ||
         error.message.includes('CVV') ||
         error.message.includes('expiry') ||
         error.message.includes('tarih') ||
         error.message.includes('reddedildi') ||
         error.message.includes('bakiye')
       );
-      
+
       if (isCardError) {
         return res.status(400).json(ResponseFormatter.error(
           errorMessage,
@@ -1178,7 +924,7 @@ class BillingController {
       const SubscriptionService = require('../services/subscriptionService');
       await SubscriptionService.cancelSubscription(user.id, 'downgrade_to_free');
       const newSubscription = db.getUserSubscription(user.id);
-      
+
       db.addBillingEvent(user.id, {
         type: 'downgrade',
         fromPlanId: currentSubscription?.planId || 'unknown',
@@ -1207,8 +953,8 @@ class BillingController {
       }
 
       const history = db.getBillingHistory(user.id) || [];
-      const payment = history.find(event => 
-        event.paymentId === paymentId || 
+      const payment = history.find(event =>
+        event.paymentId === paymentId ||
         event.id === paymentId ||
         event.sessionId === paymentId ||
         event.conversationId === paymentId
@@ -1224,7 +970,7 @@ class BillingController {
               amount: transaction.amount,
               currency: transaction.currency,
               planId: transaction.planId,
-              gateway: transaction.gateway || 'iyzico',
+              gateway: transaction.gateway || 'shopier',
               createdAt: transaction.createdAt,
               updatedAt: transaction.updatedAt
             }
@@ -1243,7 +989,7 @@ class BillingController {
           planName: payment.planName,
           timestamp: payment.timestamp,
           description: payment.description,
-          provider: payment.provider || 'iyzico'
+          provider: payment.provider || 'shopier'
         }
       }));
     } catch (error) {
@@ -1261,12 +1007,12 @@ class BillingController {
     try {
       const user = this.requireUser(req, res);
       if (!user) return;
-      
+
       const history = db.getBillingHistory(user.id) || [];
       const receipts = receiptService.getReceipts(user.id) || [];
       const subscription = db.getUserSubscription(user.id);
-      
-      return res.json(ResponseFormatter.success({ 
+
+      return res.json(ResponseFormatter.success({
         history: Array.isArray(history) ? history.slice(0, 50) : [],
         receipts: Array.isArray(receipts) ? receipts.slice(0, 20) : [],
         subscription: subscription ? {
@@ -1290,10 +1036,10 @@ class BillingController {
     try {
       const user = this.requireUser(req, res);
       if (!user) return;
-      
+
       const receipts = receiptService.getReceipts(user.id) || [];
-      
-      return res.json(ResponseFormatter.success({ 
+
+      return res.json(ResponseFormatter.success({
         receipts: Array.isArray(receipts) ? receipts.slice(0, 50) : [],
         count: receipts.length
       }));
@@ -1307,24 +1053,342 @@ class BillingController {
     try {
       const user = this.requireUser(req, res);
       if (!user) return;
-      
+
       const { receiptNumber } = req.params;
       if (!receiptNumber) {
         return res.status(400).json(ResponseFormatter.error('Makbuz numarası gereklidir', 'MISSING_RECEIPT_NUMBER'));
       }
-      
+
       const receipt = receiptService.getReceiptByNumber(receiptNumber);
       if (!receipt || receipt.userId !== user.id) {
         return res.status(404).json(ResponseFormatter.error('Makbuz bulunamadı', 'RECEIPT_NOT_FOUND'));
       }
-      
+
       return res.json(ResponseFormatter.success({ receipt }));
     } catch (error) {
       console.error('[BillingController] getReceipt error:', error);
       return res.status(500).json(ResponseFormatter.error('Makbuz alınamadı', 'RECEIPT_ERROR'));
     }
   }
+
+  /**
+   * Shopier Checkout - Shopier ödeme linki oluşturur
+   * POST /api/billing/shopier/checkout
+   */
+  async shopierCheckout(req, res) {
+    try {
+      const user = this.requireUser(req, res);
+      if (!user) return;
+
+      const { planId } = req.body || {};
+      if (!planId) {
+        return res.status(400).json(ResponseFormatter.error('planId zorunludur', 'MISSING_PLAN_ID'));
+      }
+
+      const plan = this.getPlan(planId);
+      if (!plan) {
+        return res.status(404).json(ResponseFormatter.error('Plan bulunamadı', 'PLAN_NOT_FOUND'));
+      }
+
+      if (plan.id === 'free') {
+        return res.status(400).json(ResponseFormatter.error('Free plan için ödeme gerekli değil', 'FREE_PLAN_NO_PAYMENT'));
+      }
+
+      // Shopier ödeme linki oluştur
+      const result = shopierService.createPaymentLink(
+        user.id,
+        plan.id,
+        plan.monthlyPriceTRY,
+        {
+          userEmail: user.email,
+          userName: user.displayName || user.email,
+          userCreatedAt: user.createdAt,
+          clientIp: req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown'
+        }
+      );
+
+      // Activity log
+      const activityLogService = require('../services/activityLogService');
+      activityLogService.logActivity(user.id, 'billing', 'shopier_checkout', {
+        planId: plan.id,
+        transactionId: result.transactionId,
+        amount: plan.monthlyPriceTRY
+      });
+
+      return res.json(ResponseFormatter.success({
+        transactionId: result.transactionId,
+        paymentLink: result.paymentLink,
+        gateway: 'shopier',
+        plan: {
+          id: plan.id,
+          title: plan.title,
+          amount: plan.monthlyPriceTRY,
+          currency: 'TRY'
+        },
+        instructions: 'Bu linke tıklayarak Shopier üzerinden ödeme yapabilirsiniz. Ödeme sonrası aboneliğiniz otomatik olarak aktif edilecektir.'
+      }));
+    } catch (error) {
+      console.error('[BillingController] shopierCheckout error:', error);
+      return res.status(500).json(ResponseFormatter.error(
+        error.message || 'Shopier ödeme linki oluşturulamadı',
+        'SHOPIER_CHECKOUT_ERROR'
+      ));
+    }
+  }
+
+  /**
+   * Shopier Webhook - Shopier'den gelen ödeme bildirimlerini işler
+   * POST /api/webhook/shopier
+   */
+  async shopierWebhook(req, res) {
+    try {
+      const webhookData = req.body || req.query || {};
+
+      console.log('[BillingController] Shopier webhook alındı:', JSON.stringify(webhookData, null, 2));
+
+      // Webhook'u işle
+      const result = await shopierService.processWebhook(webhookData);
+
+      if (result.success && result.status === 'succeeded') {
+        // Ödeme başarılı - aboneliği aktif et
+        const plan = this.getPlan(result.planId);
+
+        if (!plan) {
+          console.error('[BillingController] Plan bulunamadı:', result.planId);
+          return res.status(200).json({ success: false, error: 'Plan bulunamadı' });
+        }
+
+        // userId kontrolü
+        if (!result.userId) {
+          console.error('[BillingController] Webhook\'ta userId bulunamadı. Transaction ID:', result.transactionId);
+          // Transaction'ı logla ama abonelik aktif etme
+          paymentLogger.log('error', 'shopier_webhook', 'UserId bulunamadı', {
+            transactionId: result.transactionId,
+            shopierOrderId: result.shopierOrderId
+          });
+          return res.status(200).json({ success: false, error: 'UserId bulunamadı' });
+        }
+
+        // Billing event kaydet
+        db.addBillingEvent(result.userId, {
+          type: 'payment',
+          planId: result.planId,
+          planName: plan.title,
+          amount: result.amount,
+          currency: 'TRY',
+          interval: 'monthly',
+          provider: 'shopier',
+          status: 'succeeded',
+          paymentId: result.shopierTransactionId,
+          transactionId: result.transactionId,
+          shopierOrderId: result.shopierOrderId,
+          description: `${plan.title} planı için Shopier ödemesi tamamlandı`,
+          timestamp: Date.now()
+        });
+
+        // Aboneliği aktif et (userId zaten kontrol edildi)
+        const subscription = await subscriptionService.activateSubscription(
+          result.userId,
+          result.planId,
+          {
+            paymentId: result.shopierTransactionId,
+            transactionId: result.transactionId,
+            gateway: 'shopier',
+            shopierOrderId: result.shopierOrderId
+          }
+        );
+
+        // Receipt oluştur
+        const transaction = shopierService.getTransaction(result.transactionId);
+        if (transaction && subscription) {
+          receiptService.createReceipt(result.userId, transaction, subscription);
+        }
+
+        // Activity log
+        const activityLogService = require('../services/activityLogService');
+        activityLogService.logActivity(result.userId, 'billing', 'shopier_payment_success', {
+          planId: result.planId,
+          transactionId: result.transactionId,
+          shopierOrderId: result.shopierOrderId,
+          amount: result.amount
+        });
+
+        paymentLogger.logPaymentSuccess(result.transactionId, result.shopierTransactionId, 'shopier');
+      }
+
+      // Shopier'e başarılı yanıt gönder
+      return res.status(200).json({ success: true, message: 'Webhook işlendi' });
+    } catch (error) {
+      console.error('[BillingController] shopierWebhook error:', error);
+      paymentLogger.log('error', 'shopier_webhook', 'Webhook işleme hatası', { error: error.message });
+
+      // Hata olsa bile 200 döndür (Shopier tekrar göndermesin)
+      return res.status(200).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * Shopier ödeme durumunu kontrol et
+   * GET /api/billing/shopier/status/:transactionId
+   */
+  async shopierStatus(req, res) {
+    try {
+      const user = this.requireUser(req, res);
+      if (!user) return;
+
+      const { transactionId } = req.params;
+      if (!transactionId) {
+        return res.status(400).json(ResponseFormatter.error('Transaction ID gereklidir', 'MISSING_TRANSACTION_ID'));
+      }
+
+      const status = await shopierService.checkPaymentStatus(transactionId);
+
+      if (!status.found) {
+        return res.status(404).json(ResponseFormatter.error('Transaction bulunamadı', 'TRANSACTION_NOT_FOUND'));
+      }
+
+      // Kullanıcı kontrolü
+      if (status.userId !== user.id) {
+        return res.status(403).json(ResponseFormatter.error('Bu transaction size ait değil', 'UNAUTHORIZED'));
+      }
+
+      return res.json(ResponseFormatter.success({
+        transactionId: status.transactionId,
+        status: status.status,
+        amount: status.amount,
+        currency: status.currency,
+        planId: status.planId,
+        shopierOrderId: status.shopierOrderId,
+        shopierTransactionId: status.shopierTransactionId,
+        paymentDate: status.paymentDate,
+        createdAt: status.createdAt,
+        updatedAt: status.updatedAt
+      }));
+    } catch (error) {
+      console.error('[BillingController] shopierStatus error:', error);
+      return res.status(500).json(ResponseFormatter.error('Ödeme durumu kontrol edilemedi', 'STATUS_CHECK_ERROR'));
+    }
+  }
+
+  // GET /api/subscription/usage - Get usage statistics
+  async getUsageStats(req, res) {
+    try {
+      const user = this.requireUser(req, res);
+      if (!user) return;
+
+      const SubscriptionService = require('../services/subscriptionService');
+      const stats = SubscriptionService.getUsageStats(user.id);
+
+      return res.json(ResponseFormatter.success(stats));
+    } catch (error) {
+      console.error('[BillingController] getUsageStats error:', error);
+      return res.status(500).json(ResponseFormatter.error('Kullanım istatistikleri alınamadı', 'USAGE_STATS_ERROR'));
+    }
+  }
+
+  // GET /api/subscription/comparison - Get plan comparison
+  async getPlanComparison(req, res) {
+    try {
+      const user = this.resolveUser(req);
+      const currentPlan = user ? (db.getUserSubscription(user.id)?.planId || 'free') : 'free';
+
+      const SubscriptionModel = require('../core/database/models/subscription.model');
+      const comparison = this.plans.map(plan => {
+        const limits = SubscriptionModel.getPlanLimits(plan.id);
+        const pricing = pricingService.formatPrice(plan.id, 'TRY');
+
+        return {
+          id: plan.id,
+          title: plan.title,
+          pricing,
+          isCurrent: plan.id === currentPlan,
+          features: {
+            maxGroups: limits.maxGroups === -1 ? 'Sınırsız' : limits.maxGroups,
+            maxMembers: limits.maxMembers === -1 ? 'Sınırsız' : limits.maxMembers,
+            maxWorkspaces: limits.maxWorkspaces === -1 ? 'Sınırsız' : limits.maxWorkspaces,
+            dataRetentionDays: limits.dataRetentionDays === -1 ? 'Sınırsız' : `${limits.dataRetentionDays} gün`,
+            realtimeTracking: limits.realtimeTracking,
+            advancedReports: limits.advancedReports,
+            apiAccess: limits.apiAccess,
+            prioritySupport: limits.prioritySupport,
+            rateLimitRequests: limits.rateLimitRequests,
+            performanceBoost: `${limits.performanceBoost}x`
+          }
+        };
+      });
+
+      return res.json(ResponseFormatter.success({ plans: comparison, currentPlan }));
+    } catch (error) {
+      console.error('[BillingController] getPlanComparison error:', error);
+      return res.status(500).json(ResponseFormatter.error('Plan karşılaştırması alınamadı', 'COMPARISON_ERROR'));
+    }
+  }
+
+  // GET /api/subscription/upgrade-eligibility - Check upgrade eligibility
+  async checkUpgradeEligibility(req, res) {
+    try {
+      const user = this.requireUser(req, res);
+      if (!user) return;
+
+      const SubscriptionService = require('../services/subscriptionService');
+      const subscription = db.getUserSubscription(user.id);
+      const currentPlan = subscription?.planId || 'free';
+
+      if (currentPlan === 'business') {
+        return res.json(ResponseFormatter.success({
+          eligible: false,
+          message: 'Zaten en yüksek plandasınız',
+          currentPlan
+        }));
+      }
+
+      const recommendation = SubscriptionService.getUpgradeRecommendation(user.id);
+      const usageStats = SubscriptionService.getUsageStats(user.id);
+
+      return res.json(ResponseFormatter.success({
+        eligible: true,
+        currentPlan,
+        recommendation,
+        usageStats,
+        upgradeReasons: usageStats.nearingLimits
+      }));
+    } catch (error) {
+      console.error('[BillingController] checkUpgradeEligibility error:', error);
+      return res.status(500).json(ResponseFormatter.error('Yükseltme uygunluğu kontrol edilemedi', 'ELIGIBILITY_ERROR'));
+    }
+  }
+
+  // POST /api/subscription/check-feature - Check if user can access a feature
+  async checkFeatureAccess(req, res) {
+    try {
+      const user = this.requireUser(req, res);
+      if (!user) return;
+
+      const { feature } = req.body;
+      if (!feature) {
+        return res.status(400).json(ResponseFormatter.error('Feature parametresi gerekli', 'MISSING_FEATURE'));
+      }
+
+      const SubscriptionService = require('../services/subscriptionService');
+      const access = SubscriptionService.checkFeatureAccess(user.id, feature);
+
+      if (!access.allowed) {
+        return res.status(402).json(ResponseFormatter.error(
+          `${feature} özelliği mevcut planınızda kullanılamıyor`,
+          'FEATURE_NOT_AVAILABLE',
+          {
+            ...access,
+            upgradeUrl: '/api/plans'
+          }
+        ));
+      }
+
+      return res.json(ResponseFormatter.success(access));
+    } catch (error) {
+      console.error('[BillingController] checkFeatureAccess error:', error);
+      return res.status(500).json(ResponseFormatter.error('Özellik erişimi kontrol edilemedi', 'FEATURE_CHECK_ERROR'));
+    }
+  }
 }
 
 module.exports = new BillingController();
-

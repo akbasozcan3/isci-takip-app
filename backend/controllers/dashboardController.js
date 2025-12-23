@@ -123,6 +123,53 @@ class DashboardController {
       // Aktif uyarılar
       const activeAlerts = 0;
 
+      // Get attendance stats
+      const postgres = require('../config/postgres');
+      let todayAttendance = 0;
+      let totalWorkHours = 0;
+      let activeVehicles = 0;
+      let speedViolations = 0;
+
+      try {
+        if (postgres.isConnected || postgres.isInitialized) {
+          await postgres.connect();
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const tomorrow = new Date(today);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+
+          // Attendance stats
+          const attResult = await postgres.query(
+            `SELECT COUNT(*) as count, SUM(work_duration) as total_duration
+             FROM attendance 
+             WHERE user_id = $1::uuid AND check_in_time >= $2 AND check_in_time < $3`,
+            [user.id, today, tomorrow]
+          );
+          todayAttendance = parseInt(attResult.rows[0]?.count || 0);
+          totalWorkHours = Math.round((parseInt(attResult.rows[0]?.total_duration || 0) / 3600) * 100) / 100;
+
+          // Vehicle stats
+          const vehResult = await postgres.query(
+            `SELECT COUNT(*) as active_count
+             FROM vehicle_sessions 
+             WHERE user_id = $1::uuid AND is_active = true AND ended_at IS NULL`,
+            [user.id]
+          );
+          activeVehicles = parseInt(vehResult.rows[0]?.active_count || 0);
+
+          // Speed violations today
+          const violResult = await postgres.query(
+            `SELECT COUNT(*) as count
+             FROM speed_violations 
+             WHERE user_id = $1::uuid AND timestamp >= $2 AND timestamp < $3`,
+            [user.id, today, tomorrow]
+          );
+          speedViolations = parseInt(violResult.rows[0]?.count || 0);
+        }
+      } catch (e) {
+        logger.warn('[Dashboard] Stats query error (non-critical):', e);
+      }
+
       const response = {
         activeWorkers,
         totalGroups: groups.length,
@@ -130,6 +177,10 @@ class DashboardController {
         activeAlerts,
         onlineMembers: activeWorkers,
         totalMembers,
+        todayAttendance,
+        totalWorkHours,
+        activeVehicles,
+        speedViolations,
         subscription: subscription ? {
           planId: subscription.planId,
           status: subscription.status,

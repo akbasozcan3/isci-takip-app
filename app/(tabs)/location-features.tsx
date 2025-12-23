@@ -21,6 +21,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
+import { UnifiedHeader } from '../../components/UnifiedHeader';
+import { useProfile } from '../../contexts/ProfileContext';
 import { useToast } from '../../components/Toast';
 import { authFetch } from '../../utils/auth';
 import { shareLocation } from '../../utils/locationShare';
@@ -63,7 +65,7 @@ interface Delivery {
 export default function LocationFeaturesScreen() {
   const router = useRouter();
   const { showError, showSuccess, showWarning } = useToast();
-  
+
   const [fontsLoaded] = useFonts({
     'Poppins-Black': require('../assets/Poppins-Black.ttf'),
     'Poppins-BlackItalic': require('../assets/Poppins-BlackItalic.ttf'),
@@ -84,25 +86,25 @@ export default function LocationFeaturesScreen() {
     'Poppins-Thin': require('../assets/Poppins-Thin.ttf'),
     'Poppins-ThinItalic': require('../assets/Poppins-ThinItalic.ttf'),
   });
-  
+
   const [activeTab, setActiveTab] = React.useState<'family' | 'courier' | 'phone' | 'route'>('family');
   const [loading, setLoading] = React.useState(false);
   const [userId, setUserId] = React.useState('');
   const [activeGroups, setActiveGroups] = React.useState<ActiveGroup[]>([]);
   const [selectedGroup, setSelectedGroup] = React.useState<ActiveGroup | null>(null);
   const [, setUserPlan] = React.useState<{ planId: string; limits: any } | null>(null);
-  
+
   // Aile Paylaşımı
   const [familyMembers, setFamilyMembers] = React.useState<FamilyMember[]>([]);
   const [addFamilyModal, setAddFamilyModal] = React.useState(false);
   const [familyIdentifier, setFamilyIdentifier] = React.useState('');
   const [familyName, setFamilyName] = React.useState('');
   const [familyRelation] = React.useState('family');
-  
+
   // Numaradan Bulma
   const [phoneSearch, setPhoneSearch] = React.useState('');
   const [phoneResult, setPhoneResult] = React.useState<any>(null);
-  
+
   // Kurye
   const [deliveries, setDeliveries] = React.useState<Delivery[]>([]);
   const [newDeliveryModal, setNewDeliveryModal] = React.useState(false);
@@ -112,7 +114,7 @@ export default function LocationFeaturesScreen() {
   const [deliveryLat, setDeliveryLat] = React.useState('');
   const [deliveryLng, setDeliveryLng] = React.useState('');
   const [geocodingAddress, setGeocodingAddress] = React.useState(false);
-  
+
   // Yol Takip
   const [routes, setRoutes] = React.useState<any[]>([]);
 
@@ -208,7 +210,7 @@ export default function LocationFeaturesScreen() {
       setLoading(true);
       const identifier = familyIdentifier.trim();
       const isUserId = /^[a-zA-Z0-9_-]+$/.test(identifier) && identifier.length > 5;
-      
+
       const res = await authFetch('/location/family/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -381,7 +383,7 @@ export default function LocationFeaturesScreen() {
 
     try {
       setGeocodingAddress(true);
-      
+
       try {
         const res = await authFetch('/location/geocode', {
           method: 'POST',
@@ -440,7 +442,7 @@ export default function LocationFeaturesScreen() {
       const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       setDeliveryLat(location.coords.latitude.toString());
       setDeliveryLng(location.coords.longitude.toString());
-      
+
       try {
         const addresses = await Location.reverseGeocodeAsync({
           latitude: location.coords.latitude,
@@ -460,7 +462,7 @@ export default function LocationFeaturesScreen() {
       } catch (e) {
         console.warn('Reverse geocode error:', e);
       }
-      
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showSuccess('Konum alındı!');
     } catch (error: any) {
@@ -473,11 +475,11 @@ export default function LocationFeaturesScreen() {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setLoading(true);
-      
+
       const res = await authFetch(`/location/delivery/${deliveryId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           status,
           groupId: selectedGroup?.id || null
         })
@@ -575,7 +577,7 @@ export default function LocationFeaturesScreen() {
   React.useEffect(() => {
     if (!fontsLoaded) return;
     if (!selectedGroup) return;
-    
+
     const timer = setTimeout(() => {
       if (activeTab === 'family') {
         loadFamilyMembers();
@@ -589,39 +591,75 @@ export default function LocationFeaturesScreen() {
     return () => clearTimeout(timer);
   }, [activeTab, fontsLoaded, selectedGroup, loadFamilyMembers, loadDeliveries, loadRoutes]);
 
+  const [profileName, setProfileName] = React.useState<string>('');
+  const { avatarUrl } = useProfile();
+
+  const initials = React.useMemo(() => {
+    if (!profileName) return '';
+    return profileName
+      .split(' ')
+      .map((s) => s[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+  }, [profileName]);
+
+  React.useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const stored = await SecureStore.getItemAsync('workerId');
+
+        // ÖNCE SecureStore'dan displayName oku (groups.tsx'deki gibi)
+        const storedDisplayName = await SecureStore.getItemAsync('displayName');
+        if (storedDisplayName) {
+          setProfileName(storedDisplayName);
+        }
+
+        if (stored) {
+          const r = await authFetch('/users/me');
+          if (r.ok) {
+            const { user } = await r.json();
+            if (user) {
+              // displayName öncelikli, yoksa name kullan
+              const profileDisplayName = user.displayName || user.name || '';
+              if (profileDisplayName) {
+                setProfileName(profileDisplayName);
+                // SecureStore'a da kaydet (index.tsx'deki gibi)
+                await SecureStore.setItemAsync('displayName', profileDisplayName);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load profile for header:', e);
+      }
+    };
+    loadProfile();
+  }, []);
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="light-content" />
-      
-      {/* Header */}
-      <LinearGradient 
-        colors={['#06b6d4', '#0ea5a4']} 
-        style={styles.header}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      >
-        <View style={styles.headerTop}>
-          <View style={styles.headerLeft}>
-            <View style={styles.headerTextBlock}>
-              <Text style={styles.brandLabel}>BAVAXE PLATFORMU</Text>
-              <Text style={styles.headerTitle}>Konum Özellikleri</Text>
-              <Text style={styles.headerSubtitle}>Aile • Kurye • Numaradan Bulma • Yol Takip</Text>
-            </View>
-          </View>
-          <View style={styles.headerActions}>
-            <NetworkStatusIcon size={20} />
-          </View>
-        </View>
-      </LinearGradient>
+
+      <UnifiedHeader
+        title="Konum Özellikleri"
+        subtitle="Aile • Kurye • Numaradan Bulma • Yol Takip"
+        gradientColors={['#0EA5E9', '#0ea5a4']}
+        brandLabel="BAVAXE PLATFORMU"
+        profileName={profileName}
+        avatarUrl={avatarUrl}
+        showProfile={true}
+        showNetwork={true}
+      />
 
       {/* Tabs - Modern Design */}
       <View style={styles.tabsContainer}>
-        <ScrollView 
-          horizontal 
+        <ScrollView
+          horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tabsScrollContent}
         >
-          <Pressable 
+          <Pressable
             style={({ pressed }) => [
               styles.tab,
               activeTab === 'family' && styles.tabActive,
@@ -646,8 +684,8 @@ export default function LocationFeaturesScreen() {
               </View>
             )}
           </Pressable>
-          
-          <Pressable 
+
+          <Pressable
             style={({ pressed }) => [
               styles.tab,
               activeTab === 'courier' && styles.tabActive,
@@ -672,8 +710,8 @@ export default function LocationFeaturesScreen() {
               </View>
             )}
           </Pressable>
-          
-          <Pressable 
+
+          <Pressable
             style={({ pressed }) => [
               styles.tab,
               activeTab === 'phone' && styles.tabActive,
@@ -698,8 +736,8 @@ export default function LocationFeaturesScreen() {
               </View>
             )}
           </Pressable>
-          
-          <Pressable 
+
+          <Pressable
             style={({ pressed }) => [
               styles.tab,
               activeTab === 'route' && styles.tabActive,
@@ -741,7 +779,7 @@ export default function LocationFeaturesScreen() {
                   Aile konum paylaşımı özelliğini kullanmak için önce bir grup seçmelisiniz. Grup olmadan aile üyeleri eklenemez ve konum paylaşılamaz.
                 </Text>
                 {activeGroups.length > 0 ? (
-                  <Pressable 
+                  <Pressable
                     style={({ pressed }) => [
                       styles.groupWarningButton,
                       pressed && styles.groupWarningButtonPressed
@@ -800,7 +838,7 @@ export default function LocationFeaturesScreen() {
                 </LinearGradient>
                 <Text style={styles.sectionTitle}>Aile Üyeleri</Text>
               </View>
-              <Pressable 
+              <Pressable
                 style={({ pressed }) => [
                   styles.addButton,
                   pressed && styles.addButtonPressed
@@ -827,7 +865,7 @@ export default function LocationFeaturesScreen() {
               <View style={styles.emptyState}>
                 <Ionicons name="people-outline" size={64} color="#94a3b8" />
                 <Text style={styles.emptyText}>Henüz aile üyesi eklenmemiş</Text>
-                <Pressable 
+                <Pressable
                   style={({ pressed }) => [
                     styles.emptyButton,
                     pressed && styles.emptyButtonPressed
@@ -884,9 +922,9 @@ export default function LocationFeaturesScreen() {
                             </Text>
                           </View>
                           <Text style={styles.locationTime}>
-                            {new Date(member.location.timestamp).toLocaleTimeString('tr-TR', { 
-                              hour: '2-digit', 
-                              minute: '2-digit' 
+                            {new Date(member.location.timestamp).toLocaleTimeString('tr-TR', {
+                              hour: '2-digit',
+                              minute: '2-digit'
                             })}
                           </Text>
                         </View>
@@ -945,7 +983,7 @@ export default function LocationFeaturesScreen() {
                   Kurye teslimat özelliğini kullanmak için önce bir grup seçmelisiniz. Grup olmadan teslimat oluşturulamaz ve takip edilemez.
                 </Text>
                 {activeGroups.length > 0 ? (
-                  <Pressable 
+                  <Pressable
                     style={({ pressed }) => [
                       styles.groupWarningButton,
                       pressed && styles.groupWarningButtonPressed
@@ -989,7 +1027,7 @@ export default function LocationFeaturesScreen() {
                     <Text style={styles.selectedGroupName}>{selectedGroup.name}</Text>
                   </View>
                 </View>
-                <Pressable 
+                <Pressable
                   style={({ pressed }) => [
                     styles.groupTrackButton,
                     pressed && styles.groupTrackButtonPressed
@@ -997,7 +1035,7 @@ export default function LocationFeaturesScreen() {
                   onPress={() => router.push({ pathname: '/(tabs)/track', params: { groupId: selectedGroup.id } })}
                 >
                   <LinearGradient
-                    colors={['#06b6d4', '#0ea5a4']}
+                    colors={['#0EA5E9', '#0ea5a4']}
                     style={styles.groupTrackButtonGradient}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
@@ -1021,7 +1059,7 @@ export default function LocationFeaturesScreen() {
                 </LinearGradient>
                 <Text style={styles.sectionTitle}>Teslimatlar</Text>
               </View>
-              <Pressable 
+              <Pressable
                 style={({ pressed }) => [
                   styles.addButton,
                   pressed && styles.addButtonPressed
@@ -1047,7 +1085,7 @@ export default function LocationFeaturesScreen() {
               <View style={styles.emptyState}>
                 <Ionicons name="bicycle-outline" size={64} color="#94a3b8" />
                 <Text style={styles.emptyText}>Henüz teslimat yok</Text>
-                <Pressable 
+                <Pressable
                   style={({ pressed }) => [
                     styles.emptyButton,
                     pressed && styles.emptyButtonPressed
@@ -1094,14 +1132,14 @@ export default function LocationFeaturesScreen() {
                       <View style={[styles.statusBadge, styles[`status${delivery.status}`]]}>
                         <Text style={styles.statusText}>
                           {delivery.status === 'pending' ? '⏳ Bekliyor' :
-                           delivery.status === 'in_progress' ? '🚚 Yolda' :
-                           delivery.status === 'delivered' ? '✅ Teslim' :
-                           '❌ İptal'}
+                            delivery.status === 'in_progress' ? '🚚 Yolda' :
+                              delivery.status === 'delivered' ? '✅ Teslim' :
+                                '❌ İptal'}
                         </Text>
                       </View>
                     </View>
                     <View style={styles.deliveryLocation}>
-                    <View style={styles.locationBox}>
+                      <View style={styles.locationBox}>
                         <Ionicons name="location" size={18} color="#f093fb" />
                         <Text style={styles.deliveryAddress}>
                           {delivery.destination.lat.toFixed(6)}, {delivery.destination.lng.toFixed(6)}
@@ -1140,8 +1178,8 @@ export default function LocationFeaturesScreen() {
                       >
                         <Text style={styles.deliveryActionText}>
                           {delivery.status === 'pending' ? 'Başlat' :
-                           delivery.status === 'in_progress' ? 'Tamamla' :
-                           'Tamamlandı'}
+                            delivery.status === 'in_progress' ? 'Tamamla' :
+                              'Tamamlandı'}
                         </Text>
                       </LinearGradient>
                     </Pressable>
@@ -1179,7 +1217,7 @@ export default function LocationFeaturesScreen() {
                   Numaradan konum bulma özelliğini kullanmak için önce bir grup seçmelisiniz. Grup olmadan bu işlem yapılamaz.
                 </Text>
                 {activeGroups.length > 0 ? (
-                  <Pressable 
+                  <Pressable
                     style={({ pressed }) => [
                       styles.groupWarningButton,
                       pressed && styles.groupWarningButtonPressed
@@ -1223,7 +1261,7 @@ export default function LocationFeaturesScreen() {
                     <Text style={styles.selectedGroupName}>{selectedGroup.name}</Text>
                   </View>
                 </View>
-                <Pressable 
+                <Pressable
                   style={({ pressed }) => [
                     styles.groupTrackButton,
                     pressed && styles.groupTrackButtonPressed
@@ -1231,7 +1269,7 @@ export default function LocationFeaturesScreen() {
                   onPress={() => router.push({ pathname: '/(tabs)/track', params: { groupId: selectedGroup.id } })}
                 >
                   <LinearGradient
-                    colors={['#06b6d4', '#0ea5a4']}
+                    colors={['#0EA5E9', '#0ea5a4']}
                     style={styles.groupTrackButtonGradient}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
@@ -1294,8 +1332,8 @@ export default function LocationFeaturesScreen() {
                       </Pressable>
                     )}
                   </View>
-                  
-                  <Pressable 
+
+                  <Pressable
                     style={({ pressed }) => [
                       styles.phoneSearchButton,
                       (!phoneSearch.trim() || loading) && styles.phoneSearchButtonDisabled,
@@ -1398,9 +1436,9 @@ export default function LocationFeaturesScreen() {
                           onPress={() => {
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                             shareLocation(
-                              { 
-                                lat: phoneResult.location.lat, 
-                                lng: phoneResult.location.lng, 
+                              {
+                                lat: phoneResult.location.lat,
+                                lng: phoneResult.location.lng,
                                 name: phoneResult.name || phoneResult.phone
                               },
                               () => {
@@ -1471,7 +1509,7 @@ export default function LocationFeaturesScreen() {
                   Yol takip özelliğini kullanmak için önce bir grup seçmelisiniz. Grup olmadan rota kaydedilemez ve takip edilemez.
                 </Text>
                 {activeGroups.length > 0 ? (
-                  <Pressable 
+                  <Pressable
                     style={({ pressed }) => [
                       styles.groupWarningButton,
                       pressed && styles.groupWarningButtonPressed
@@ -1515,7 +1553,7 @@ export default function LocationFeaturesScreen() {
                     <Text style={styles.selectedGroupName}>{selectedGroup.name}</Text>
                   </View>
                 </View>
-                <Pressable 
+                <Pressable
                   style={({ pressed }) => [
                     styles.groupTrackButton,
                     pressed && styles.groupTrackButtonPressed
@@ -1523,7 +1561,7 @@ export default function LocationFeaturesScreen() {
                   onPress={() => router.push({ pathname: '/(tabs)/track', params: { groupId: selectedGroup.id } })}
                 >
                   <LinearGradient
-                    colors={['#06b6d4', '#0ea5a4']}
+                    colors={['#0EA5E9', '#0ea5a4']}
                     style={styles.groupTrackButtonGradient}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
@@ -1628,7 +1666,7 @@ export default function LocationFeaturesScreen() {
                 />
               </View>
               <View style={styles.modalButtons}>
-                <Pressable 
+                <Pressable
                   style={({ pressed }) => [
                     styles.modalButton,
                     styles.modalButtonCancel,
@@ -1638,7 +1676,7 @@ export default function LocationFeaturesScreen() {
                 >
                   <Text style={styles.modalButtonText}>İptal</Text>
                 </Pressable>
-                <Pressable 
+                <Pressable
                   style={({ pressed }) => [
                     styles.modalButton,
                     pressed && styles.modalButtonPressed
@@ -1722,7 +1760,7 @@ export default function LocationFeaturesScreen() {
                   <ActivityIndicator size="small" color="#f093fb" style={{ marginLeft: 8 }} />
                 )}
               </View>
-              <Pressable 
+              <Pressable
                 style={({ pressed }) => [
                   styles.locationButtonFull,
                   pressed && styles.locationButtonPressed
@@ -1741,7 +1779,7 @@ export default function LocationFeaturesScreen() {
                 </LinearGradient>
               </Pressable>
               <View style={styles.modalButtons}>
-                <Pressable 
+                <Pressable
                   style={({ pressed }) => [
                     styles.modalButton,
                     styles.modalButtonCancel,
@@ -1755,7 +1793,7 @@ export default function LocationFeaturesScreen() {
                 >
                   <Text style={styles.modalButtonText}>İptal</Text>
                 </Pressable>
-                <Pressable 
+                <Pressable
                   style={({ pressed }) => [
                     styles.modalButton,
                     pressed && styles.modalButtonPressed,
@@ -1792,61 +1830,11 @@ export default function LocationFeaturesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a'
-  },
-  header: {
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 20 : 20,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28
-  },
-  headerTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between'
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1
-  },
-  headerTextBlock: {
-    flex: 1
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginLeft: 12
-  },
-  brandLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: 'rgba(255,255,255,0.85)',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-    fontFamily: 'Poppins-Bold',
-    marginBottom: 4
-  },
-  headerTitle: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: '#fff',
-    letterSpacing: 0.8,
-    fontFamily: 'Poppins-Bold',
-    marginBottom: 4
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.95)',
-    fontWeight: '600',
-    fontFamily: 'Poppins-SemiBold',
-    letterSpacing: 0.3
+    backgroundColor: '#0f172a',
   },
   tabsContainer: {
-    backgroundColor: '#1e293b',
-    borderBottomWidth: 1,
+    backgroundColor: '#0f172a',
+    paddingVertical: 12,
     borderBottomColor: '#334155',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -3144,7 +3132,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     borderRadius: 12,
     overflow: 'hidden',
-    shadowColor: '#06b6d4',
+    shadowColor: '#0EA5E9',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,

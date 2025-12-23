@@ -18,25 +18,29 @@ export function NetworkGuard({ children }: NetworkGuardProps) {
   // Use professional network hook for real-time monitoring
   const network = useNetwork();
   const [isRetrying, setIsRetrying] = React.useState(false);
+  const [showBackendWarning, setShowBackendWarning] = React.useState(false);
 
   const handleRetry = async () => {
     setIsRetrying(true);
     try {
       await network.refresh();
+      // Hide warning if backend is now reachable
+      if (network.isBackendReachable) {
+        setShowBackendWarning(false);
+      }
     } catch (error) {
-      console.error('[NetworkGuard] Retry error:', error);
     } finally {
       setIsRetrying(false);
     }
   };
 
-  // Show loading only on initial check
+  // Show loading only on initial check (first 2 seconds)
   if (network.isChecking && !network.hasConnection) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <LinearGradient colors={['#0f172a', '#1e293b']} style={styles.gradient}>
           <View style={styles.content}>
-            <ActivityIndicator size="large" color="#06b6d4" />
+            <ActivityIndicator size="large" color="#0EA5E9" />
             <Text style={styles.checkingText}>Bağlantı kontrol ediliyor...</Text>
           </View>
         </LinearGradient>
@@ -44,7 +48,8 @@ export function NetworkGuard({ children }: NetworkGuardProps) {
     );
   }
 
-  // Show offline screen if no internet connection
+  // Show offline screen ONLY if no internet connection at all
+  // Don't block app if backend is unreachable but internet exists
   if (!network.hasConnection) {
     return (
       <NoInternetScreen
@@ -55,17 +60,20 @@ export function NetworkGuard({ children }: NetworkGuardProps) {
     );
   }
 
-  // Show backend error screen if internet exists but backend is unreachable
-  if (network.hasConnection && !network.isBackendReachable) {
-    return (
-      <NoInternetScreen
-        onRetry={handleRetry}
-        isRetrying={isRetrying}
-        showBackendError={true}
-        message="Sunucuya bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin ve tekrar deneyin."
-      />
-    );
-  }
+  // Don't block app if backend is unreachable - just show warning in header
+  // Allow app to continue working in offline mode
+  // Backend status is already shown in NetworkStatusIcon in header
+  React.useEffect(() => {
+    if (network.hasConnection && !network.isBackendReachable) {
+      // Show warning after a delay to avoid flickering
+      const timer = setTimeout(() => {
+        setShowBackendWarning(true);
+      }, 2000);
+      return () => clearTimeout(timer);
+    } else {
+      setShowBackendWarning(false);
+    }
+  }, [network.hasConnection, network.isBackendReachable]);
 
   // Allow app to continue - backend status shown in header
   return <>{children}</>;

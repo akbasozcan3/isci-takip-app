@@ -82,11 +82,11 @@ export default function HelpScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="light-content" />
-      
-      <LinearGradient colors={['#06b6d4', '#0ea5a4']} style={styles.header}>
+
+      <LinearGradient colors={['#0EA5E9', '#0ea5a4']} style={styles.header}>
         <View style={styles.headerInner}>
-          <Pressable 
-            onPress={() => router.back()} 
+          <Pressable
+            onPress={() => router.back()}
             style={styles.backButton}
             android_ripple={{ color: 'rgba(255,255,255,0.3)', borderless: true, radius: 20 }}
           >
@@ -99,12 +99,12 @@ export default function HelpScreen() {
         </View>
       </LinearGradient>
 
-      <ScrollView 
+      <ScrollView
         style={styles.content}
         contentContainerStyle={{ paddingBottom: 120 }}
       >
         <View style={styles.infoCard}>
-          <Ionicons name="information-circle" size={24} color="#06b6d4" />
+          <Ionicons name="information-circle" size={24} color="#0EA5E9" />
           <Text style={styles.infoText}>
             7/24 destek ekibimiz size yardımcı olmak için hazır. Aşağıdaki iletişim kanallarından bize ulaşabilirsiniz.
           </Text>
@@ -112,7 +112,7 @@ export default function HelpScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>İletişim Kanalları</Text>
-          
+
           {helpItems.map((item) => (
             <Pressable
               key={item.id}
@@ -121,7 +121,7 @@ export default function HelpScreen() {
               android_ripple={{ color: 'rgba(6, 182, 212, 0.1)' }}
             >
               <View style={styles.helpIcon}>
-                <Ionicons name={item.icon as any} size={24} color="#06b6d4" />
+                <Ionicons name={item.icon as any} size={24} color="#0EA5E9" />
               </View>
               <View style={styles.helpContent}>
                 <Text style={styles.helpTitle}>{item.title}</Text>
@@ -134,21 +134,21 @@ export default function HelpScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Uygulama Bilgileri</Text>
-          
+
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Versiyon</Text>
             <Text style={styles.infoValue}>1.0.0</Text>
           </View>
-          
+
           <View style={styles.divider} />
-          
+
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Son Güncelleme</Text>
             <Text style={styles.infoValue}>4 Kasım 2025</Text>
           </View>
-          
+
           <View style={styles.divider} />
-          
+
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Geliştirici</Text>
             <Text style={styles.infoValue}>Bavaxe Teknoloji</Text>
@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
     paddingBottom: 22,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
-    shadowColor: '#06b6d4',
+    shadowColor: '#0EA5E9',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
     shadowRadius: 12,

@@ -14,15 +14,20 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { AnimatedBubbles } from '../../components/AnimatedBubbles';
 import { AuthHeader } from '../../components/AuthHeader';
+import { PremiumBackground } from '../../components/PremiumBackground';
 import { Toast, useToast } from '../../components/Toast';
-import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Input';
+import { Button } from '../../components/ui/Button/index';
+import { Input } from '../../components/ui/Input/index';
 import { AnalyticsEvents, logEvent, setUserId } from '../../utils/analytics';
 import { getApiBase } from '../../utils/api';
 import { saveToken } from '../../utils/auth';
 import { setOneSignalExternalUserId } from '../../utils/onesignal';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import { makeRedirectUri } from 'expo-auth-session';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -31,11 +36,152 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  
+
+  // Google Sign-In Request
+  const redirectUri = makeRedirectUri({
+    scheme: 'bavaxe',
+    useProxy: false  // Development build için proxy kullanma - direkt Google
+  });
+
+  console.log('🔍 Google OAuth Redirect URI:', redirectUri);
+
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    expoClientId: '984232035409-7dauhh2jakbrf56abhooq7si1ukdp8t9o.apps.googleusercontent.com',
+    androidClientId: '984232035409-qi843tamturicj7po9mn7d4035f5gphd.apps.googleusercontent.com',
+    scopes: ['profile', 'email'],
+    responseType: 'id_token', // Important for getting user info
+  });
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      handleGoogleLogin(id_token);
+    } else if (response?.type === 'error') {
+      showError('Google girişi başarısız oldu.');
+    }
+  }, [response]);
+
+  const handleGoogleLogin = async (idToken: string) => {
+    if (!idToken) {
+      showError('Google giriş token\'ı alınamadı');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      console.log('[Google Login] Frontend-only authentication started...');
+
+      // Decode ID token to get user info (basic JWT decode)
+      const base64Url = idToken.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+
+      const payload = JSON.parse(jsonPayload);
+      const { email, name, sub: googleId, picture } = payload;
+
+      if (!email) {
+        showError('Google hesabından email alınamadı');
+        return;
+      }
+
+      console.log('[Google Login] User info retrieved:', { email, name, googleId });
+
+      // ✅ CHECK: Email SMTP ile kayıtlı mı?
+      try {
+        const apiBase = getApiBase();
+        console.log('[Google Login] Checking if email is registered with SMTP...');
+
+        const checkResponse = await fetch(`${apiBase}/api/auth/check-email-registration`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.toLowerCase().trim() })
+        });
+
+        if (!checkResponse.ok) {
+          console.warn('[Google Login] Email check failed, proceeding anyway');
+        } else {
+          const checkData = await checkResponse.json();
+
+          if (checkData.data?.exists && checkData.data?.registeredWithSMTP) {
+            console.log('[Google Login] Email is registered with SMTP, blocking Google login');
+            showError('Bu e-posta adresi zaten kayıtlı. Lütfen e-posta ve şifre ile giriş yapın.');
+            setLoading(false);
+            return;
+          }
+
+          console.log('[Google Login] Email check passed:', checkData.data);
+        }
+      } catch (checkError) {
+        console.error('[Google Login] Email check error:', checkError);
+        // Non-critical error, continue with login
+        console.warn('[Google Login] Proceeding despite email check failure');
+      }
+
+      // Create mock user data for development
+      const mockUserId = googleId; // Use Google ID as user ID
+      const mockToken = idToken; // Use Google ID token as app token
+
+      // Save token
+      await saveToken(mockToken);
+
+      // Save user data
+      await SecureStore.setItemAsync('workerId', mockUserId);
+      await SecureStore.setItemAsync('userEmail', email);
+      await SecureStore.setItemAsync('displayName', name || email.split('@')[0]);
+      await SecureStore.setItemAsync('loginMethod', 'google'); // Mark as Google user
+      await SecureStore.setItemAsync('googleIdToken', idToken); // Save Google ID token
+
+      if (picture) {
+        await SecureStore.setItemAsync('avatarUrl', picture);
+      }
+
+      // Set context
+      setUserId(mockUserId);
+
+      // Analytics
+      logEvent(AnalyticsEvents.LOGIN, {
+        method: 'google',
+        user_id: mockUserId,
+      });
+
+      // OneSignal (optional)
+      try {
+        await setOneSignalExternalUserId(mockUserId);
+
+        const { updateUserSegments, markUserActive } = await import('../../utils/onesignal');
+        updateUserSegments({
+          segment: 'active',
+          role: 'user',
+          subscription: 'free',
+          lastActive: new Date().toISOString(),
+        });
+        markUserActive();
+      } catch (onesignalError) {
+        console.warn('[Google Login] OneSignal error (non-critical):', onesignalError);
+      }
+
+      showSuccess(`Hoş geldiniz, ${name || 'Kullanıcı'}!`);
+      console.log('[Google Login] Login complete, redirecting...');
+      setTimeout(() => router.replace('/(tabs)'), 500);
+
+    } catch (error: any) {
+      console.error('[Google Login] Error:', error);
+      showError('Google girişi sırasında bir hata oluştu. Lütfen tekrar deneyin.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Smooth animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
-  
+
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -73,11 +219,11 @@ export default function LoginScreen() {
     try {
       const apiBase = getApiBase();
       const url = `${apiBase}/api/auth/login`;
-      
+
       // Timeout controller (15 saniye)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
-      
+
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -87,14 +233,13 @@ export default function LoginScreen() {
 
       clearTimeout(timeoutId);
 
-      // Response parsing with error handling
       let data: any = {};
       try {
         const text = await response.text();
         data = text ? JSON.parse(text) : {};
       } catch (parseError) {
-        console.error('Response parse error:', parseError);
         showError('Sunucu yanıtı işlenemedi. Lütfen tekrar deneyin.');
+        setLoading(false);
         return;
       }
 
@@ -104,74 +249,79 @@ export default function LoginScreen() {
           setTimeout(() => {
             router.push(`/auth/verify-email?email=${encodeURIComponent(email.trim())}`);
           }, 1000);
+        } else if (data.error && data.error.includes('kayıtlı bir hesap bulunamadı')) {
+          showError('Bu e-posta adresi ile kayıtlı bir hesap bulunamadı. Kayıt olmak için "Kayıt Ol" butonunu kullanabilirsiniz.');
+          setTimeout(() => {
+            router.push('/auth/register');
+          }, 2000);
+        } else if (data.error && (data.error.includes('Geçersiz e-posta veya şifre') || data.error.includes('INVALID_CREDENTIALS'))) {
+          showError('E-posta veya şifre hatalı. Lütfen bilgilerinizi kontrol edin.');
+        } else if (data.error && data.error.includes('EMAIL_NOT_VERIFIED')) {
+          showError('E-posta doğrulanmamış. Lütfen önce e-postanızı doğrulayın.');
         } else {
-          // E-posta kayıtlı değil kontrolü
-          if (data.error && data.error.includes('kayıtlı bir hesap bulunamadı')) {
-            showError('Bu e-posta adresi ile kayıtlı bir hesap bulunamadı. Kayıt olmak için "Kayıt Ol" butonunu kullanabilirsiniz.');
-          } else {
-            showError(data.error || 'Giriş başarısız. E-posta veya şifrenizi kontrol edin.');
-          }
+          showError(data.error || 'Giriş başarısız. Lütfen tekrar deneyin.');
         }
+        setLoading(false);
         return;
       }
 
-      if (data.token && data.user) {
-        await saveToken(data.token);
-        
+      const userData = data.data?.user || data.user;
+      const tokenData = data.data?.token || data.token;
+
+      if (tokenData && userData) {
+        await saveToken(tokenData);
+
         try {
-          if (data.user.id) {
-            await SecureStore.setItemAsync('workerId', String(data.user.id));
-            await setOneSignalExternalUserId(String(data.user.id));
-            setUserId(String(data.user.id));
+          if (userData?.id) {
+            await SecureStore.setItemAsync('workerId', String(userData.id));
+            await setOneSignalExternalUserId(String(userData.id));
+            setUserId(String(userData.id));
             logEvent(AnalyticsEvents.LOGIN, {
               method: 'email',
-              user_id: data.user.id,
+              user_id: userData.id,
             });
-            
-            // Sync OneSignal Player ID with backend
+
             try {
               const { getPlayerId, sendPlayerIdToBackend } = await import('../../utils/onesignalHelpers');
               const playerId = await getPlayerId();
               if (playerId) {
-                await sendPlayerIdToBackend(playerId, String(data.user.id));
-                console.log('[Login] OneSignal Player ID synced:', playerId);
+                await sendPlayerIdToBackend(playerId, String(userData.id));
               }
             } catch (onesignalError) {
-              console.warn('[Login] OneSignal Player ID sync error:', onesignalError);
             }
-            
-            // Set OneSignal segments
+
             const { updateUserSegments } = await import('../../utils/onesignal');
             const { markUserActive, updateSubscriptionSegment } = await import('../../utils/onesignalSegments');
-            
+
             updateUserSegments({
               segment: 'active',
-              role: data.user.role || 'user',
-              subscription: data.user.subscription?.planId || 'free',
+              role: userData.role || 'user',
+              subscription: userData.subscription?.planId || 'free',
               lastActive: new Date().toISOString(),
             });
-            
+
             markUserActive();
-            if (data.user.subscription?.planId) {
-              updateSubscriptionSegment(data.user.subscription.planId as 'free' | 'plus' | 'business');
+            if (userData.subscription?.planId) {
+              updateSubscriptionSegment(userData.subscription.planId as 'free' | 'plus' | 'business');
             }
           }
-          if (data.user.displayName || data.user.name) {
-            await SecureStore.setItemAsync('displayName', data.user.displayName || data.user.name);
+          if (userData?.displayName || userData?.name) {
+            await SecureStore.setItemAsync('displayName', userData.displayName || userData.name);
           }
-          if (data.user.email) {
-            await SecureStore.setItemAsync('userEmail', data.user.email);
+          if (userData?.email) {
+            await SecureStore.setItemAsync('userEmail', userData.email);
           }
         } catch (storeError) {
         }
-        
+
         showSuccess('Giriş başarılı! Yönlendiriliyorsunuz...');
-        
+
         setTimeout(() => {
           router.replace('/(tabs)');
         }, 500);
       } else {
-        showError('Giriş başarısız. Lütfen tekrar deneyin.');
+        showError('Giriş başarısız. Sunucu yanıtı beklenmedik formatta.');
+        setLoading(false);
       }
     } catch (error: any) {
       if (error.name === 'AbortError') {
@@ -196,17 +346,14 @@ export default function LoginScreen() {
         style={styles.gradient}
       >
         <StatusBar barStyle="light-content" />
-        <AnimatedBubbles />
-        <View style={styles.decorativeCircle1} />
-        <View style={styles.decorativeCircle2} />
-        <View style={styles.decorativeCircle3} />
+        <PremiumBackground color="#06B6D4" lineCount={8} circleCount={5} />
 
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-        <View style={styles.content}>
+          <View style={styles.content}>
             <AuthHeader
               activeTab="login"
               onTabChange={(tab) => {
@@ -215,77 +362,92 @@ export default function LoginScreen() {
                 }
               }}
             />
-          <Animated.View 
-            style={[
-              styles.form,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              }
-            ]}
-          >
-            <Input
-              label="E-posta Adresi"
-              placeholder="ornek@email.com"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoComplete="email"
-              leftElement={
-                <View style={styles.iconCircle}>
-                  <Ionicons name="mail-outline" size={16} color="#94a3b8" />
-                </View>
-              }
-              style={styles.input}
-            />
-
-            <Input
-              label="Şifre"
-              placeholder="Şifrenizi girin"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-              autoComplete="password"
-              leftElement={
-                <View style={styles.iconCircle}>
-                  <Ionicons name="lock-closed-outline" size={16} color="#94a3b8" />
-                </View>
-              }
-              rightElement={
-                <TouchableOpacity
-                  onPress={() => setShowPassword(!showPassword)}
-                  style={styles.iconCircle}
-                >
-                  <Ionicons
-                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                    size={16}
-                    color="#94a3b8"
-                  />
-                </TouchableOpacity>
-              }
-              style={styles.input}
-            />
-            <Button
-              title="Giriş Yap"
-              onPress={handleLogin}
-              loading={loading}
-              style={styles.loginButton}
-            />
-
-            <TouchableOpacity 
-              onPress={() => router.push('/auth/reset-password' as any)}
-              style={styles.forgotPasswordButton}
-              activeOpacity={0.7}
+            <Animated.View
+              style={[
+                styles.formContainer,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ translateY: slideAnim }],
+                }
+              ]}
             >
-              <View style={styles.forgotPasswordContent}>
-                <Ionicons name="lock-open-outline" size={16} color="#f59e0b" />
-                <Text style={styles.forgotPasswordText}>Şifremi Unuttum</Text>
+              <View style={styles.formCard}>
+                <Input
+                  label="E-posta Adresi"
+                  placeholder="ornek@email.com"
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  leftElement={
+                    <View style={styles.iconCircle}>
+                      <Ionicons name="mail-outline" size={16} color="#94a3b8" />
+                    </View>
+                  }
+                  style={styles.input}
+                />
+
+                <Input
+                  label="Şifre"
+                  placeholder="Şifrenizi girin"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoComplete="password"
+                  leftElement={
+                    <View style={styles.iconCircle}>
+                      <Ionicons name="lock-closed-outline" size={16} color="#94a3b8" />
+                    </View>
+                  }
+                  rightElement={
+                    <TouchableOpacity
+                      onPress={() => setShowPassword(!showPassword)}
+                      style={styles.iconCircle}
+                    >
+                      <Ionicons
+                        name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                        size={16}
+                        color="#94a3b8"
+                      />
+                    </TouchableOpacity>
+                  }
+                  style={styles.input}
+                />
+
+                <TouchableOpacity
+                  onPress={() => router.push('/auth/reset-password' as any)}
+                  style={styles.forgotPasswordButton}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.forgotPasswordText}>Şifremi Unuttum</Text>
+                </TouchableOpacity>
+
+                <Button
+                  title="Giriş Yap"
+                  onPress={handleLogin}
+                  loading={loading}
+                  style={styles.loginButton}
+                />
+
+                <TouchableOpacity
+                  style={styles.googleButton}
+                  onPress={() => promptAsync()}
+                  disabled={loading}
+                >
+                  {loading && !password ? (
+                    <Text style={styles.googleButtonText}>Yükleniyor...</Text>
+                  ) : (
+                    <View style={styles.googleContent}>
+                      <Ionicons name="logo-google" size={20} color="#0f172a" style={{ marginRight: 10 }} />
+                      <Text style={styles.googleButtonText}>Google ile Giriş Yap</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
               </View>
-            </TouchableOpacity>
-          </Animated.View>
-        </View>
+            </Animated.View>
+          </View>
         </ScrollView>
         <Toast
           message={toast.message}
@@ -306,33 +468,6 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
   },
-  decorativeCircle1: {
-    position: 'absolute',
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: 'rgba(6, 182, 212, 0.08)',
-    top: -100,
-    right: -100,
-  },
-  decorativeCircle2: {
-    position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(59, 130, 246, 0.06)',
-    bottom: -50,
-    left: -50,
-  },
-  decorativeCircle3: {
-    position: 'absolute',
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: 'rgba(139, 92, 246, 0.05)',
-    top: '40%',
-    right: -30,
-  },
   scrollContent: {
     flexGrow: 1,
     paddingBottom: 24,
@@ -340,7 +475,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: 'flex-start',
-    paddingTop: Platform.OS === 'ios' ? 8 : 4,
+    paddingTop: Platform.OS === 'ios' ? 8 : 15,
     paddingHorizontal: 24,
     paddingBottom: 24
   },
@@ -367,7 +502,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     letterSpacing: 0.5,
     textAlign: 'center',
-    fontFamily: 'Poppins-Bold',
+    fontFamily: 'Poppins-Black',
   },
   subtitle: {
     fontSize: 14,
@@ -376,17 +511,17 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     paddingHorizontal: 20,
     fontWeight: '500',
-    fontFamily: 'Poppins-Regular',
+    fontFamily: 'Poppins-Medium',
   },
   form: {
     width: '100%',
-    marginTop: 8,
+    marginTop: 0,
   },
   input: {
-    marginBottom: 16,
+    marginBottom: 8,
   },
   loginButton: {
-    marginTop: 8,
+    marginTop: 2,
     marginBottom: 0,
   },
   iconCircle: {
@@ -411,7 +546,7 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontSize: 14,
     fontWeight: '400',
-    fontFamily: 'Poppins-Regular',
+    fontFamily: 'Poppins-Medium',
   },
   registerButton: {
     marginTop: 8,
@@ -422,11 +557,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
     overflow: 'hidden',
-    shadowColor: '#60a5fa',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
   },
   registerButtonGradient: {
     paddingVertical: 16,
@@ -443,23 +573,15 @@ const styles = StyleSheet.create({
     color: '#60a5fa',
     fontSize: 17,
     fontWeight: '800',
-    fontFamily: 'Poppins-Bold',
+    fontFamily: 'Poppins-ExtraBold',
     letterSpacing: 0.5,
-    textShadowColor: 'rgba(96, 165, 250, 0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
   forgotPasswordButton: {
-    marginTop: 12,
-    marginBottom: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(245, 158, 11, 0.3)',
-    alignSelf: 'center',
-    width: '100%',
+    marginTop: 8,
+    marginBottom: 1,
+    paddingVertical: 4,
+    paddingHorizontal: 0,
+    alignSelf: 'flex-start',
   },
   forgotPasswordContent: {
     flexDirection: 'row',
@@ -468,11 +590,32 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   forgotPasswordText: {
-    color: '#f59e0b',
+    color: '#06B6D4',
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
     fontFamily: 'Poppins-SemiBold',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
+    textAlign: 'left',
+  },
+  googleButton: {
+    marginTop: 16,
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 14,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.15)',
+  },
+  googleContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  googleButtonText: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Poppins-SemiBold',
   },
 });
 

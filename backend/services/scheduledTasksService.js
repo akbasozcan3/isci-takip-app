@@ -20,24 +20,22 @@ class ScheduledTasksService {
   }
 
   start() {
-    // Start inactivity notification service
-    try {
-      const inactivityNotificationService = require('./inactivityNotification.service');
-      inactivityNotificationService.start();
-      console.log('[ScheduledTasks] ✅ Inactivity notification service started');
-    } catch (error) {
-      console.warn('[ScheduledTasks] ⚠️  Inactivity notification service not available:', error.message);
-    }
     if (this.isRunning) {
-      logger.warn('Scheduled tasks already running');
+      logger.warn('Scheduled tasks already running - skipping duplicate start');
       return;
     }
 
+    try {
     this.isRunning = true;
     logger.info('🚀 Scheduled tasks service started');
 
     this.scheduleDailyActivityCheck();
     this.scheduleHourlyActivityCheck();
+    } catch (error) {
+      logger.error('Error starting scheduled tasks:', error);
+      this.isRunning = false;
+      throw error;
+    }
   }
 
   stop() {
@@ -242,10 +240,5 @@ class ScheduledTasksService {
 }
 
 const scheduledTasksService = new ScheduledTasksService();
-
-if (process.env.NODE_ENV !== 'test') {
-  scheduledTasksService.start();
-  console.log('[ScheduledTasksService] Auto-started on server initialization');
-}
 
 module.exports = scheduledTasksService;

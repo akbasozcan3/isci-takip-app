@@ -2,43 +2,112 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   BackHandler,
-  Easing,
   KeyboardAvoidingView,
-  Linking,
   Platform,
-  Pressable,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
-  View
+  TouchableOpacity,
+  View,
+  Dimensions
 } from 'react-native';
 import { BrandLogo } from '../../components/BrandLogo';
+import { PremiumBackground } from '../../components/PremiumBackground';
 import { Toast, useToast } from '../../components/Toast';
-import { Button } from '../../components/ui/Button';
-import { Card } from '../../components/ui/Card/index';
-import { Input } from '../../components/ui/Input';
-import { useTheme } from '../../components/ui/theme/ThemeContext';
+import { Button } from '../../components/ui/Button/index';
+import { Input } from '../../components/ui/Input/index';
+import { VerificationCodeInput } from '../../components/ui/VerificationCodeInput';
 import { getApiBase } from '../../utils/api';
+import {
+  validateEmailTR,
+  validatePasswordTR,
+  validatePasswordMatchTR,
+  validateVerificationCodeTR,
+  calculatePasswordStrength,
+  getPasswordStrengthLabel,
+  getPasswordStrengthColor
+} from '../../utils/validation';
 
-function calcPasswordStrength(pw: string) {
-  let score = 0;
-  if (pw.length >= 6) score++;
-  if (pw.length >= 10) score++;
-  if (/[A-Z]/.test(pw)) score++;
-  if (/[0-9]/.test(pw) || /[^A-Za-z0-9]/.test(pw)) score++;
-  return Math.min(score, 4);
+const { width } = Dimensions.get('window');
+
+// Separate component for internal imports if needed
+const ActivityIndicator = require('react-native').ActivityIndicator;
+
+// Animated Bubbles Component for Premium Loading
+function AnimatedBubbles() {
+  const bubble1 = useRef(new Animated.Value(0)).current;
+  const bubble2 = useRef(new Animated.Value(0)).current;
+  const bubble3 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animate = (bubble: Animated.Value, delay: number) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(bubble, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(bubble, {
+            toValue: 0,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    };
+
+    animate(bubble1, 0);
+    animate(bubble2, 400);
+    animate(bubble3, 800);
+  }, []);
+
+  const createBubbleStyle = (animValue: Animated.Value, left: string) => ({
+    position: 'absolute' as const,
+    left,
+    bottom: '30%',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(6, 182, 212, 0.2)',
+    opacity: animValue.interpolate({
+      inputRange: [0, 0.5, 1],
+      outputRange: [0.3, 0.8, 0.3],
+    }),
+    transform: [
+      {
+        translateY: animValue.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0, -100],
+        }),
+      },
+      {
+        scale: animValue.interpolate({
+          inputRange: [0, 0.5, 1],
+          outputRange: [0.8, 1.2, 0.8],
+        }),
+      },
+    ],
+  });
+
+  return (
+    <>
+      <Animated.View style={createBubbleStyle(bubble1, '20%')} />
+      <Animated.View style={createBubbleStyle(bubble2, '50%')} />
+      <Animated.View style={createBubbleStyle(bubble3, '80%')} />
+    </>
+  );
 }
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ token?: string; email?: string; fromSettings?: string }>();
-  const theme = useTheme();
   const { toast, showError, showSuccess, hideToast } = useToast();
 
   const isFromSettings = params.fromSettings === 'true';
@@ -55,191 +124,63 @@ export default function ResetPasswordScreen() {
   const [isManualTokenMode, setIsManualTokenMode] = useState(false);
   const [manualTokenValue, setManualTokenValue] = useState('');
   const [clipboardSuggestion, setClipboardSuggestion] = useState('');
+
   const hasVerifiedToken = useRef(false);
 
+  // Smooth animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
-  const progress = useRef(new Animated.Value(0)).current;
-
-  useFocusEffect(
-    React.useCallback(() => {
-      let active = true;
-      (async () => {
-        try {
-          const clipboardContent = await Clipboard.getStringAsync();
-          if (
-            active &&
-            clipboardContent &&
-            clipboardContent.trim().length > 20 &&
-            /^[a-f0-9]+$/i.test(clipboardContent.trim())
-          ) {
-            setClipboardSuggestion(clipboardContent.trim());
-          }
-        } catch (_) {}
-      })();
-      return () => {
-        active = false;
-      };
-    }, [])
-  );
-
-  React.useEffect(() => {
-    if (!manualTokenValue && clipboardSuggestion) {
-      setManualTokenValue(clipboardSuggestion);
-    }
-  }, [clipboardSuggestion, manualTokenValue]);
-
-  React.useEffect(() => {
-    if (step !== 2) {
-      setNewPassword('');
-      setConfirmPassword('');
-      setShowPassword(false);
-    }
-  }, [step]);
+  const scaleAnim = useRef(new Animated.Value(0.95)).current;
 
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 600,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true
+        duration: 800,
+        useNativeDriver: true,
       }),
-      Animated.timing(slideAnim, {
+      Animated.spring(slideAnim, {
         toValue: 0,
-        duration: 500,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true
-      })
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }),
     ]).start();
   }, []);
-
-  useEffect(() => {
-    Animated.timing(progress, {
-      toValue: step / 3,
-      duration: 350,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false
-    }).start();
-  }, [step]);
 
   useEffect(() => {
     let t: ReturnType<typeof setTimeout> | undefined;
     if (resendTimer > 0) {
       t = setTimeout(() => setResendTimer((s) => s - 1), 1000);
     }
-    return () => {
-      if (t) clearTimeout(t);
-    };
+    return () => { if (t) clearTimeout(t); };
   }, [resendTimer]);
 
   useEffect(() => {
-    setPasswordScore(calcPasswordStrength(newPassword));
+    setPasswordScore(calculatePasswordStrength(newPassword));
   }, [newPassword]);
 
-  const verifyToken = React.useCallback(async (tokenToVerify: string) => {
-    if (hasVerifiedToken.current) {
-      return;
-    }
-
-    if (!tokenToVerify || !tokenToVerify.trim()) {
-      showError('Token gereklidir. Lütfen e-postanızdaki token\'ı girin.');
-      setStep(1);
-      return;
-    }
-
-    if (tokenToVerify.trim().length < 10) {
-      showError('Geçersiz token formatı. Lütfen e-postanızdaki token\'ı tam olarak kopyalayın.');
-      setStep(1);
-      return;
-    }
-
-    hasVerifiedToken.current = true;
-    setVerifying(true);
-    try {
-      const apiBase = getApiBase();
-      const url = `${apiBase}/api/auth/reset/verify?token=${encodeURIComponent(tokenToVerify)}`;
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-      
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!res.ok && res.status === 0) {
-        hasVerifiedToken.current = false;
-        showError('Backend sunucusuna bağlanılamıyor. Lütfen backend\'in çalıştığından emin olun.');
-        setStep(1);
-        setVerifying(false);
-        return;
-      }
-
-      const d = await res.json().catch(() => ({} as any));
-      if (res.ok && d.success) {
-        setEmail(d.email || '');
-        setToken(tokenToVerify);
-        setStep(2);
-        showSuccess('Link doğrulandı. Yeni şifrenizi belirleyebilirsiniz.');
-      } else {
-        hasVerifiedToken.current = false;
-        const errorMsg = d?.error || 'Token geçersiz veya süresi dolmuş. Lütfen yeni bir şifre sıfırlama isteği gönderin.';
-        showError(errorMsg);
-        setStep(1);
-        setToken('');
-        setManualTokenValue('');
-      }
-    } catch (error: any) {
-      hasVerifiedToken.current = false;
-      if (error.name === 'AbortError') {
-        showError('İstek zaman aşımına uğradı. Backend çalışıyor mu kontrol edin.');
-      } else {
-        showError('Link doğrulanamadı. Lütfen tekrar deneyin.');
-      }
-      setStep(1);
-      setToken('');
-    } finally {
-      setVerifying(false);
-    }
-  }, [showError, showSuccess]);
-
-  const tokenPreview = React.useMemo(() => {
-    if (!token) return '';
-    if (token.length <= 10) return token;
-    return `${token.slice(0, 6)}...${token.slice(-4)}`;
-  }, [token]);
-
-  const handleManualTokenVerify = React.useCallback(() => {
-    const clean = manualTokenValue.trim();
-    if (!clean) {
-      showError('Token girin veya panodan yapıştırın.');
-      return;
-    }
-    if (clean.length < 10) {
-      showError('Geçersiz token formatı. Lütfen e-postanızdaki token\'ı tam olarak kopyalayın.');
-      return;
-    }
-    setToken(clean);
-    verifyToken(clean);
-  }, [manualTokenValue, verifyToken, showError]);
-
-  const openGmailInbox = React.useCallback(() => {
-    Linking.openURL('https://mail.google.com').catch(() => {
-      showError('Gmail açılamadı.');
-    });
-  }, [showError]);
-
-  useEffect(() => {
-    const tokenParam = params.token;
-    if (tokenParam && typeof tokenParam === 'string' && tokenParam.trim() && !hasVerifiedToken.current) {
-      setToken(tokenParam);
-      verifyToken(tokenParam);
-    }
-  }, [params.token, verifyToken]);
+  // Clipboard Logic
+  useFocusEffect(
+    React.useCallback(() => {
+      let active = true;
+      (async () => {
+        try {
+          const content = await Clipboard.getStringAsync();
+          if (active && content && content.trim().length === 6 && /^\d+$/.test(content.trim())) {
+            setClipboardSuggestion(content.trim());
+          }
+        } catch (_) { }
+      })();
+      return () => { active = false; };
+    }, [])
+  );
 
   React.useEffect(() => {
     if (params.email && typeof params.email === 'string' && params.email.trim()) {
@@ -247,800 +188,813 @@ export default function ResetPasswordScreen() {
     }
   }, [params.email]);
 
-  const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
-  const startResendTimer = (seconds = 60) => setResendTimer(seconds);
+  const startResendTimer = (seconds: number) => {
+    setResendTimer(seconds);
+  };
 
-  const handleBackPress = React.useCallback(() => {
-    if (step === 2) {
+  const verifyToken = React.useCallback(async (tokenToVerify: string) => {
+    if (hasVerifiedToken.current) return;
+    if (!email.trim() || !tokenToVerify.trim() || !/^\d{6}$/.test(tokenToVerify.trim())) {
+      showError('Lütfen geçerli bir token ve e-posta girin.');
+      return;
+    }
+
+    hasVerifiedToken.current = true;
+    setVerifying(true);
+
+    try {
+      const apiBase = getApiBase();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const res = await fetch(`${apiBase}/api/auth/reset/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), code: tokenToVerify.trim() }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      const d = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(d.error || 'Kod doğrulanamadı.');
+      }
+
+      setToken(tokenToVerify.trim());
+      setStep(2);
+      showSuccess('Kod başarıyla doğrulandı.');
+    } catch (error: any) {
+      hasVerifiedToken.current = false;
+      showError(error.message || 'Bir hata oluştu.');
       setStep(1);
-      setToken('');
-      setNewPassword('');
-      return true;
+    } finally {
+      setVerifying(false);
     }
-    if (step === 3) {
-      router.back();
-      return true;
+  }, [email, showError, showSuccess]);
+
+  const [emailLocked, setEmailLocked] = useState(!!params.email);
+
+  const requestResetLink = async () => {
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      showError('Geçerli bir e-posta adresi girin.');
+      return;
     }
+    setLoading(true);
+    try {
+      const apiBase = getApiBase();
+      const res = await fetch(`${apiBase}/api/auth/reset/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() })
+      });
+      const d = await res.json().catch(() => ({}));
+
+      if (res.ok) {
+        showSuccess(d.message || 'Doğrulama kodu gönderildi.');
+        setIsManualTokenMode(true);
+        setEmailLocked(true); // Lock email after successful code send
+        startResendTimer(60);
+        if (clipboardSuggestion) setManualTokenValue(clipboardSuggestion);
+      } else {
+        showError(d.error || 'İstek başarısız oldu.');
+      }
+    } catch (e) {
+      showError('Bağlantı hatası. Lütfen tekrar deneyin.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmReset = async () => {
+    if (newPassword !== confirmPassword) {
+      showError('Şifreler eşleşmiyor.');
+      return;
+    }
+    if (passwordScore < 2) {
+      showError('Şifre çok zayıf.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const apiBase = getApiBase();
+      const res = await fetch(`${apiBase}/api/auth/reset/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), code: token, newPassword: newPassword.trim() })
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setStep(3);
+        showSuccess('Şifreniz başarıyla sıfırlandı.');
+        setTimeout(() => router.replace('/auth/login'), 2000);
+      } else {
+        showError(d.error || 'Sıfırlama başarısız.');
+      }
+    } catch (e) {
+      showError('Bağlantı hatası.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleManualTokenVerify = () => {
+    verifyToken(manualTokenValue);
+  };
+
+  const handleBackPress = () => {
+    if (step === 2) { setStep(1); return true; }
+    if (step === 3) { router.replace('/auth/login'); return true; }
     router.back();
     return true;
-  }, [router, step]);
+  };
 
   useFocusEffect(
     React.useCallback(() => {
-      const subscription = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
-      return () => subscription.remove();
-    }, [handleBackPress])
+      const sub = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
+      return () => sub.remove();
+    }, [step])
   );
 
-  const requestResetLink = async () => {
-    const clean = email.trim();
-    if (!clean) {
-      showError('E-posta giriniz');
-      return;
-    }
-    if (!isValidEmail(clean)) {
-      showError('Geçerli bir e-posta adresi girin');
-      return;
-    }
-    if (resendTimer > 0) return;
+  // Render password strength meter
+  const renderPasswordStrength = () => (
+    <View style={styles.strengthContainer}>
+      <View style={styles.meterContainer}>
+        {[1, 2, 3, 4].map((i) => (
+          <View
+            key={i}
+            style={[
+              styles.meterBar,
+              {
+                backgroundColor: i <= passwordScore
+                  ? (passwordScore > 2 ? '#10b981' : passwordScore > 1 ? '#0EA5E9' : '#ef4444')
+                  : 'rgba(255,255,255,0.1)'
+              }
+            ]}
+          />
+        ))}
+      </View>
+      <Text style={[
+        styles.strengthText,
+        { color: passwordScore > 2 ? '#10b981' : passwordScore > 1 ? '#0EA5E9' : '#64748b' }
+      ]}>
+        {passwordScore === 0 ? 'Şifre Giriniz' :
+          passwordScore < 2 ? 'Zayıf' :
+            passwordScore < 3 ? 'Orta' : 'Güçlü'}
+      </Text>
+    </View>
+  );
 
-    setLoading(true);
-    try {
-      const apiBase = getApiBase();
-      const url = `${apiBase}/api/auth/reset/request`;
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-      
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: clean }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!res.ok && res.status === 0) {
-        showError('Backend sunucusuna bağlanılamıyor. Lütfen backend\'in çalıştığından emin olun.');
-        setLoading(false);
-        return;
+  const getHeaderContent = () => {
+    if (step === 1) {
+      if (isManualTokenMode) {
+        return {
+          title: 'Kodu Onayla',
+          subtitle: 'Gelen 6 haneli kodu gir',
+          icon: 'keypad'
+        };
       }
-
-      const d = await res.json().catch(() => ({} as any));
-      if (res.ok && d.success) {
-        showSuccess(d.message || 'Şifre sıfırlama bilgileri e-postanıza gönderildi. Mobil uygulamadan şifrenizi sıfırlayabilirsiniz.');
-        startResendTimer(60);
-      } else {
-        const errorMsg = d?.error || 'Şifre sıfırlama isteği gönderilemedi. Lütfen tekrar deneyin.';
-        if (res.status === 429 || errorMsg.includes('429') || errorMsg.includes('çok fazla')) {
-          const retryAfter = d?.retryAfter || 900;
-          const minutes = Math.ceil(retryAfter / 60);
-          showError(`Çok fazla istek. Lütfen ${minutes} dakika sonra tekrar deneyin.`);
-          startResendTimer(Math.min(retryAfter, 900));
-        } else if (res.status === 404 || errorMsg.includes('bulunamadı')) {
-          showError('Bu e-posta adresi ile kayıtlı bir hesap bulunamadı. Lütfen e-posta adresinizi kontrol edin.');
-        } else {
-          showError(errorMsg);
-        }
-      }
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        showError('İstek zaman aşımına uğradı. Backend çalışıyor mu kontrol edin.');
-      } else if (error?.message?.includes('Network request failed') || error?.message?.includes('Failed to fetch')) {
-        showError('Backend sunucusuna bağlanılamıyor. PM2 ile backend başlatın.');
-      } else {
-        showError('Ağ hatası. Lütfen tekrar deneyin.');
-      }
-    } finally {
-      setLoading(false);
+      return {
+        title: 'Hesap Kurtarma',
+        subtitle: 'Şifreni güvenle sıfırla',
+        icon: 'shield-checkmark'
+      };
     }
+    if (step === 2) {
+      return {
+        title: 'Yeni Şifre',
+        subtitle: 'Güçlü bir şifre oluştur',
+        icon: 'lock-closed'
+      };
+    }
+    return {
+      title: 'İşlem Başarılı',
+      subtitle: 'Hesabın artık güvende',
+      icon: 'checkmark-circle'
+    };
   };
 
-  const confirmReset = async (): Promise<boolean> => {
-    const cleanPw = newPassword.trim();
-    const cleanConfirm = confirmPassword.trim();
-
-    if (!token || !token.trim()) {
-      showError('Geçersiz link.');
-      return false;
-    }
-
-    if (!cleanPw) {
-      showError('Yeni şifrenizi girin');
-      return false;
-    }
-
-    if (!cleanConfirm) {
-      showError('Yeni şifrenizi tekrar girin');
-      return false;
-    }
-
-    if (cleanPw !== cleanConfirm) {
-      showError('Şifreler eşleşmiyor');
-      return false;
-    }
-
-    if (cleanPw.length < 6) {
-      showError('Şifre en az 6 karakter olmalıdır');
-      return false;
-    }
-
-    setLoading(true);
-    try {
-      const apiBase = getApiBase();
-      const url = `${apiBase}/api/auth/reset/confirm`;
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-      
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token: token.trim(),
-          newPassword: cleanPw
-        }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!res.ok && res.status === 0) {
-        showError('Backend sunucusuna bağlanılamıyor. Lütfen backend\'in çalıştığından emin olun.');
-        setLoading(false);
-        return false;
-      }
-
-      const d = await res.json().catch(() => ({} as any));
-      if (res.ok && d.success) {
-        showSuccess('Şifreniz güncellendi. Giriş yapabilirsiniz.');
-        setToken('');
-        setNewPassword('');
-        setConfirmPassword('');
-        return true;
-      } else {
-        const errorMsg = d?.error || 'Şifre sıfırlanamadı. Lütfen tekrar deneyin.';
-        showError(errorMsg);
-        if (errorMsg.includes('geçersiz') || errorMsg.includes('süresi dolmuş')) {
-          setStep(1);
-          setToken('');
-          setManualTokenValue('');
-        }
-        return false;
-      }
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        showError('İstek zaman aşımına uğradı. Backend çalışıyor mu kontrol edin.');
-      } else if (error?.message?.includes('Network request failed') || error?.message?.includes('Failed to fetch')) {
-        showError('Backend sunucusuna bağlanılamıyor. PM2 ile backend başlatın.');
-      } else {
-        showError('Ağ hatası. Lütfen tekrar deneyin.');
-      }
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const maskedEmail = useMemo(() => {
-    const e = email.trim();
-    if (!e || !e.includes('@')) return e;
-    const [user, domain] = e.split('@');
-    const vis = user.slice(0, Math.min(2, user.length));
-    const stars = '*'.repeat(Math.max(2, user.length - vis.length));
-    return `${vis}${stars}@${domain}`;
-  }, [email]);
-
-  const pwLabel = passwordScore >= 3 ? 'Güçlü' : passwordScore >= 2 ? 'Orta' : passwordScore >= 1 ? 'Zayıf' : '';
-  const pwColor = passwordScore >= 3 ? theme.colors.semantic.success : passwordScore >= 2 ? theme.colors.semantic.warning : passwordScore >= 1 ? theme.colors.semantic.danger : theme.colors.text.disabled;
+  const { title, subtitle, icon } = getHeaderContent();
 
   if (verifying) {
     return (
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
-        <LinearGradient colors={[theme.colors.bg.secondary, theme.colors.bg.tertiary, theme.colors.bg.elevated]} style={styles.gradient}>
-          <SafeAreaView style={styles.safeArea}>
-            <View style={styles.loadingContainer}>
-              <Animated.View
-                style={[
-                  styles.loadingIconContainer,
-                  {
-                    opacity: fadeAnim,
-                    transform: [{ scale: fadeAnim }]
-                  }
-                ]}
-              >
-                <LinearGradient colors={theme.colors.gradient.primary as [string, string]} style={styles.loadingIconGradient}>
-                  <Ionicons name="lock-closed" size={48} color={theme.colors.text.primary} />
-                </LinearGradient>
-              </Animated.View>
-              <Text style={[styles.loadingText, { color: theme.colors.text.primary }]}>Link doğrulanıyor...</Text>
-            </View>
-          </SafeAreaView>
+      <View style={styles.container}>
+        <LinearGradient colors={['#020617', '#111827', '#1e293b']} style={styles.gradient}>
+          <StatusBar barStyle="light-content" />
+          <View style={styles.verifyingContainer}>
+            <AnimatedBubbles />
+            <ActivityIndicator size="large" color="#0EA5E9" />
+            <Text style={styles.verifyingText}>Doğrulanıyor...</Text>
+          </View>
         </LinearGradient>
-      </KeyboardAvoidingView>
+      </View>
     );
   }
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-      style={styles.container}
-    >
-      <LinearGradient colors={[theme.colors.bg.secondary, theme.colors.bg.tertiary, theme.colors.bg.elevated]} style={styles.gradient}>
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['#020617', '#0f172a', '#1e293b']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradient}
+      >
         <StatusBar barStyle="light-content" />
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.header}>
-            <Pressable onPress={handleBackPress} style={styles.backButton}>
-              <View style={[styles.backButtonInner, { backgroundColor: theme.colors.surface.default + 'CC', borderColor: theme.colors.border.subtle }]}>
-                <Ionicons name="arrow-back" size={20} color={theme.colors.text.primary} />
-                <Text style={[styles.backText, { color: theme.colors.text.primary }]}>Geri</Text>
-              </View>
-            </Pressable>
-          </View>
+        <PremiumBackground color="#06B6D4" lineCount={8} circleCount={5} />
 
-          <View style={[styles.progressTrack, { backgroundColor: theme.colors.border.subtle }]}>
-            <Animated.View
-              style={[
-                styles.progressFill,
-                {
-                  width: progress.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['0%', '100%']
-                  })
-                }
-              ]}
-            >
-              <LinearGradient 
-                colors={[theme.colors.primary.main, theme.colors.accent.main]} 
-                start={{ x: 0, y: 0 }} 
-                end={{ x: 1, y: 0 }} 
-                style={styles.progressGradient} 
-              />
-            </Animated.View>
-          </View>
-
-          <ScrollView 
-            style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
+        <SafeAreaWrapper>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.keyboardAvoid}
           >
-            <View style={styles.contentContainer}>
+            <ScrollView
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Top Navigation */}
+              <View style={styles.navBar}>
+                <TouchableOpacity
+                  onPress={() => router.back()}
+                  style={styles.backButton}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="arrow-back" size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Enhanced Header Section */}
+              <View style={styles.header}>
+                {step === 1 && !isManualTokenMode ? (
+                  <View style={styles.brandContainer}>
+                    <BrandLogo style={{ top: 140 }} size={320} withSoftContainer={false} variant="large" />
+                  </View>
+                ) : (
+                  <Animated.View style={[styles.iconContainer, { transform: [{ scale: scaleAnim }] }]}>
+                    <LinearGradient
+                      colors={['rgba(6, 182, 212, 0.2)', 'rgba(59, 130, 246, 0.1)']}
+                      style={styles.iconGradient}
+                    >
+                      <Ionicons name={icon as any} size={32} color="#22d3ee" />
+                    </LinearGradient>
+                  </Animated.View>
+                )}
+
+                <Animated.Text style={[styles.title, { opacity: fadeAnim }]}>
+                  {title}
+                </Animated.Text>
+                <Animated.Text style={[styles.subtitle, { opacity: fadeAnim }]}>
+                  {subtitle}
+                </Animated.Text>
+              </View>
+
+              {/* Refined Form Section */}
               <Animated.View
                 style={[
-                  styles.headerContent,
+                  styles.formCard,
                   {
                     opacity: fadeAnim,
-                    transform: [{ translateY: slideAnim }]
+                    transform: [{ translateY: slideAnim }],
                   }
                 ]}
               >
-                <View style={styles.logoWrapper}>
-                  <BrandLogo size={200} withSoftContainer={false} variant="default" />
-                </View>
-                <View style={styles.titleContainer}>
-                  <Text style={[styles.title, { color: theme.colors.text.primary }]}>
-                    {step === 1 && 'Şifre Sıfırlama'}
-                    {step === 2 && 'Yeni Şifre Belirle'}
-                    {step === 3 && 'Şifre Güncellendi'}
-                  </Text>
-                  <Text style={[styles.subtitle, { color: theme.colors.text.tertiary }]}>
-                    {step === 1 && 'E-posta adresinize gönderilen token ile şifrenizi sıfırlayın'}
-                    {step === 2 && `Doğrulanan hesap: ${maskedEmail || '—'}`}
-                    {step === 3 && 'Yeni şifrenle giriş yapabilirsin'}
-                  </Text>
-                </View>
-              </Animated.View>
-
-              <Animated.View
-                style={[
-                  styles.form,
-                  {
-                    opacity: fadeAnim,
-                    transform: [{ translateY: slideAnim }]
-                  }
-                ]}
-              >
-              {step === 1 && (
-                <Card variant="elevated" padding="md" style={styles.mainCard}>
-                  <Input
-                    label="E-posta Adresi"
-                    placeholder="ornek@email.com"
-                    value={email}
-                    onChangeText={isFromSettings ? undefined : setEmail}
-                    editable={!isFromSettings}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoComplete="email"
-                    leftElement={
-                      <View style={styles.iconWrapper}>
-                        <Ionicons 
-                          name={isFromSettings ? "lock-closed-outline" : "mail-outline"} 
-                          size={20} 
-                          color={isFromSettings ? theme.colors.primary.main : theme.colors.text.tertiary} 
-                        />
-                      </View>
-                    }
-                    style={[
-                      styles.input,
-                      isFromSettings && styles.inputLocked
-                    ]}
-                    containerStyle={isFromSettings ? {
-                      backgroundColor: theme.colors.primary.main + '08',
-                      borderColor: theme.colors.primary.main + '30',
-                    } : undefined}
-                  />
-                  {isFromSettings && (
-                    <View style={[styles.lockedInfo, { backgroundColor: theme.colors.primary.main + '12', borderColor: theme.colors.primary.main + '30' }]}>
-                      <View style={[styles.lockedIconWrapper, { backgroundColor: theme.colors.primary.main + '20' }]}>
-                        <Ionicons name="shield-checkmark" size={14} color={theme.colors.primary.main} />
-                      </View>
-                      <Text style={[styles.lockedInfoText, { color: theme.colors.text.primary }]}>
-                        <Text style={{ fontWeight: '700', fontFamily: 'Poppins-Bold' }}>Korumalı:</Text> E-posta adresiniz ayarlardan alındı ve güvenli şekilde korunuyor
-                      </Text>
-                    </View>
-                  )}
-
-                  <View style={[styles.infoRow, { backgroundColor: theme.colors.primary.main + '14', borderColor: theme.colors.primary.main + '25' }]}>
-                    <Ionicons name="information-circle-outline" size={16} color={theme.colors.primary.main} />
-                    <Text style={[styles.infoRowText, { color: theme.colors.text.secondary }]}>Token 1 saat geçerlidir</Text>
-                  </View>
-
-                  <View style={styles.quickActions}>
-                    <Pressable 
-                      style={[styles.actionButton, { backgroundColor: theme.colors.primary.main + '1A', borderColor: theme.colors.primary.main + '40' }]}
-                      onPress={openGmailInbox}
-                    >
-                      <LinearGradient
-                        colors={[theme.colors.primary.main + '33', theme.colors.primary.light + '33']}
-                        style={styles.actionButtonGradient}
-                      >
-                        <Ionicons name="logo-google" size={18} color={theme.colors.primary.main} />
-                        <Text style={[styles.actionButtonText, { color: theme.colors.primary.main }]}>Gmail Aç</Text>
-                      </LinearGradient>
-                    </Pressable>
-                    <Pressable 
-                      style={[styles.actionButton, { backgroundColor: theme.colors.accent.main + '1A', borderColor: theme.colors.accent.main + '40' }]}
-                      onPress={() => setIsManualTokenMode((p) => !p)}
-                    >
-                      <LinearGradient
-                        colors={[theme.colors.accent.main + '33', theme.colors.accent.light + '33']}
-                        style={styles.actionButtonGradient}
-                      >
-                        <Ionicons name="key-outline" size={18} color={theme.colors.accent.main} />
-                        <Text style={[styles.actionButtonText, { color: theme.colors.accent.main }]}>Token Gir</Text>
-                      </LinearGradient>
-                    </Pressable>
-                  </View>
-
-                  {isManualTokenMode && (
-                    <Card variant="default" padding="sm" style={styles.manualTokenCard}>
+                {/* Step 1: Email + Code Entry */}
+                {step === 1 && (
+                  <>
+                    <View style={styles.inputGroup}>
                       <Input
-                        label="Token"
-                        placeholder="E-postadaki uzun kodu yapıştır"
-                        value={manualTokenValue}
-                        onChangeText={setManualTokenValue}
+                        label="E-posta Adresi"
+                        placeholder="ornek@email.com"
+                        value={email}
+                        onChangeText={!emailLocked ? setEmail : undefined}
+                        editable={!emailLocked}
+                        keyboardType="email-address"
                         autoCapitalize="none"
-                        style={styles.tokenInput}
+                        autoComplete="email"
+                        style={[
+                          styles.inputCustom,
+                          emailLocked && styles.inputLocked
+                        ]}
+                        leftElement={
+                          <View style={styles.inputIconContainer}>
+                            <Ionicons
+                              name={emailLocked ? "lock-closed" : "mail-outline"}
+                              size={18}
+                              color={emailLocked ? "#f59e0b" : "#94a3b8"}
+                            />
+                          </View>
+                        }
+                        rightElement={
+                          emailLocked ? (
+                            <View style={styles.lockedBadge}>
+                              <Ionicons name="shield-checkmark" size={14} color="#f59e0b" />
+                              <Text style={styles.lockedText}>Kilitli</Text>
+                            </View>
+                          ) : undefined
+                        }
                       />
-                      <Button
-                        title="Token'ı Doğrula"
-                        onPress={handleManualTokenVerify}
-                        disabled={!manualTokenValue.trim()}
-                        style={styles.submitButton}
-                      />
-                      {!!clipboardSuggestion && (
-                        <Pressable
-                          style={[styles.clipboardPill, { backgroundColor: theme.colors.primary.main + '1A', borderColor: theme.colors.primary.main + '33' }]}
-                          onPress={() => setManualTokenValue(clipboardSuggestion)}
-                        >
-                          <Ionicons name="clipboard-outline" size={14} color={theme.colors.primary.main} />
-                          <Text style={[styles.clipboardPillText, { color: theme.colors.primary.light }]}>Panodan yapıştır ({clipboardSuggestion.slice(0, 6)}...)</Text>
-                        </Pressable>
+                      {emailLocked && (
+                        <Text style={styles.lockedHint}>
+                          {isManualTokenMode
+                            ? `Doğrulama kodu ${email} adresine gönderildi`
+                            : 'Bu e-posta adresi güvenlik nedeniyle kilitlenmiştir'}
+                        </Text>
                       )}
-                    </Card>
-                  )}
-
-                  <Button
-                    title={resendTimer > 0 ? `Tekrar gönder (${resendTimer}s)` : 'Link Gönder'}
-                    onPress={requestResetLink}
-                    loading={loading}
-                    disabled={loading || resendTimer > 0 || !email.trim()}
-                    style={styles.submitButton}
-                  />
-                </Card>
-              )}
-
-              {step === 2 && (
-                <Card variant="elevated" padding="lg" style={styles.mainCard}>
-                  {tokenPreview && (
-                    <View style={[styles.tokenBadge, { backgroundColor: theme.colors.semantic.success + '1A', borderColor: theme.colors.semantic.success + '33' }]}>
-                      <Ionicons name="checkmark-circle-outline" size={18} color={theme.colors.semantic.success} />
-                      <Text style={[styles.tokenBadgeText, { color: theme.colors.semantic.success }]}>{tokenPreview}</Text>
                     </View>
-                  )}
 
-                  <Input
-                    label="Yeni Şifre"
-                    placeholder="En az 6 karakter"
-                    value={newPassword}
-                    onChangeText={setNewPassword}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    autoComplete="password-new"
-                    leftElement={
-                      <View style={styles.iconWrapper}>
-                        <Ionicons name="lock-closed-outline" size={20} color={theme.colors.text.tertiary} />
-                      </View>
-                    }
-                    rightElement={
-                      <Pressable onPress={() => setShowPassword((s) => !s)} style={styles.iconWrapper}>
-                        <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={theme.colors.text.tertiary} />
-                      </Pressable>
-                    }
-                    style={styles.input}
-                  />
-
-                  <Input
-                    label="Yeni Şifre (Tekrar)"
-                    placeholder="Şifrenizi tekrar girin"
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    autoComplete="password-new"
-                    leftElement={
-                      <View style={styles.iconWrapper}>
-                        <Ionicons name="checkmark-circle-outline" size={20} color={theme.colors.text.tertiary} />
-                      </View>
-                    }
-                    style={styles.input}
-                  />
-
-                  {confirmPassword.length > 0 && confirmPassword !== newPassword && (
-                    <Text style={[styles.mismatchText, { color: theme.colors.semantic.danger }]}>Şifreler eşleşmiyor</Text>
-                  )}
-
-                  {newPassword.length > 0 && (
-                    <View style={[styles.passwordStrength, { backgroundColor: theme.colors.surface.default, borderColor: theme.colors.border.subtle }]}>
-                      <View style={styles.passwordStrengthHeader}>
-                        <Text style={[styles.passwordStrengthLabel, { color: theme.colors.text.secondary }]}>Şifre gücü</Text>
-                        <Text style={[styles.passwordStrengthText, { color: pwColor }]}>{pwLabel}</Text>
-                      </View>
-                      <View style={styles.passwordMeter}>
-                        {[0, 1, 2, 3].map((i) => (
-                          <View
-                            key={i}
-                            style={[
-                              styles.passwordBar,
-                              {
-                                backgroundColor: i <= passwordScore - 1 ? pwColor : theme.colors.border.subtle
-                              }
-                            ]}
+                    {isManualTokenMode ? (
+                      <>
+                        <View style={styles.verificationCodeContainer}>
+                          <Text style={styles.verificationCodeLabel}>Doğrulama Kodu</Text>
+                          <VerificationCodeInput
+                            value={manualTokenValue}
+                            onChangeText={setManualTokenValue}
+                            length={6}
+                            loading={loading}
+                            autoFocus={true}
                           />
-                        ))}
-                      </View>
+                          <Text style={styles.verificationCodeHint}>
+                            E-postanıza gönderilen 6 haneli kodu girin
+                          </Text>
+                        </View>
+                        <Button
+                          title="Doğrula ve Devam Et"
+                          onPress={handleManualTokenVerify}
+                          loading={loading}
+                          style={styles.primaryButton}
+                        />
+
+                        {/* Resend Code Button */}
+                        <TouchableOpacity
+                          onPress={requestResetLink}
+                          disabled={resendTimer > 0 || loading}
+                          style={[
+                            styles.resendButton,
+                            (resendTimer > 0 || loading) && styles.resendButtonDisabled
+                          ]}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons
+                            name="refresh-outline"
+                            size={16}
+                            color={resendTimer > 0 || loading ? "#64748b" : "#0EA5E9"}
+                            style={{ marginRight: 6 }}
+                          />
+                          <Text style={[
+                            styles.resendButtonText,
+                            (resendTimer > 0 || loading) && styles.resendButtonTextDisabled
+                          ]}>
+                            {resendTimer > 0 ? `Tekrar Gönder (${resendTimer}s)` : 'Kodu Tekrar Gönder'}
+                          </Text>
+                        </TouchableOpacity>
+
+                        {/* Cancel/Back Button */}
+                        <View style={styles.cancelButtonContainer}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setIsManualTokenMode(false);
+                              setManualTokenValue('');
+                              // Only allow unlocking email if not from settings
+                              if (!params.email) {
+                                setEmailLocked(false);
+                              }
+                            }}
+                            style={styles.textButton}
+                            activeOpacity={0.7}
+                          >
+                            <Ionicons name="arrow-back-outline" size={16} color="#94a3b8" style={{ marginRight: 6 }} />
+                            <Text style={styles.textButtonText}>
+                              {params.email ? 'Geri' : 'E-postayı Değiştir'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          title={resendTimer > 0 ? `Tekrar Gönder (${resendTimer})` : loading ? 'Gönderiliyor...' : 'Doğrulama Kodu Gönder'}
+                          onPress={requestResetLink}
+                          loading={loading}
+                          disabled={resendTimer > 0}
+                          style={styles.primaryButton}
+                        />
+
+                        {/* Enhanced 'I have a code' Action Card */}
+                        <TouchableOpacity
+                          onPress={() => setIsManualTokenMode(true)}
+                          activeOpacity={0.9}
+                          style={styles.actionCard}
+                        >
+                          <View style={styles.actionCardIcon}>
+                            <Ionicons name="key-outline" size={20} color="#f59e0b" />
+                          </View>
+                          <View style={styles.actionCardContent}>
+                            <Text style={styles.actionCardTitle}>Doğrulama kodunuz var mı?</Text>
+                            <Text style={styles.actionCardSubtitle}>Manuel giriş yapmak için tıklayın</Text>
+                          </View>
+                          <Ionicons name="chevron-forward" size={16} color="#64748b" />
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </>
+                )}
+
+                {/* Step 2: New Password */}
+                {step === 2 && (
+                  <>
+                    <View style={styles.inputGroup}>
+                      <Input
+                        label="Yeni Şifre"
+                        placeholder="En az 6 karakter"
+                        value={newPassword}
+                        onChangeText={setNewPassword}
+                        secureTextEntry={!showPassword}
+                        autoCapitalize="none"
+                        style={styles.inputCustom}
+                        leftElement={
+                          <View style={styles.inputIconContainer}>
+                            <Ionicons name="lock-closed-outline" size={18} color="#94a3b8" />
+                          </View>
+                        }
+                        rightElement={
+                          <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ paddingHorizontal: 10 }}>
+                            <Ionicons
+                              name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                              size={18}
+                              color="#94a3b8"
+                            />
+                          </TouchableOpacity>
+                        }
+                      />
+                      {renderPasswordStrength()}
                     </View>
-                  )}
 
-                  <Button
-                    title="Şifreyi Sıfırla"
-                    onPress={async () => {
-                      const ok = await confirmReset();
-                      if (ok) setStep(3);
-                    }}
-                    loading={loading}
-                    disabled={
-                      !newPassword.trim() ||
-                      newPassword.length < 6 ||
-                      !confirmPassword.trim() ||
-                      newPassword !== confirmPassword ||
-                      loading
-                    }
-                    style={styles.submitButton}
-                  />
-                </Card>
-              )}
+                    <View style={styles.inputGroup}>
+                      <Input
+                        label="Şifre Tekrar"
+                        placeholder="Şifreyi onayla"
+                        value={confirmPassword}
+                        onChangeText={setConfirmPassword}
+                        secureTextEntry={!showPassword}
+                        autoCapitalize="none"
+                        style={styles.inputCustom}
+                        leftElement={
+                          <View style={styles.inputIconContainer}>
+                            <Ionicons name="shield-outline" size={18} color="#94a3b8" />
+                          </View>
+                        }
+                      />
+                    </View>
 
-              {step === 3 && (
-                <Card variant="elevated" padding="lg" style={styles.mainCard}>
-                  <View style={[styles.successIconBackground, { backgroundColor: theme.colors.semantic.success + '1A', borderColor: theme.colors.semantic.success + '33' }]}>
-                    <Ionicons name="checkmark-circle" size={56} color={theme.colors.semantic.success} />
+                    <Button
+                      title="Şifreyi Güncelle"
+                      onPress={confirmReset}
+                      loading={loading}
+                      style={styles.primaryButton}
+                    />
+                  </>
+                )}
+
+                {/* Step 3: Success */}
+                {step === 3 && (
+                  <View style={styles.successContainer}>
+                    <View style={styles.successIconBubble}>
+                      <Ionicons name="checkmark" size={40} color="#fff" />
+                    </View>
+                    <Text style={styles.successText}>Şifreniz başarıyla yenilendi</Text>
+                    <Text style={styles.successSubText}>Giriş sayfasına yönlendiriliyorsunuz...</Text>
+
+                    <Button
+                      title="Giriş Yap"
+                      onPress={() => router.replace('/auth/login')}
+                      style={styles.primaryButton}
+                    />
                   </View>
-                  <Button
-                    title="Girişe Dön"
-                    onPress={() => {
-                      setToken('');
-                      setNewPassword('');
-                      setEmail('');
-                      router.replace('/auth/login');
-                    }}
-                    style={styles.submitButton}
-                  />
-                </Card>
-              )}
+                )}
               </Animated.View>
-            </View>
-          </ScrollView>
-        </SafeAreaView>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaWrapper>
 
-        <Toast message={toast.message} type={toast.type} visible={toast.visible} onHide={hideToast} />
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          visible={toast.visible}
+          onHide={hideToast}
+        />
       </LinearGradient>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
+const SafeAreaWrapper = ({ children }: { children: React.ReactNode }) => {
+  const insets = require('react-native-safe-area-context').useSafeAreaInsets();
+  return <View style={{ flex: 1, paddingTop: insets.top }}>{children}</View>;
+};
+
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  gradient: { flex: 1, position: 'relative' },
-  safeArea: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 12 : 25,
-    paddingBottom: 4
-  },
-  backButton: { borderRadius: 12, overflow: 'hidden' },
-  backButtonInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    gap: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  backText: {
-    fontWeight: '700',
-    fontSize: 15,
-    letterSpacing: 0.3
-  },
-  progressTrack: {
-    height: 4,
-    marginHorizontal: 20,
-    marginBottom: 8,
-    borderRadius: 8,
-    overflow: 'hidden'
-  },
-  progressFill: { height: 4, borderRadius: 8 },
-  progressGradient: { flex: 1, height: 4, borderRadius: 8 },
-  scrollView: {
+  container: {
     flex: 1,
+    backgroundColor: '#020617',
+  },
+  gradient: {
+    flex: 1,
+  },
+  keyboardAvoid: {
+    flex: 1,
+  },
+  glowEffect: {
+    position: 'absolute',
+    top: -100,
+    left: -50,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: 'rgba(6, 182, 212, 0.08)',
+    transform: [{ scale: 1.5 }],
+  },
+  glowEffectBottom: {
+    position: 'absolute',
+    bottom: -50,
+    right: -50,
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    backgroundColor: 'rgba(59, 130, 246, 0.06)',
+    transform: [{ scale: 1.5 }],
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 20,
+    paddingHorizontal: 24,
+    marginTop: -200,
+    paddingBottom: 40,
   },
-  contentContainer: {
-    paddingTop: Platform.OS === 'ios' ? 12 : 8,
-    paddingHorizontal: 20,
-  },
-  headerContent: {
+  navBar: {
+    flexDirection: 'row',
+    marginTop: 10,
+    marginBottom: 10,
     alignItems: 'center',
-    width: '100%',
-    marginBottom: 8
   },
-  logoWrapper: {
+  backButton: {
+    width: 40,
+    top: 210,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     alignItems: 'center',
     justifyContent: 'center',
-    width: '100%',
-    marginBottom: 2
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
-  titleContainer: {
+  header: {
     alignItems: 'center',
-    width: '100%',
-    marginBottom: 2
+    marginBottom: 32,
+    marginTop: 10,
+  },
+  brandContainer: {
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  iconContainer: {
+    marginBottom: 24,
+  },
+  iconGradient: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   title: {
-    fontSize: 24,
-    fontWeight: '900',
-    marginBottom: 2,
-    letterSpacing: 0.3,
-    textAlign: 'center',
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#ffffff',
+    marginBottom: 8,
     fontFamily: 'Poppins-Bold',
+    letterSpacing: 0.5,
+    textAlign: 'center',
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: 14,
+    color: '#94a3b8',
     textAlign: 'center',
-    lineHeight: 16,
-    paddingHorizontal: 16,
-    fontWeight: '500',
     fontFamily: 'Poppins-Regular',
+    lineHeight: 20,
+    maxWidth: '85%',
   },
-  form: {
-    width: '100%',
-    marginTop: 2
+  formCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
-  mainCard: {
-    marginBottom: 0,
+  inputGroup: {
+    marginBottom: 16,
   },
-  input: { marginBottom: 8 },
-  iconWrapper: {
+  inputCustom: {
+    // Ensuring specific visual height and alignment for placeholders
+    textAlignVertical: 'center',
+    paddingTop: 0, // Reset default padding that might push placeholder
+    paddingBottom: 0,
+    justifyContent: 'center',
+    height: 52, // Explicit fixed height for consistency
+  },
+  inputIconContainer: {
     width: 24,
-    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  infoRow: {
+  primaryButton: {
+    marginTop: 12,
+    backgroundColor: '#0EA5E9',
+    height: 52,
+    borderRadius: 14,
+  },
+  actionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    padding: 16,
+    borderRadius: 16,
+    marginTop: 20,
     borderWidth: 1,
-    marginBottom: 10
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
-  infoRowText: {
+  actionCardIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  actionCardContent: {
     flex: 1,
+  },
+  actionCardTitle: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontFamily: 'Poppins-SemiBold',
+    marginBottom: 2,
+  },
+  actionCardSubtitle: {
+    color: '#94a3b8',
     fontSize: 12,
-    fontWeight: '500',
     fontFamily: 'Poppins-Regular',
   },
-  quickActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10
-  },
-  actionButton: {
-    flex: 1,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    overflow: 'hidden',
-  },
-  actionButtonGradient: {
-    flexDirection: 'row',
+  textButton: {
+    marginTop: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    padding: 10,
+    flexDirection: 'row',
   },
-  actionButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    fontFamily: 'Poppins-SemiBold',
+  cancelButtonContainer: {
+    alignItems: 'center',
+    marginTop: 8,
   },
-  manualTokenCard: {
-    marginTop: 6,
-    marginBottom: 10,
+  textButtonText: {
+    color: '#94a3b8',
+    fontSize: 14,
+    fontFamily: 'Poppins-Medium',
   },
-  tokenInput: { marginBottom: 8 },
-  clipboardPill: {
+  strengthContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-    marginTop: 8
-  },
-  clipboardPillText: {
-    fontSize: 12,
-    fontWeight: '600',
-    fontFamily: 'Poppins-SemiBold',
-  },
-  submitButton: { marginTop: 6, marginBottom: 0 },
-  tokenBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    alignSelf: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginBottom: 16
-  },
-  tokenBadgeText: {
-    fontSize: 12,
-    letterSpacing: 0.4,
-    fontWeight: '600',
-    fontFamily: 'Poppins-SemiBold',
-  },
-  passwordStrength: {
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 10,
-    marginBottom: 12
-  },
-  passwordStrengthHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between'
-  },
-  passwordStrengthLabel: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    fontFamily: 'Poppins-SemiBold',
-  },
-  passwordStrengthText: {
-    fontWeight: '700',
-    fontSize: 12.5,
-    fontFamily: 'Poppins-Bold',
-  },
-  passwordMeter: {
-    flexDirection: 'row',
-    gap: 6
-  },
-  passwordBar: {
-    flex: 1,
-    height: 6,
-    borderRadius: 3
-  },
-  mismatchText: {
-    fontSize: 12,
-    marginTop: -8,
+    justifyContent: 'space-between',
+    marginTop: 8,
     marginBottom: 8,
-    fontFamily: 'Poppins-Regular',
+    paddingHorizontal: 4,
   },
-  successIconBackground: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    alignSelf: 'center',
+  meterContainer: {
+    flexDirection: 'row',
+    flex: 1,
+    gap: 6,
+    marginRight: 15
+  },
+  meterBar: {
+    height: 4,
+    flex: 1,
+    borderRadius: 2,
+  },
+  strengthText: {
+    fontSize: 12,
+    fontFamily: 'Poppins-Medium',
+  },
+  successContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  successIconBubble: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#10b981',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 24,
-    borderWidth: 2,
   },
-  loadingContainer: {
+  successText: {
+    fontSize: 20,
+    fontFamily: 'Poppins-Bold',
+    color: '#fff',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  successSubText: {
+    fontSize: 14,
+    fontFamily: 'Poppins-Regular',
+    color: '#94a3b8',
+    marginTop: 8,
+    marginBottom: 32,
+    textAlign: 'center',
+  },
+  verifyingContainer: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 20
+    justifyContent: 'center'
   },
-  loadingIconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-  },
-  loadingIconGradient: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.2)'
-  },
-  loadingText: {
-    fontSize: 20,
-    fontWeight: '700',
-    fontFamily: 'Poppins-Bold',
+  verifyingText: {
+    fontSize: 16,
+    fontFamily: 'Poppins-Medium',
+    color: '#cbd5e1',
+    marginTop: 20,
   },
   inputLocked: {
-    opacity: 0.95
+    backgroundColor: 'rgba(245, 158, 11, 0.05)',
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    borderWidth: 2,
   },
-  lockedInfo: {
+  inputCustom: {
+    color: '#ffffff',
+  },
+  lockedBadge: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    marginTop: -4,
-    marginBottom: 16
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginRight: 8,
   },
-  lockedIconWrapper: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+  lockedText: {
+    fontSize: 11,
+    fontFamily: 'Poppins-SemiBold',
+    color: '#f59e0b',
+    letterSpacing: 0.5,
+  },
+  lockedHint: {
+    fontSize: 11,
+    fontFamily: 'Poppins-Regular',
+    color: '#94a3b8',
+    marginTop: 6,
+    marginLeft: 4,
+    fontStyle: 'italic',
+  },
+  resendButton: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 1
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: 'rgba(14, 165, 233, 0.1)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(14, 165, 233, 0.3)',
   },
-  lockedInfoText: {
-    flex: 1,
-    fontSize: 12.5,
-    fontWeight: '500',
+  resendButtonDisabled: {
+    backgroundColor: 'rgba(100, 116, 139, 0.05)',
+    borderColor: 'rgba(100, 116, 139, 0.2)',
+  },
+  resendButtonText: {
+    fontSize: 14,
     fontFamily: 'Poppins-Medium',
-    lineHeight: 18
-  }
+    color: '#0EA5E9',
+  },
+  resendButtonTextDisabled: {
+    color: '#64748b',
+  },
+  verificationCodeContainer: {
+    marginBottom: 20,
+  },
+  verificationCodeLabel: {
+    fontSize: 14,
+    fontFamily: 'Poppins-SemiBold',
+    color: '#cbd5e1',
+    marginBottom: 12,
+    letterSpacing: 0.3,
+  },
+  verificationCodeHint: {
+    fontSize: 12,
+    fontFamily: 'Poppins-Regular',
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginTop: 12,
+    fontStyle: 'italic',
+  },
 });

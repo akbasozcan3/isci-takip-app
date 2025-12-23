@@ -1,90 +1,187 @@
-import * as Haptics from 'expo-haptics';
-import { LinearGradient } from 'expo-linear-gradient';
-import React from 'react';
-import { Animated, ColorValue, Pressable, StyleProp, StyleSheet, Text, ViewStyle } from 'react-native';
-import { useTheme } from './theme/ThemeContext';
+/**
+ * Reusable Button Component
+ * Consistent button styling across the app
+ */
 
-interface Props {
-  title: string;
-  onPress?: () => void;
-  loading?: boolean;
-  disabled?: boolean;
-  style?: StyleProp<ViewStyle>;
-  variant?: 'primary' | 'secondary' | 'danger';
-  accessibilityLabel?: string;
-  accessibilityHint?: string;
+import React from 'react';
+import {
+    TouchableOpacity,
+    Text,
+    StyleSheet,
+    ActivityIndicator,
+    ViewStyle,
+    TextStyle,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { theme } from '../../constants/theme';
+
+interface ButtonProps {
+    variant?: 'primary' | 'secondary' | 'outline' | 'ghost';
+    size?: 'sm' | 'md' | 'lg';
+    onPress: () => void;
+    children: React.ReactNode;
+    disabled?: boolean;
+    loading?: boolean;
+    fullWidth?: boolean;
+    style?: ViewStyle;
+    textStyle?: TextStyle;
 }
 
-export const Button: React.FC<Props> = ({ title, onPress, loading, disabled, style, variant = 'primary', accessibilityLabel, accessibilityHint }) => {
-  const theme = useTheme();
-  const gradientColors: [ColorValue, ColorValue] =
-    variant === 'danger' ? theme.colors.gradient.danger as [ColorValue, ColorValue] :
-    variant === 'secondary' ? theme.colors.gradient.secondary as [ColorValue, ColorValue] :
-    theme.colors.gradient.primary as [ColorValue, ColorValue];
-  const textColor = '#fff';
-  const scaleAnim = React.useRef(new Animated.Value(1)).current;
-  const opacityAnim = React.useRef(new Animated.Value(1)).current;
+export const Button: React.FC<ButtonProps> = ({
+    variant = 'primary',
+    size = 'md',
+    onPress,
+    children,
+    disabled = false,
+    loading = false,
+    fullWidth = false,
+    style,
+    textStyle,
+}) => {
+    const getButtonStyles = () => {
+        const baseStyle: ViewStyle = {
+            borderRadius: theme.borderRadius.md,
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'row',
+        };
 
-  const handlePressIn = () => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, { toValue: 0.96, useNativeDriver: true, tension: 300, friction: 10 }),
-      Animated.timing(opacityAnim, { toValue: 0.9, duration: 100, useNativeDriver: true })
-    ]).start();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  };
+        // Size styles
+        const sizeStyles: Record<string, ViewStyle> = {
+            sm: {
+                paddingHorizontal: theme.spacing.md,
+                paddingVertical: theme.spacing.sm,
+                minHeight: 36,
+            },
+            md: {
+                paddingHorizontal: theme.spacing.lg,
+                paddingVertical: theme.spacing.md,
+                minHeight: 48,
+            },
+            lg: {
+                paddingHorizontal: theme.spacing.xl,
+                paddingVertical: theme.spacing.lg,
+                minHeight: 56,
+            },
+        };
 
-  const handlePressOut = () => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, tension: 300, friction: 10 }),
-      Animated.timing(opacityAnim, { toValue: 1, duration: 100, useNativeDriver: true })
-    ]).start();
-  };
+        // Variant styles
+        const variantStyles: Record<string, ViewStyle> = {
+            outline: {
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                borderColor: theme.colors.primary[500],
+            },
+            ghost: {
+                backgroundColor: 'transparent',
+            },
+        };
 
-  const handlePress = () => {
-    if (!disabled && !loading && onPress) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      onPress();
+        return [
+            baseStyle,
+            sizeStyles[size],
+            variantStyles[variant],
+            fullWidth && { width: '100%' },
+            disabled && { opacity: 0.5 },
+            style,
+        ];
+    };
+
+    const getTextStyles = () => {
+        const baseStyle: TextStyle = {
+            fontFamily: theme.typography.fontFamily.semiBold,
+            fontWeight: theme.typography.fontWeight.semiBold,
+        };
+
+        // Size styles
+        const sizeStyles: Record<string, TextStyle> = {
+            sm: {
+                fontSize: theme.typography.fontSize.sm,
+            },
+            md: {
+                fontSize: theme.typography.fontSize.base,
+            },
+            lg: {
+                fontSize: theme.typography.fontSize.lg,
+            },
+        };
+
+        // Variant styles
+        const variantStyles: Record<string, TextStyle> = {
+            primary: {
+                color: theme.colors.text.primary,
+            },
+            secondary: {
+                color: theme.colors.text.primary,
+            },
+            outline: {
+                color: theme.colors.primary[500],
+            },
+            ghost: {
+                color: theme.colors.primary[500],
+            },
+        };
+
+        return [
+            baseStyle,
+            sizeStyles[size],
+            variantStyles[variant],
+            disabled && { opacity: 0.7 },
+            textStyle,
+        ];
+    };
+
+    const getGradientColors = () => {
+        switch (variant) {
+            case 'primary':
+                return [theme.colors.primary[500], theme.colors.primary[600]];
+            case 'secondary':
+                return [theme.colors.secondary[500], theme.colors.secondary[600]];
+            default:
+                return ['transparent', 'transparent'];
+        }
+    };
+
+    const renderContent = () => (
+        <>
+            {loading && (
+                <ActivityIndicator
+                    color={variant === 'outline' || variant === 'ghost' ? theme.colors.primary[500] : theme.colors.text.primary}
+                    style={{ marginRight: theme.spacing.sm }}
+                />
+            )}
+            <Text style={getTextStyles()}>{children}</Text>
+        </>
+    );
+
+    if (variant === 'primary' || variant === 'secondary') {
+        return (
+            <TouchableOpacity
+                onPress={onPress}
+                disabled={disabled || loading}
+                activeOpacity={0.8}
+                style={getButtonStyles()}
+            >
+                <LinearGradient
+                    colors={getGradientColors()}
+                    style={[
+                        StyleSheet.absoluteFill,
+                        { borderRadius: theme.borderRadius.md },
+                    ]}
+                />
+                {renderContent()}
+            </TouchableOpacity>
+        );
     }
-  };
 
-  return (
-    <Pressable
-      onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      disabled={disabled || loading}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityHint={accessibilityHint}
-      style={[styles.pressable, (disabled || loading) && styles.disabled, style]}
-    >
-      <Animated.View style={{ transform: [{ scale: scaleAnim }], opacity: opacityAnim }}>
-        <LinearGradient colors={gradientColors} style={styles.gradient} start={[0,0]} end={[1,1]}>
-          <Text style={[styles.title, { color: textColor }]}>{loading ? 'Lütfen bekleyin...' : title}</Text>
-        </LinearGradient>
-      </Animated.View>
-    </Pressable>
-  );
+    return (
+        <TouchableOpacity
+            onPress={onPress}
+            disabled={disabled || loading}
+            activeOpacity={0.8}
+            style={getButtonStyles()}
+        >
+            {renderContent()}
+        </TouchableOpacity>
+    );
 };
-
-const styles = StyleSheet.create({
-  pressable: {
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  gradient: {
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    borderRadius: 12,
-  },
-  title: {
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  disabled: {
-    opacity: 0.6,
-  },
-});
-
-export default Button;

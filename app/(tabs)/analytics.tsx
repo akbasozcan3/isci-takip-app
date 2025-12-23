@@ -20,6 +20,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
 import { useToast } from '../../components/Toast';
+import { UnifiedHeader } from '../../components/UnifiedHeader';
+import { useProfile } from '../../contexts/ProfileContext';
 import { authFetch } from '../../utils/auth';
 
 const { width } = Dimensions.get('window');
@@ -93,7 +95,7 @@ interface AnalyticsData {
 export default function AnalyticsScreen() {
   const router = useRouter();
   const { showError } = useToast();
-  
+
   const [fontsLoaded] = useFonts({
     'Poppins-Black': require('../assets/Poppins-Black.ttf'),
     'Poppins-BlackItalic': require('../assets/Poppins-BlackItalic.ttf'),
@@ -122,8 +124,19 @@ export default function AnalyticsScreen() {
   const [analytics, setAnalytics] = React.useState<AnalyticsData | null>(null);
   const [selectedTab, setSelectedTab] = React.useState<'overview' | 'routes' | 'patterns' | 'quality'>('overview');
   const [userName, setUserName] = React.useState('Kullanıcı');
+  const { avatarUrl } = useProfile();
   const [, setPlanName] = React.useState('Free');
-  
+
+  const initials = React.useMemo(() => {
+    if (!userName || userName === 'Kullanıcı') return '';
+    return userName
+      .split(' ')
+      .map((s) => s[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+  }, [userName]);
+
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const slideAnim = React.useRef(new Animated.Value(20)).current;
 
@@ -158,19 +171,45 @@ export default function AnalyticsScreen() {
     return undefined;
   }, [deviceId, dateRange]);
 
+
   const loadUserData = React.useCallback(async () => {
     try {
       const storedUserId = await SecureStore.getItemAsync('workerId');
       const storedDeviceId = await SecureStore.getItemAsync('deviceId');
-      
+
+      // ÖNCE SecureStore'dan displayName oku (groups.tsx'deki gibi)
+      const storedDisplayName = await SecureStore.getItemAsync('displayName');
+      if (storedDisplayName) {
+        setUserName(storedDisplayName);
+      }
+
       if (storedUserId) {
         setUserId(storedUserId);
         setDeviceId(storedDeviceId || storedUserId);
+
+        // Load user profile to get displayName with better reliability
+        try {
+          const r = await authFetch('/users/me');
+          if (r.ok) {
+            const { user } = await r.json();
+            if (user) {
+              // displayName öncelikli, yoksa name, yoksa email kullan
+              const profileDisplayName = user.displayName || user.name || user.email || 'Kullanıcı';
+              setUserName(profileDisplayName);
+              // SecureStore'a da kaydet (index.tsx'deki gibi)
+              await SecureStore.setItemAsync('displayName', profileDisplayName);
+            }
+          }
+        } catch (e) {
+          console.error('[Analytics] Failed to load user profile:', e);
+        }
       } else {
         const newId = `user-${Platform.OS}-${Date.now()}`;
         await SecureStore.setItemAsync('workerId', newId);
         setUserId(newId);
         setDeviceId(newId);
+        // Default to Kullanıcı if we just created a local ID
+        setUserName('Kullanıcı');
       }
     } catch (error) {
       console.error('[Analytics] Load user data error:', error);
@@ -179,7 +218,7 @@ export default function AnalyticsScreen() {
 
   const loadAnalytics = React.useCallback(async () => {
     if (!deviceId) return;
-    
+
     try {
       setRefreshing(true);
       const params = new URLSearchParams({
@@ -192,17 +231,17 @@ export default function AnalyticsScreen() {
 
       const url = `/location/analytics/advanced?deviceId=${encodeURIComponent(deviceId)}&${params.toString()}`;
       const res = await authFetch(url);
-      
+
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         const errorMessage = errorData.error || errorData.message || `HTTP ${res.status}: ${res.statusText}`;
-        
+
         if (res.status === 429) {
           const retryAfter = errorData.retryAfter || 30;
           showError(`Çok fazla istek. ${retryAfter} saniye sonra tekrar deneyin.`);
           return;
         }
-        
+
         throw new Error(errorMessage);
       }
 
@@ -255,53 +294,79 @@ export default function AnalyticsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <StatusBar barStyle="light-content" />
-      
-      <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-        <LinearGradient colors={["#8b5cf6", "#6366f1"]} style={styles.header} start={[0, 0]} end={[1, 1]}>
-          <View style={styles.headerTop}>
-            <View style={styles.headerTextBlock}>
-              <Text style={styles.brandLabel}>BAVAXE PLATFORMU</Text>
-              <Text style={styles.headerTitle}>Gelişmiş Analitik</Text>
-              <Text style={styles.headerSubtitle}>Hoş Geldin, {userName}</Text>
-            </View>
-            <View style={styles.headerActions}>
-              <NetworkStatusIcon size={20} />
-            </View>
-          </View>
 
-          <View style={styles.dateRangeSelector}>
-            {(['7d', '30d', '90d', 'all'] as const).map((range) => (
-              <Pressable
-                key={range}
-                onPress={() => {
+      <UnifiedHeader
+        title="Analizler"
+        subtitle="Performans ve istatistiklerinizi görüntüleyin"
+        gradientColors={['#3411b0', '#6366f1']}
+        brandLabel="İSTATİSTİK"
+        profileName={userName}
+        avatarUrl={avatarUrl}
+        showProfile={true}
+        showNetwork={true}
+        actions={
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Pressable
+              onPress={() => router.push('/blog')}
+              style={({ pressed }) => [
+                styles.headerIconButton,
+                pressed && styles.headerIconButtonPressed
+              ]}
+            >
+              <Ionicons name="book-outline" size={20} color="#fff" />
+            </Pressable>
+            <Pressable
+              onPress={async () => {
+                try {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setDateRange(range);
-                }}
-                style={({ pressed }) => [
-                  styles.dateRangeButton,
-                  dateRange === range && styles.dateRangeButtonActive,
-                  pressed && styles.dateRangeButtonPressed
-                ]}
-              >
-                <Text style={[
-                  styles.dateRangeText,
-                  dateRange === range && styles.dateRangeTextActive
-                ]}>
-                  {range === '7d' ? '7 Gün' : range === '30d' ? '30 Gün' : range === '90d' ? '90 Gün' : 'Tümü'}
-                </Text>
-              </Pressable>
-            ))}
+                  // Share location functionality can be added here if needed
+                  router.push('/(tabs)/track');
+                } catch (e) {
+                  console.error('Navigation error:', e);
+                }
+              }}
+              style={({ pressed }) => [
+                styles.headerIconButton,
+                pressed && styles.headerIconButtonPressed
+              ]}
+            >
+              <Ionicons name="share-social-outline" size={20} color="#fff" />
+            </Pressable>
           </View>
-        </LinearGradient>
-      </Animated.View>
+        }
+      />
 
-      <ScrollView 
+      <View style={styles.dateRangeSelector}>
+        {(['7d', '30d', '90d', 'all'] as const).map((range) => (
+          <Pressable
+            key={range}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setDateRange(range);
+            }}
+            style={({ pressed }) => [
+              styles.dateRangeButton,
+              dateRange === range && styles.dateRangeButtonActive,
+              pressed && styles.dateRangeButtonPressed
+            ]}
+          >
+            <Text style={[
+              styles.dateRangeText,
+              dateRange === range && styles.dateRangeTextActive
+            ]}>
+              {range === '7d' ? '7 Gün' : range === '30d' ? '30 Gün' : range === '90d' ? '90 Gün' : 'Tümü'}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
+          <RefreshControl
+            refreshing={refreshing}
             onRefresh={onRefresh}
             tintColor="#8b5cf6"
             colors={['#8b5cf6']}
@@ -320,7 +385,7 @@ export default function AnalyticsScreen() {
             <Text style={styles.emptySubtitle}>
               Analitik için en az 2 geçerli konum kaydı gereklidir. Konum takibini başlatarak veri toplamaya başlayın.
             </Text>
-            <Pressable 
+            <Pressable
               onPress={() => router.push('/(tabs)/track')}
               style={({ pressed }) => [
                 styles.emptyButton,
@@ -359,10 +424,10 @@ export default function AnalyticsScreen() {
                     pressed && styles.tabButtonPressed
                   ]}
                 >
-                  <Ionicons 
-                    name={tab.icon as any} 
-                    size={16} 
-                    color={selectedTab === tab.id ? '#fff' : '#94a3b8'} 
+                  <Ionicons
+                    name={tab.icon as any}
+                    size={16}
+                    color={selectedTab === tab.id ? '#fff' : '#94a3b8'}
                     style={{ marginRight: 6 }}
                   />
                   <Text style={[
@@ -385,8 +450,8 @@ export default function AnalyticsScreen() {
                     >
                       <Ionicons name="location" size={28} color="#8b5cf6" />
                       <Text style={styles.statValue}>
-                        {analytics.summary.totalLocations > 0 
-                          ? analytics.summary.totalLocations.toLocaleString() 
+                        {analytics.summary.totalLocations > 0
+                          ? analytics.summary.totalLocations.toLocaleString()
                           : '0'}
                       </Text>
                       <Text style={styles.statLabel}>Geçerli Konum Kaydı</Text>
@@ -466,13 +531,13 @@ export default function AnalyticsScreen() {
                     <Text style={styles.sectionTitle}>Öngörüler</Text>
                     {analytics.insights.map((insight, idx) => (
                       <View key={idx} style={styles.insightCard}>
-                        <Ionicons 
-                          name={insight.icon as any} 
-                          size={24} 
+                        <Ionicons
+                          name={insight.icon as any}
+                          size={24}
                           color={
                             insight.type === 'warning' ? '#f59e0b' :
-                            insight.type === 'success' ? '#10b981' : '#8b5cf6'
-                          } 
+                              insight.type === 'success' ? '#10b981' : '#8b5cf6'
+                          }
                         />
                         <Text style={styles.insightText}>{insight.message}</Text>
                       </View>
@@ -488,10 +553,10 @@ export default function AnalyticsScreen() {
                         colors={['rgba(16, 185, 129, 0.2)', 'rgba(16, 185, 129, 0.1)']}
                         style={styles.predictionGradient}
                       >
-                        <Ionicons 
-                          name={analytics.predictions.trend === 'up' ? 'trending-up' : analytics.predictions.trend === 'down' ? 'trending-down' : 'remove'} 
-                          size={32} 
-                          color="#10b981" 
+                        <Ionicons
+                          name={analytics.predictions.trend === 'up' ? 'trending-up' : analytics.predictions.trend === 'down' ? 'trending-down' : 'remove'}
+                          size={32}
+                          color="#10b981"
                         />
                         <View style={styles.predictionContent}>
                           <Text style={styles.predictionLabel}>Tahmini Günlük Mesafe</Text>
@@ -553,7 +618,7 @@ export default function AnalyticsScreen() {
               <View style={styles.content}>
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Aktivite Paternleri</Text>
-                  
+
                   {analytics.activityPatterns.hourly && analytics.activityPatterns.hourly.length > 0 && (
                     <View style={styles.patternCard}>
                       <Text style={styles.patternTitle}>Saatlik Dağılım</Text>
@@ -642,19 +707,19 @@ export default function AnalyticsScreen() {
                     {analytics.speedZones.map((zone, idx) => (
                       <View key={idx} style={styles.zoneCard}>
                         <View style={styles.zoneHeader}>
-                          <Ionicons 
+                          <Ionicons
                             name={
                               zone.zone === 'parked' ? 'stop-circle' :
-                              zone.zone === 'walking' ? 'walk' :
-                              zone.zone === 'driving' ? 'car' : 'speedometer'
-                            } 
-                            size={24} 
-                            color="#8b5cf6" 
+                                zone.zone === 'walking' ? 'walk' :
+                                  zone.zone === 'driving' ? 'car' : 'speedometer'
+                            }
+                            size={24}
+                            color="#8b5cf6"
                           />
                           <Text style={styles.zoneName}>
                             {zone.zone === 'parked' ? 'Park Halinde' :
-                             zone.zone === 'walking' ? 'Yürüme' :
-                             zone.zone === 'driving' ? 'Sürüş' : zone.zone}
+                              zone.zone === 'walking' ? 'Yürüme' :
+                                zone.zone === 'driving' ? 'Sürüş' : zone.zone}
                           </Text>
                         </View>
                         <View style={styles.zoneStats}>
@@ -756,7 +821,10 @@ const styles = StyleSheet.create({
   },
   dateRangeSelector: {
     flexDirection: 'row',
-    gap: 8
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#0f172a',
   },
   dateRangeButton: {
     flex: 1,
@@ -782,6 +850,20 @@ const styles = StyleSheet.create({
   dateRangeTextActive: {
     color: '#fff'
   },
+  headerIconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  headerIconButtonPressed: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    transform: [{ scale: 0.95 }],
+  },
   scroll: {
     flex: 1
   },
@@ -792,7 +874,8 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60,
+    paddingVertical: 21,
+    top: -12,
     paddingHorizontal: 32
   },
   emptyIconWrapper: {

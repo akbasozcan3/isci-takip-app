@@ -19,11 +19,12 @@ function startupCheckMiddleware(req, res, next) {
 
   // In development mode, be more lenient - allow requests after 2 seconds
   const isDevelopment = process.env.NODE_ENV !== 'production';
-  const startupTime = Date.now() - (startupService.startTime || Date.now());
+  const startTime = startupService && startupService.startTime ? startupService.startTime : Date.now();
+  const startupTime = Date.now() - startTime;
   const maxStartupWait = isDevelopment ? 2000 : 10000; // 2s dev, 10s prod
 
   // Check if application is ready
-  const isReady = startupService.isReady();
+  const isReady = startupService && typeof startupService.isReady === 'function' ? startupService.isReady() : true;
   
   // If not ready but enough time has passed, allow requests anyway (graceful degradation)
   if (!isReady && startupTime > maxStartupWait) {
@@ -36,7 +37,7 @@ function startupCheckMiddleware(req, res, next) {
 
   // If not ready and not enough time passed, return 503
   if (!isReady) {
-    const status = startupService.getStatus();
+    const status = startupService && typeof startupService.getStatus === 'function' ? startupService.getStatus() : { initialized: false, summary: { successful: 0, total: 0 } };
     
     return res.status(503).json({
       success: false,
@@ -44,9 +45,9 @@ function startupCheckMiddleware(req, res, next) {
       code: 'SERVICE_STARTING',
       message: 'Application is still initializing. Please try again in a moment.',
       status: {
-        initialized: status.initialized,
-        servicesReady: status.summary.successful,
-        servicesTotal: status.summary.total,
+        initialized: status.initialized || false,
+        servicesReady: (status.summary && status.summary.successful) || 0,
+        servicesTotal: (status.summary && status.summary.total) || 0,
         startupTime: Math.round(startupTime / 1000) + 's',
       },
     });

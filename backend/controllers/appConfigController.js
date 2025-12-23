@@ -11,6 +11,40 @@ class AppConfigController {
       const brandColor = process.env.BRAND_COLOR_PRIMARY || '#06b6d4';
       const brandColorSecondary = process.env.BRAND_COLOR_SECONDARY || '#7c3aed';
 
+      const socialLinks = [
+        { platform: 'twitter', url: process.env.SOCIAL_TWITTER || 'https://twitter.com/bavaxe', label: 'Twitter' },
+        { platform: 'linkedin', url: process.env.SOCIAL_LINKEDIN || 'https://linkedin.com/company/bavaxe', label: 'LinkedIn' },
+        { platform: 'github', url: process.env.SOCIAL_GITHUB || 'https://github.com/bavaxe', label: 'GitHub' },
+        { platform: 'email', url: process.env.SOCIAL_EMAIL || 'mailto:support@bavaxe.com', label: 'Email' }
+      ];
+
+      const footerLinks = {
+        product: [
+          { label: 'Özellikler', href: '/(tabs)' },
+          { label: 'Fiyatlandırma', href: '/upgrade' },
+          { label: 'Güvenlik', href: '/blog?category=Güvenlik' },
+          { label: 'API', href: '/blog?category=Teknoloji' }
+        ],
+        company: [
+          { label: 'Hakkımızda', href: '/blog?category=Genel' },
+          { label: 'Blog', href: '/blog' },
+          { label: 'Kariyer', href: '/blog?category=İş Dünyası' },
+          { label: 'İletişim', href: '/(tabs)/profile' }
+        ],
+        resources: [
+          { label: 'Dokümantasyon', href: '/blog?category=Kullanım' },
+          { label: 'Rehberler', href: '/blog?category=Kullanım' },
+          { label: 'API Referansı', href: '/blog?category=Teknoloji' },
+          { label: 'Yardım Merkezi', href: '/help' }
+        ],
+        legal: [
+          { label: 'Gizlilik Politikası', href: '/blog?category=Gizlilik' },
+          { label: 'Kullanım Şartları', href: '/blog?category=Gizlilik' },
+          { label: 'KVKK', href: '/blog?category=Güvenlik' },
+          { label: 'Çerez Politikası', href: '/blog?category=Gizlilik' }
+        ]
+      };
+
       return res.json(ResponseFormatter.success({
         logo: {
           url: logoUrl,
@@ -21,7 +55,13 @@ class AppConfigController {
           name: brandName,
           primaryColor: brandColor,
           secondaryColor: brandColorSecondary,
-          splashBackground: '#0f172a'
+          splashBackground: '#0f172a',
+          tagline: process.env.BRAND_TAGLINE || 'Profesyonel GPS Takip ve İş Yönetim Platformu'
+        },
+        footer: {
+          socialLinks,
+          links: footerLinks,
+          copyright: `© ${new Date().getFullYear()} ${brandName}. Tüm hakları saklıdır.`
         },
         version: '1.0.0',
         features: {

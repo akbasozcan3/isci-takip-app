@@ -25,11 +25,20 @@ class ApiResponseCache {
    */
   generateCacheKey(req) {
     const path = req.path;
-    const query = req.query ? JSON.stringify(req.query) : '';
+    // Sanitize query string for header compatibility
+    let query = '';
+    if (req.query && Object.keys(req.query).length > 0) {
+      query = Object.entries(req.query)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, value]) => `${key}=${String(value).replace(/[^\w\-.]/g, '_')}`)
+        .join('&');
+    }
     const userId = req.user?.id || 'anonymous';
     const apiVersion = req.apiVersion || 'v1';
-    
-    return `api:${apiVersion}:${path}:${userId}:${query}`;
+
+    // Sanitize cache key for header use (remove invalid characters)
+    const cacheKey = `api:${apiVersion}:${path}:${userId}:${query}`;
+    return cacheKey.replace(/[^\w\-.:=&]/g, '_');
   }
 
   /**
@@ -108,33 +117,41 @@ class ApiResponseCache {
         // Try to get from cache
         const cached = advancedCacheService.get(cacheKey);
         if (cached) {
-          logger.debug('Cache hit', { path: req.path, cacheKey });
-          
-          // Set cache headers
+          if (logger && typeof logger.debug === 'function') {
+            logger.debug('Cache hit', { path: req.path, cacheKey });
+          }
+
+          // Set cache headers (sanitize cacheKey for header)
           res.setHeader('X-Cache', 'HIT');
-          res.setHeader('X-Cache-Key', cacheKey);
-          
+          const sanitizedKey = cacheKey.replace(/[^\w\-.:=&]/g, '_').substring(0, 200); // Limit length
+          res.setHeader('X-Cache-Key', sanitizedKey);
+
           return res.json(cached);
         }
 
         // Cache miss - intercept response
-        logger.debug('Cache miss', { path: req.path, cacheKey });
-        
+        if (logger && typeof logger.debug === 'function') {
+          logger.debug('Cache miss', { path: req.path, cacheKey });
+        }
+
         const originalJson = res.json.bind(res);
-        res.json = function(data) {
+        res.json = function (data) {
           // Only cache successful responses
           if (res.statusCode >= 200 && res.statusCode < 300) {
             try {
               advancedCacheService.set(cacheKey, data, cacheTTL);
-              logger.debug('Response cached', { path: req.path, cacheKey, ttl: cacheTTL });
+              if (logger && typeof logger.debug === 'function') {
+                logger.debug('Response cached', { path: req.path, cacheKey, ttl: cacheTTL });
+              }
             } catch (error) {
               logger.warn('Failed to cache response', { error: error.message, cacheKey });
             }
           }
 
-          // Set cache headers
+          // Set cache headers (sanitize cacheKey for header)
           res.setHeader('X-Cache', 'MISS');
-          res.setHeader('X-Cache-Key', cacheKey);
+          const sanitizedKey = cacheKey.replace(/[^\w\-.:=&]/g, '_').substring(0, 200); // Limit length
+          res.setHeader('X-Cache-Key', sanitizedKey);
           res.setHeader('X-Cache-TTL', Math.floor(cacheTTL / 1000));
 
           return originalJson(data);
@@ -142,7 +159,15 @@ class ApiResponseCache {
 
         next();
       } catch (error) {
-        logger.error('Cache middleware error', error);
+        try {
+          if (logger && typeof logger.error === 'function') {
+            logger.error('Cache middleware error', error);
+          } else {
+            console.error('[ApiResponseCache] Cache middleware error:', error);
+          }
+        } catch (logError) {
+          console.error('[ApiResponseCache] Cache middleware error:', error);
+        }
         next();
       }
     };

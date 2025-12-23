@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as SecureStore from 'expo-secure-store';
 import React from 'react';
 import {
@@ -16,9 +16,20 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { io, Socket } from 'socket.io-client';
 import { EmptyState } from '../../components/EmptyState';
+import { FullScreenMap } from '../../components/FullScreenMap';
 import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
-import { SkeletonList } from '../../components/SkeletonLoader';
 import { Toast, useToast } from '../../components/Toast';
+import { UnifiedHeader } from '../../components/UnifiedHeader';
+import { useProfile } from '../../contexts/ProfileContext';
+
+// Skeleton loader placeholder
+const SkeletonList = ({ count = 5 }: { count?: number }) => (
+  <View>
+    {[...Array(count)].map((_, i) => (
+      <View key={i} style={{ height: 80, backgroundColor: '#1e293b', marginBottom: 8, borderRadius: 12 }} />
+    ))}
+  </View>
+);
 import { getApiBase } from '../../utils/api';
 import { authFetch } from '../../utils/auth';
 
@@ -43,6 +54,7 @@ interface Group {
 export default function AdminScreen() {
   console.log('[Admin] Component rendering');
   const router = useRouter();
+  const { userName: profileName, avatarUrl } = useProfile();
   const { toast, showError, showSuccess, showWarning, showInfo, hideToast } = useToast();
   const [groups, setGroups] = React.useState<Group[]>([]);
   const [selectedGroup, setSelectedGroup] = React.useState<Group | null>(null);
@@ -50,22 +62,49 @@ export default function AdminScreen() {
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [userId, setUserId] = React.useState('');
-  const [profileName, setProfileName] = React.useState<string>('');
+  const [userName, setUserName] = React.useState<string>('');
+  const [showMap, setShowMap] = React.useState(false);
+  const [selectedMapGroup, setSelectedMapGroup] = React.useState<Group | null>(null);
   const socketRef = React.useRef<Socket | null>(null);
+
+  const initials = React.useMemo(() => {
+    if (!userName) return '';
+    return userName
+      .split(' ')
+      .map((s) => s[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+  }, [userName]);
 
   React.useEffect(() => {
     const loadUserId = async () => {
       try {
         const stored = await SecureStore.getItemAsync('workerId');
+
+        // ÖNCE SecureStore'dan displayName oku (groups.tsx'deki gibi)
+        const storedDisplayName = await SecureStore.getItemAsync('displayName');
+        if (storedDisplayName) {
+          setUserName(storedDisplayName);
+        }
+
         if (stored) {
           setUserId(stored);
           try {
             const r = await authFetch('/users/me');
             if (r.ok) {
               const { user } = await r.json();
-              if (user && (user.name || user.email)) setProfileName(user.name || user.email);
+              if (user) {
+                // displayName öncelikli, yoksa name, yoksa email kullan
+                const profileDisplayName = user.displayName || user.name || user.email || '';
+                if (profileDisplayName) {
+                  setUserName(profileDisplayName);
+                  // SecureStore'a da kaydet (index.tsx'deki gibi)
+                  await SecureStore.setItemAsync('displayName', profileDisplayName);
+                }
+              }
             }
-          } catch {}
+          } catch { }
         } else {
           setLoading(false);
         }
@@ -83,19 +122,28 @@ export default function AdminScreen() {
       setLoading(false);
       return;
     }
-    
+
     console.log('[Admin] Loading admin groups for user:', userId);
     setLoading(true);
     try {
-      // Timeout ekle (10 saniye)
+      // Timeout ekle (5 saniye - daha hızlı)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
       const { authFetch } = await import('../../utils/auth');
       const response = await authFetch(`/groups/user/${userId}/admin`);
       clearTimeout(timeoutId);
-      
+
       console.log('[Admin] Groups response status:', response.status);
+
+      // Handle 404 - endpoint doesn't exist yet
+      if (response.status === 404) {
+        console.log('[Admin] Admin groups endpoint not yet implemented, showing empty state');
+        setGroups([]);
+        setLoading(false);
+        return;
+      }
+
       if (response.ok) {
         const data = await response.json();
         const groupsData = data.data || data;
@@ -115,7 +163,7 @@ export default function AdminScreen() {
       console.error('[Admin] Error loading groups:', error);
       setGroups([]);
       setLoading(false);
-      
+
       // Network error handling
       const { isNetworkError } = await import('../../utils/network');
       if (isNetworkError(error)) {
@@ -123,7 +171,7 @@ export default function AdminScreen() {
         console.warn('[Admin] Network error detected, handled by NetworkGuard');
         return;
       }
-      
+
       // Other errors
       if (error?.response?.status === 429) {
         showWarning('Çok fazla istek. Lütfen birkaç saniye bekleyin.');
@@ -271,7 +319,7 @@ export default function AdminScreen() {
     if (!selectedGroup) {
       // cleanup existing socket if any
       if (socketRef.current) {
-        try { socketRef.current.off(); socketRef.current.disconnect(); } catch {}
+        try { socketRef.current.off(); socketRef.current.disconnect(); } catch { }
         socketRef.current = null;
       }
       return;
@@ -287,7 +335,7 @@ export default function AdminScreen() {
     socketRef.current = s;
 
     const join = () => {
-      try { s.emit('join_group', selectedGroup.id); } catch {}
+      try { s.emit('join_group', selectedGroup.id); } catch { }
     };
 
     s.on('connect', join);
@@ -303,7 +351,7 @@ export default function AdminScreen() {
           return [data.request, ...prev];
         });
         showInfo(`${data.request.displayName} yeni katılma isteği gönderdi`);
-      } catch {}
+      } catch { }
     });
 
     // If someone approves externally, remove from pending list
@@ -311,7 +359,7 @@ export default function AdminScreen() {
       try {
         if (ev.groupId !== selectedGroup.id) return;
         setRequests(prev => prev.filter(r => r.userId !== ev.userId));
-      } catch {}
+      } catch { }
     });
 
     s.on('connect_error', (e: any) => console.warn('[Admin] Socket connect error', e?.message || e));
@@ -328,11 +376,11 @@ export default function AdminScreen() {
           setRequests([]);
           showWarning('Grup silindi');
         }
-      } catch {}
+      } catch { }
     });
 
     return () => {
-      try { s.off(); s.disconnect(); } catch {}
+      try { s.off(); s.disconnect(); } catch { }
       socketRef.current = null;
     };
   }, [selectedGroup?.id]);
@@ -340,54 +388,18 @@ export default function AdminScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-      
-      <LinearGradient colors={["#06b6d4", "#0ea5a4"]} style={styles.header}>
-        <View style={styles.headerContent}>
-          <View>
-            <Text style={styles.title}>Admin Paneli</Text>
-            <Text style={styles.subtitle}>Grup başvurularını yönetin</Text>
-          </View>
-          <View style={styles.headerButtons}>
-            <NetworkStatusIcon size={22} />
-            {profileName ? (
-              <Pressable 
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.push('/(tabs)/profile');
-                }}
-                style={({ pressed }) => [
-                  styles.profileButton,
-                  pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }
-                ]}
-                android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true }}
-              >
-                <View style={[styles.profileBadge, { width: 48, height: 48, borderRadius: 24 }]}>
-                  <Text style={[styles.profileBadgeText, { fontSize: 18 }]}>
-                    {profileName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
-                  </Text>
-                </View>
-              </Pressable>
-            ) : (
-              <Pressable 
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.push('/(tabs)/profile');
-                }}
-                style={({ pressed }) => [
-                  styles.profileButton,
-                  pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }
-                ]}
-                android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true }}
-              >
-                <View style={[styles.profileButtonFallback, { width: 48, height: 48, borderRadius: 24 }]}>
-                  <Ionicons name="person" size={24} color="#fff" />
-                </View>
-              </Pressable>
-            )}
-          </View>
-        </View>
-      </LinearGradient>
-      <ScrollView 
+
+      <UnifiedHeader
+        title="Admin Panel"
+        subtitle="Grup yönetimi ve başvurular"
+        gradientColors={['#06b6d4', '#0891b2']}
+        brandLabel="ADMIN"
+        profileName={profileName || userName || 'Admin'}
+        avatarUrl={avatarUrl}
+        showProfile={true}
+        showNetwork={true}
+      />
+      <ScrollView
         style={styles.content}
         contentContainerStyle={{ paddingBottom: 120 }}
         refreshControl={
@@ -416,33 +428,92 @@ export default function AdminScreen() {
                 <Pressable
                   key={group.id}
                   onPress={() => setSelectedGroup(group)}
-                  style={[
-                    styles.groupCard,
-                    selectedGroup?.id === group.id && styles.groupCardSelected
+                  style={({ pressed }) => [
+                    styles.groupCardContainer,
+                    selectedGroup?.id === group.id && styles.groupCardSelectedContainer,
+                    pressed && { transform: [{ scale: 0.98 }] }
                   ]}
                 >
-                  <View style={styles.groupHeader}>
-                    <Text style={styles.groupName}>{group.name}</Text>
-                    <View style={styles.groupCode}>
-                      <Text style={styles.groupCodeText}>{group.code}</Text>
+                  <LinearGradient
+                    colors={selectedGroup?.id === group.id
+                      ? ['rgba(6, 182, 212, 0.15)', 'rgba(6, 182, 212, 0.05)']
+                      : ['rgba(30, 41, 59, 0.7)', 'rgba(15, 23, 42, 0.6)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.groupCardGradient}
+                  >
+                    <View style={styles.groupHeader}>
+                      <Text style={styles.groupName}>{group.name}</Text>
+                      <View style={styles.groupCode}>
+                        <Text style={styles.groupCodeText}>{group.code}</Text>
+                      </View>
                     </View>
-                  </View>
-                  <Text style={styles.groupAddress}>{group.address}</Text>
-                  <Text style={styles.groupMembers}>{group.memberCount} üye</Text>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
-                    <Pressable
-                      onPress={() => router.push({ pathname: '/group-map', params: { groupId: group.id, groupCode: group.code } } as any)}
-                      style={{ paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#06b6d4', borderRadius: 8 }}
-                    >
-                      <Text style={{ color: '#fff', fontWeight: '900' }}>Haritayı Aç</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => deleteGroup(group.id)}
-                      style={{ paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#dc2626', borderRadius: 8 }}
-                    >
-                      <Text style={{ color: '#fff', fontWeight: '900' }}>Grubu Sil</Text>
-                    </Pressable>
-                  </View>
+
+                    <View style={styles.groupInfoRow}>
+                      <Ionicons name="location-outline" size={14} color="#94a3b8" />
+                      <Text style={styles.groupAddress} numberOfLines={1}>{group.address}</Text>
+                    </View>
+
+                    <View style={styles.groupStatsRow}>
+                      <View style={styles.statBadge}>
+                        <Ionicons name="people" size={12} color="#fff" />
+                        <Text style={styles.statText}>{group.memberCount} Üye</Text>
+                      </View>
+                      <View style={[styles.statBadge, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
+                        <Ionicons name="shield-checkmark" size={12} color="#10b981" />
+                        <Text style={[styles.statText, { color: '#10b981' }]}>Admin</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.cardActions}>
+                      <Pressable
+                        onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          setSelectedMapGroup(group);
+                          setShowMap(true);
+                        }}
+                        style={({ pressed }) => [
+                          styles.actionButtonGlass,
+                          pressed && { backgroundColor: 'rgba(255,255,255,0.15)' }
+                        ]}
+                      >
+                        <Ionicons name="map" size={16} color="#0EA5E9" />
+                        <Text style={styles.actionButtonGlassText}>Harita</Text>
+                      </Pressable>
+
+                      <View style={styles.verticalDivider} />
+
+                      <Pressable
+                        onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          router.push({
+                            pathname: `/groups/${group.id}/chat`,
+                            params: { id: group.id, name: group.name }
+                          });
+                        }}
+                        style={({ pressed }) => [
+                          styles.actionButtonGlass,
+                          pressed && { backgroundColor: 'rgba(139, 92, 246, 0.15)' }
+                        ]}
+                      >
+                        <Ionicons name="chatbubbles" size={16} color="#8b5cf6" />
+                        <Text style={[styles.actionButtonGlassText, { color: '#8b5cf6' }]}>Mesaj</Text>
+                      </Pressable>
+
+                      <View style={styles.verticalDivider} />
+
+                      <Pressable
+                        onPress={() => deleteGroup(group.id)}
+                        style={({ pressed }) => [
+                          styles.actionButtonGlass,
+                          pressed && { backgroundColor: 'rgba(239, 68, 68, 0.15)' }
+                        ]}
+                      >
+                        <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                        <Text style={[styles.actionButtonGlassText, { color: '#ef4444' }]}>Sil</Text>
+                      </Pressable>
+                    </View>
+                  </LinearGradient>
                 </Pressable>
               ))}
             </View>
@@ -501,12 +572,22 @@ export default function AdminScreen() {
           </>
         )}
       </ScrollView>
-      
+
       <Toast
         message={toast.message}
         type={toast.type}
         visible={toast.visible}
         onHide={hideToast}
+      />
+
+      <FullScreenMap
+        visible={showMap}
+        onClose={() => {
+          setShowMap(false);
+          setSelectedMapGroup(null);
+        }}
+        groupId={selectedMapGroup?.id}
+        userId={userId}
       />
     </SafeAreaView>
   );
@@ -516,60 +597,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
-  },
-  header: {
-    paddingTop: StatusBar.currentHeight ?? 18,
-    paddingHorizontal: 18,
-    paddingBottom: 18,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
-  },
-  profileButton: {
-    borderRadius: 24,
-    overflow: 'hidden',
-  },
-  profileButtonFallback: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: '#fff',
-    letterSpacing: 0.5,
-    fontFamily: 'Poppins-Bold',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.9)',
-    marginTop: 2,
-    fontFamily: 'Poppins-SemiBold',
-  },
-  profileBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  profileBadgeText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontFamily: 'Poppins-Bold',
   },
   content: {
     flex: 1,
@@ -608,53 +635,161 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     fontFamily: 'Poppins-Bold',
   },
-  groupCard: {
-    backgroundColor: '#1e293b',
-    borderRadius: 22,
-    padding: 22,
-    marginBottom: 18,
-    borderWidth: 1.5,
-    borderColor: '#334155',
+  groupCardContainer: {
+    borderRadius: 24,
+    marginBottom: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 8,
   },
-  groupCardSelected: {
-    borderColor: '#06b6d4',
-    backgroundColor: '#1e3a52',
+  groupCardSelectedContainer: {
+    borderColor: '#0EA5E9',
+    shadowColor: '#0EA5E9',
+    shadowOpacity: 0.25,
+  },
+  groupCardGradient: {
+    padding: 20,
   },
   groupHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   groupName: {
     fontSize: 18,
     fontWeight: '900',
-    color: '#fff',
+    color: '#ffffff',
     flex: 1,
+    marginRight: 12,
     fontFamily: 'Poppins-Bold',
+    letterSpacing: 0.3,
   },
   groupCode: {
-    backgroundColor: '#e6f5f4',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    backgroundColor: 'rgba(6, 182, 212, 0.2)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(6, 182, 212, 0.4)',
   },
   groupCodeText: {
-    fontSize: 12,
-    fontWeight: 'bold',
+    fontSize: 13,
+    fontWeight: '900',
     color: '#06b6d4',
     fontFamily: 'Poppins-Bold',
+    letterSpacing: 0.5,
   },
   groupAddress: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#94a3b8',
     marginBottom: 4,
     fontFamily: 'Poppins-Regular',
+  },
+  groupInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 6,
+  },
+  groupStatsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  statBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  statText: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontFamily: 'Poppins-Medium',
+  },
+  cardActions: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: 16,
+    padding: 4,
+  },
+  actionButtonGlass: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    gap: 6,
+    borderRadius: 12,
+  },
+  verticalDivider: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginVertical: 4,
+  },
+  actionButtonGlassText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0EA5E9',
+    fontFamily: 'Poppins-SemiBold',
   },
   groupMembers: {
     fontSize: 12,
     color: '#64748b',
     fontFamily: 'Poppins-Regular',
+  },
+  mapButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: '#0EA5E9',
+    borderRadius: 12,
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  mapButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '900',
+    fontFamily: 'Poppins-Bold',
+  },
+  deleteButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: '#dc2626',
+    borderRadius: 12,
+    shadowColor: '#dc2626',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  deleteButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '900',
+    fontFamily: 'Poppins-Bold',
   },
   noRequests: {
     alignItems: 'center',
@@ -698,12 +833,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 14,
     borderWidth: 2,
-    borderColor: '#06b6d4',
+    borderColor: '#0EA5E9',
   },
   avatarText: {
     fontSize: 16,
     fontWeight: '900',
-    color: '#06b6d4',
+    color: '#0EA5E9',
     fontFamily: 'Poppins-Bold',
   },
   requestName: {

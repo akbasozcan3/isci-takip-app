@@ -47,7 +47,7 @@ export async function checkBackendReachability(): Promise<boolean> {
     const apiBase = getApiBase();
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 seconds timeout
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 seconds timeout (increased for slower connections)
     
     const response = await fetch(`${apiBase}/api/health`, {
       method: 'GET',

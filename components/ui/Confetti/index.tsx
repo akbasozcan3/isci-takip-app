@@ -20,19 +20,23 @@ export const Confetti: React.FC<ConfettiProps> = ({
 }) => {
   const theme = useTheme();
   const particles = React.useRef(
-    Array.from({ length: particleCount }, (_, i) => ({
+    Array.from({ length: particleCount }, (_, i) => {
+      const initialX = Math.random() * 100;
+      return {
       id: i,
-      x: new Animated.Value(Math.random() * 100),
+        x: new Animated.Value(initialX),
+        initialX,
       y: new Animated.Value(-10),
       rotation: new Animated.Value(0),
       opacity: new Animated.Value(1),
       color: [
-        theme.colors.primary.main,
-        theme.colors.semantic.success,
-        theme.colors.semantic.warning,
-        theme.colors.accent.main,
+          theme.colors.primary,
+          theme.colors.success,
+          theme.colors.warning,
+          theme.colors.accent,
       ][Math.floor(Math.random() * 4)],
-    }))
+      };
+    })
   ).current;
 
   React.useEffect(() => {
@@ -45,7 +49,7 @@ export const Confetti: React.FC<ConfettiProps> = ({
             useNativeDriver: false,
           }),
           Animated.timing(particle.x, {
-            toValue: particle.x._value + (Math.random() - 0.5) * 50,
+            toValue: particle.initialX + (Math.random() - 0.5) * 50,
             duration: duration + Math.random() * 1000,
             useNativeDriver: false,
           }),

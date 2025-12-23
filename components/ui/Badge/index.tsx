@@ -27,38 +27,38 @@ export const Badge: React.FC<BadgeProps> = ({
     switch (variant) {
       case 'success':
         return {
-          gradient: theme.colors.gradient.success,
-          solid: theme.colors.semantic.success,
+          gradient: theme.colors.gradients.success,
+          solid: theme.colors.success,
           text: '#ffffff',
         };
       case 'warning':
         return {
-          gradient: theme.colors.gradient.warning,
-          solid: theme.colors.semantic.warning,
+          gradient: theme.colors.gradients.warning,
+          solid: theme.colors.warning,
           text: '#ffffff',
         };
       case 'danger':
         return {
-          gradient: theme.colors.gradient.danger,
-          solid: theme.colors.semantic.danger,
+          gradient: theme.colors.gradients.error,
+          solid: theme.colors.error,
           text: '#ffffff',
         };
       case 'info':
         return {
-          gradient: theme.colors.gradient.primary,
-          solid: theme.colors.primary.main,
+          gradient: theme.colors.gradients.primary,
+          solid: theme.colors.primary,
           text: '#ffffff',
         };
       case 'secondary':
         return {
-          gradient: theme.colors.gradient.secondary,
-          solid: theme.colors.accent.main,
+          gradient: theme.colors.gradients.secondary,
+          solid: theme.colors.accent,
           text: '#ffffff',
         };
       default:
         return {
-          gradient: theme.colors.gradient.primary,
-          solid: theme.colors.primary.main,
+          gradient: theme.colors.gradients.primary,
+          solid: theme.colors.primary,
           text: '#ffffff',
         };
     }
@@ -129,7 +129,7 @@ export const Badge: React.FC<BadgeProps> = ({
   if (showGradient) {
     return (
       <LinearGradient
-        colors={variantStyles.gradient}
+        colors={variantStyles.gradient as [string, string, ...string[]]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={[
@@ -137,7 +137,7 @@ export const Badge: React.FC<BadgeProps> = ({
           {
             paddingVertical: sizeStyles.paddingVertical,
             paddingHorizontal: sizeStyles.paddingHorizontal,
-            borderRadius: theme.radius.full,
+            borderRadius: theme.borderRadius.full,
           },
         ]}
       >
@@ -154,7 +154,7 @@ export const Badge: React.FC<BadgeProps> = ({
           backgroundColor: variantStyles.solid,
           paddingVertical: sizeStyles.paddingVertical,
           paddingHorizontal: sizeStyles.paddingHorizontal,
-          borderRadius: theme.radius.full,
+          borderRadius: theme.borderRadius.full,
         },
       ]}
     >

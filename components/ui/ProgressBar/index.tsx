@@ -50,7 +50,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
         styles.container,
         {
           height,
-          backgroundColor: backgroundColor || theme.colors.surface.elevated,
+          backgroundColor: backgroundColor || theme.colors.surfaceElevated,
           borderRadius: height / 2,
         },
         style,
@@ -62,7 +62,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
           {
             width,
             height,
-            backgroundColor: color || theme.colors.primary.main,
+            backgroundColor: color || theme.colors.primary,
             borderRadius: height / 2,
           },
         ]}

@@ -19,21 +19,13 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error): State {
-    console.error('[ErrorBoundary] Error caught:', error);
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('[ErrorBoundary] Component stack:', errorInfo.componentStack);
-    console.error('[ErrorBoundary] Error details:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    });
   }
 
   handleReset = () => {
-    console.log('[ErrorBoundary] Resetting error state');
     this.setState({ hasError: false, error: null });
   };
 
@@ -148,7 +140,7 @@ const styles = StyleSheet.create({
   },
   button: {
     flexDirection: 'row',
-    backgroundColor: '#06b6d4',
+    backgroundColor: '#0EA5E9',
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 12,
@@ -156,7 +148,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 12,
     width: '100%',
-    shadowColor: '#06b6d4',
+    shadowColor: '#0EA5E9',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -173,7 +165,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   secondaryButtonText: {
-    color: '#06b6d4',
+    color: '#0EA5E9',
     fontSize: 14,
     fontWeight: '700',
   },

@@ -12,7 +12,7 @@ export const SectionHeader: React.FC<Props> = ({ title, right, style }) => {
   const theme = useTheme();
   return (
     <View style={[styles.row, style]}>
-      <Text style={[styles.title, { color: theme.colors.text.primary }]}>{title}</Text>
+      <Text style={[styles.title, { color: theme.colors.text }]}>{title}</Text>
       {right ? <View>{right}</View> : null}
     </View>
   );
@@ -28,6 +28,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: '900',
+    fontFamily: 'Poppins-Bold',
   },
 });
 

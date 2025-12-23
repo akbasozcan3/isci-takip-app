@@ -50,7 +50,7 @@ export const HeroVideo: React.FC<HeroVideoProps> = ({
                 style={[
                   styles.title,
                   {
-                    color: theme.colors.text.primary,
+                    color: theme.colors.text,
                   },
                 ]}
               >
@@ -62,7 +62,7 @@ export const HeroVideo: React.FC<HeroVideoProps> = ({
                 style={[
                   styles.subtitle,
                   {
-                    color: theme.colors.text.secondary,
+                    color: theme.colors.textSecondary,
                   },
                 ]}
               >

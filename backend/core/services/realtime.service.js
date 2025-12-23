@@ -3,7 +3,25 @@
  * Enterprise-level WebSocket and real-time communication management
  */
 
-const { logger } = require('../utils/logger');
+let logger;
+try {
+  logger = require('../utils/logger');
+  if (!logger || typeof logger.info !== 'function') {
+    logger = {
+      info: (...args) => console.log('[RealtimeService]', ...args),
+      warn: (...args) => console.warn('[RealtimeService]', ...args),
+      error: (...args) => console.error('[RealtimeService]', ...args),
+      debug: (...args) => console.log('[RealtimeService]', ...args),
+    };
+  }
+} catch (err) {
+  logger = {
+    info: (...args) => console.log('[RealtimeService]', ...args),
+    warn: (...args) => console.warn('[RealtimeService]', ...args),
+    error: (...args) => console.error('[RealtimeService]', ...args),
+    debug: (...args) => console.log('[RealtimeService]', ...args),
+  };
+}
 
 class RealtimeService {
   constructor() {
@@ -48,11 +66,45 @@ class RealtimeService {
       this.setupMiddleware();
       this.setupEventHandlers();
       
-      logger.info(`Real-time service initialized - transports: ${this.io.opts.transports.join(', ')}, pingTimeout: ${this.io.opts.pingTimeout}ms`);
+      if (logger && typeof logger.info === 'function') {
+        logger.info(`Real-time service initialized - transports: ${this.io.opts.transports.join(', ')}, pingTimeout: ${this.io.opts.pingTimeout}ms`);
+      } else {
+        console.log('[RealtimeService] Real-time service initialized');
+      }
 
       return this.io;
     } catch (error) {
-      logger.error(`Failed to initialize realtime service: ${error.message || error}`);
+      const errorMsg = error?.message || String(error) || 'Unknown error';
+      if (logger && typeof logger.error === 'function') {
+        logger.error(`Failed to initialize realtime service: ${errorMsg}`);
+      } else {
+        console.error(`[RealtimeService] Failed to initialize: ${errorMsg}`);
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Initialize with existing Socket.IO instance
+   */
+  initializeWithIO(io) {
+    try {
+      this.io = io;
+      this.setupMiddleware();
+      this.setupEventHandlers();
+      if (logger && typeof logger.info === 'function') {
+        logger.info('Real-time service initialized with existing Socket.IO instance');
+      } else {
+        console.log('[RealtimeService] Real-time service initialized with existing Socket.IO instance');
+      }
+      return this.io;
+    } catch (error) {
+      const errorMsg = error?.message || String(error) || 'Unknown error';
+      if (logger && typeof logger.error === 'function') {
+        logger.error(`Failed to initialize realtime service with IO: ${errorMsg}`);
+      } else {
+        console.error(`[RealtimeService] Failed to initialize with IO: ${errorMsg}`);
+      }
       return null;
     }
   }
@@ -76,7 +128,12 @@ class RealtimeService {
         socket.userEmail = decoded.email;
         next();
       } catch (error) {
-        logger.warn(`Socket authentication failed: ${error.message || error}`);
+        const errorMsg = error?.message || String(error) || 'Unknown error';
+        if (logger && typeof logger.warn === 'function') {
+          logger.warn(`Socket authentication failed: ${errorMsg}`);
+        } else {
+          console.warn(`[RealtimeService] Socket authentication failed: ${errorMsg}`);
+        }
         next(new Error('Invalid token'));
       }
     });
@@ -139,7 +196,9 @@ class RealtimeService {
       this.connectionStats.peakConnections = this.connectionStats.activeConnections;
     }
 
-    logger.info(`Socket connected - userId: ${userId}, socketId: ${socketId}, activeConnections: ${this.connectionStats.activeConnections}`);
+    if (logger && typeof logger.info === 'function') {
+      logger.info(`Socket connected - userId: ${userId}, socketId: ${socketId}, activeConnections: ${this.connectionStats.activeConnections}`);
+    }
 
     // Send queued messages
     this.deliverQueuedMessages(userId, socket);
@@ -183,7 +242,9 @@ class RealtimeService {
       socketId: socket.id,
     });
 
-    logger.debug('User joined room', { userId: socket.userId, roomId });
+    if (logger && typeof logger.debug === 'function') {
+      logger.debug('User joined room', { userId: socket.userId, roomId });
+    }
   }
 
   /**
@@ -206,7 +267,9 @@ class RealtimeService {
       socketId: socket.id,
     });
 
-    logger.debug('User left room', { userId: socket.userId, roomId });
+    if (logger && typeof logger.debug === 'function') {
+      logger.debug('User left room', { userId: socket.userId, roomId });
+    }
   }
 
   /**
@@ -237,7 +300,9 @@ class RealtimeService {
     });
 
     this.connectionStats.messagesReceived++;
-    logger.debug('Location update', { userId, roomCount: userRooms.length });
+    if (logger && typeof logger.debug === 'function') {
+      logger.debug('Location update', { userId, roomCount: userRooms.length });
+    }
   }
 
   /**
@@ -262,7 +327,9 @@ class RealtimeService {
     });
 
     this.connectionStats.messagesSent++;
-    logger.debug('Group message', { userId, roomId });
+    if (logger && typeof logger.debug === 'function') {
+      logger.debug('Group message', { userId, roomId });
+    }
   }
 
   /**
@@ -304,7 +371,9 @@ class RealtimeService {
     this.socketUsers.delete(socketId);
     this.connectionStats.activeConnections--;
 
-    logger.info(`Socket disconnected - userId: ${userId}, socketId: ${socketId}, activeConnections: ${this.connectionStats.activeConnections}`);
+    if (logger && typeof logger.info === 'function') {
+      logger.info(`Socket disconnected - userId: ${userId}, socketId: ${socketId}, activeConnections: ${this.connectionStats.activeConnections}`);
+    }
   }
 
   /**
@@ -317,7 +386,9 @@ class RealtimeService {
         socket.emit(message.event, message.data);
       });
       this.messageQueue.delete(userId);
-      logger.debug('Delivered queued messages', { userId, count: messages.length });
+      if (logger && typeof logger.debug === 'function') {
+        logger.debug('Delivered queued messages', { userId, count: messages.length });
+      }
     }
   }
 

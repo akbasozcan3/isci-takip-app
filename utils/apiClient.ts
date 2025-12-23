@@ -88,7 +88,7 @@ class ApiClient {
   private getCachedResponse<T>(cacheKey: string): T | null {
     const cached = this.requestCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
-      return cached.data;
+      return cached.data as T;
     }
     if (cached) {
       this.requestCache.delete(cacheKey);

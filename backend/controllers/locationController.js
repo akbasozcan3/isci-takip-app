@@ -274,7 +274,7 @@ function checkGroupAccess(userId, groupId, requireAdmin = false) {
     throw createError('Grup bulunamadı', 404, 'GROUP_NOT_FOUND', { groupId });
   }
   
-  const members = db.getMembers(groupId);
+  const members = db.getMembers(groupId) || [];
   const member = members.find(m => m.userId === userId);
   
   if (!member) {
@@ -714,7 +714,9 @@ class LocationController {
     try {
       const { deviceId } = req.params;
       if (!deviceId) {
-        return res.status(400).json({ error: 'Device ID required' });
+        return res.status(400).json(
+          ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID')
+        );
       }
 
       const limit = Math.max(1, Math.min(2000, parseInt(req.query.limit || '100', 10)));
@@ -739,7 +741,9 @@ class LocationController {
       return res.json(recent);
     } catch (error) {
       console.error('Get recent locations error:', error);
-      return res.status(500).json({ error: 'Failed to get recent locations' });
+      return res.status(500).json(
+        ResponseFormatter.error('Failed to get recent locations', 'LOCATION_FETCH_ERROR')
+      );
     }
   }
 
@@ -818,7 +822,9 @@ class LocationController {
       return res.json({ devices });
     } catch (error) {
       console.error('Get all devices error:', error);
-      return res.status(500).json({ error: 'Failed to get devices' });
+      return res.status(500).json(
+        ResponseFormatter.error('Failed to get devices', 'DEVICE_FETCH_ERROR')
+      );
     }
   }
 
@@ -842,7 +848,9 @@ class LocationController {
       });
     } catch (error) {
       console.error('Get latest locations error:', error);
-      return res.status(500).json({ error: 'Failed to get latest locations' });
+      return res.status(500).json(
+        ResponseFormatter.error('Failed to get latest locations', 'LOCATION_FETCH_ERROR')
+      );
     }
   }
 
@@ -852,7 +860,9 @@ class LocationController {
       const { deviceId } = req.params;
       
       if (!deviceId) {
-        return res.status(400).json({ error: 'Device ID required' });
+        return res.status(400).json(
+          ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID')
+        );
       }
 
       delete db.data.store[deviceId];
@@ -872,7 +882,9 @@ class LocationController {
       });
     } catch (error) {
       console.error('Delete location data error:', error);
-      return res.status(500).json({ error: 'Failed to delete location data' });
+      return res.status(500).json(
+        ResponseFormatter.error('Failed to delete location data', 'LOCATION_DELETE_ERROR')
+      );
     }
   }
 
@@ -934,7 +946,9 @@ class LocationController {
       });
     } catch (error) {
       console.error('Get active devices error:', error);
-      return res.status(500).json({ error: 'Failed to get active devices' });
+      return res.status(500).json(
+        ResponseFormatter.error('Failed to get active devices', 'DEVICE_FETCH_ERROR')
+      );
     }
   }
 
@@ -943,7 +957,9 @@ class LocationController {
       const { deviceId } = req.params;
       
       if (!deviceId) {
-        return res.status(400).json({ error: 'Device ID required' });
+        return res.status(400).json(
+          ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID')
+        );
       }
 
       const stats = locationService.getLocationStats(deviceId);
@@ -987,7 +1003,9 @@ class LocationController {
       const { minDistance = 5 } = req.query;
       
       if (!deviceId) {
-        return res.status(400).json({ error: 'Device ID required' });
+        return res.status(400).json(
+          ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID')
+        );
       }
 
       const locations = db.getStore(deviceId);
@@ -1021,7 +1039,9 @@ class LocationController {
       const { centerLat, centerLng, radiusMeters } = req.query;
       
       if (!deviceId || !centerLat || !centerLng || !radiusMeters) {
-        return res.status(400).json({ error: 'Missing required parameters' });
+        return res.status(400).json(
+          ResponseFormatter.error('Missing required parameters', 'MISSING_PARAMS')
+        );
       }
 
       const locations = db.getStore(deviceId);
@@ -1061,7 +1081,9 @@ class LocationController {
       const { deviceId } = req.params;
       
       if (!deviceId) {
-        return res.status(400).json({ error: 'Device ID required' });
+        return res.status(400).json(
+          ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID')
+        );
       }
 
       const user = db.findUserById(deviceId);
@@ -1093,7 +1115,9 @@ class LocationController {
     try {
       const { deviceId } = req.params;
       if (!deviceId) {
-        return res.status(400).json({ error: 'Device ID required' });
+        return res.status(400).json(
+          ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID')
+        );
       }
 
       const userId = getUserIdFromToken(req);
@@ -1137,7 +1161,9 @@ class LocationController {
       const { startTime, endTime } = req.query;
       
       if (!deviceId) {
-        return res.status(400).json({ error: 'Device ID required' });
+        return res.status(400).json(
+          ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID')
+        );
       }
 
       const userId = getUserIdFromToken(req);
@@ -1177,7 +1203,9 @@ class LocationController {
     try {
       const { deviceId } = req.params;
       if (!deviceId) {
-        return res.status(400).json({ error: 'Device ID required' });
+        return res.status(400).json(
+          ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID')
+        );
       }
 
       const quality = locationAnalytics.getLocationQuality(deviceId);
@@ -1206,7 +1234,9 @@ class LocationController {
       const { lookbackMinutes = 5 } = req.query;
       
       if (!deviceId) {
-        return res.status(400).json({ error: 'Device ID required' });
+        return res.status(400).json(
+          ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID')
+        );
       }
 
       const userId = getUserIdFromToken(req);
@@ -1441,7 +1471,7 @@ class LocationController {
       const dailyCounts = { 'Pazartesi': 0, 'Salı': 0, 'Çarşamba': 0, 'Perşembe': 0, 'Cuma': 0, 'Cumartesi': 0, 'Pazar': 0 };
       const dayNames = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
 
-      validFilteredLocations.forEach(loc => {
+      (Array.isArray(validFilteredLocations) ? validFilteredLocations : []).forEach(loc => {
         if (loc && loc.timestamp) {
           const date = new Date(loc.timestamp);
           activeDaysSet.add(date.toISOString().split('T')[0]);
@@ -1453,10 +1483,12 @@ class LocationController {
       const activeDays = activeDaysSet.size;
       const averageDailyDistance = activeDays > 0 ? totalDistance / activeDays : 0;
       const mostActiveHour = hourlyCounts.indexOf(Math.max(...hourlyCounts));
-      const mostActiveDay = Object.entries(dailyCounts).reduce((a, b) => dailyCounts[a[0]] > dailyCounts[b[0]] ? a : b)[0];
+      const dailyEntries = Object.entries(dailyCounts || {});
+      const mostActiveDay = dailyEntries.length > 0 ? dailyEntries.reduce((a, b) => dailyCounts[a[0]] > dailyCounts[b[0]] ? a : b)[0] : null;
 
-      const speedZones = speedZonesData.zones || {};
-      const topSpeedZone = Object.entries(speedZones).reduce((a, b) => speedZones[a[0]] > speedZones[b[0]] ? a : b)[0] || 'parked';
+      const speedZones = speedZonesData?.zones || {};
+      const speedEntries = Object.entries(speedZones);
+      const topSpeedZone = speedEntries.length > 0 ? speedEntries.reduce((a, b) => speedZones[a[0]] > speedZones[b[0]] ? a : b)[0] : 'parked';
 
       const validCount = validFilteredLocations.length;
       
@@ -1590,8 +1622,8 @@ class LocationController {
         };
       }
 
-      const speedZonesFormatted = Object.entries(speedZones).map(([zone, count]) => {
-        const total = Object.values(speedZones).reduce((a, b) => a + b, 0);
+      const speedZonesFormatted = Object.entries(speedZones || {}).map(([zone, count]) => {
+        const total = Object.values(speedZones || {}).reduce((a, b) => (a || 0) + (b || 0), 0);
         const percentage = total > 0 ? (count / total) * 100 : 0;
         const distance = percentage * totalDistance / 100;
         const duration = percentage * totalTime / 100;
@@ -1834,7 +1866,7 @@ class LocationController {
           return res.status(403).json({ error: 'Bu grup için yetkiniz yok' });
         }
 
-        const memberUserIds = members.map(m => m.userId);
+        const memberUserIds = Array.isArray(members) ? members.map(m => m.userId) : [];
         searchUsers = Object.values(db.data.users || {}).filter(u => memberUserIds.includes(u.id));
       } else {
         if (locationLimits.queryOptimization) {
@@ -2022,8 +2054,8 @@ class LocationController {
         if (!group) {
           return res.status(404).json({ error: 'Grup bulunamadı' });
         }
-        const members = db.getMembers(groupId);
-        const isMember = members.some(m => m.userId === userId);
+        const members = db.getMembers(groupId) || [];
+        const isMember = Array.isArray(members) && members.some(m => m.userId === userId);
         if (!isMember) {
           return res.status(403).json({ error: 'Bu grup için yetkiniz yok' });
         }
@@ -3830,8 +3862,8 @@ class LocationController {
       if (deviceId !== userId) {
         const group = groupId ? db.getGroupById(groupId) : null;
         if (group) {
-          const members = db.getMembers(groupId);
-          const isMember = members.some(m => m.userId === userId);
+          const members = db.getMembers(groupId) || [];
+          const isMember = Array.isArray(members) && members.some(m => m.userId === userId);
           if (!isMember) {
             throw createError('Bu grup için yetkiniz yok', 403, 'GROUP_ACCESS_DENIED');
           }
@@ -4263,10 +4295,11 @@ class LocationController {
         }
       }
 
-      const members = db.getMembers(groupId);
+      const members = db.getMembers(groupId) || [];
       const vehicles = [];
 
-      for (const member of members) {
+      for (const member of (Array.isArray(members) ? members : [])) {
+        if (!member || !member.userId) continue;
         const locations = db.getStore(member.userId);
         if (locations && locations.length >= 2) {
           const detection = this.detectVehicleUsage(locations);

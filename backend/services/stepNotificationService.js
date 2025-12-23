@@ -6,7 +6,7 @@
 const notificationService = require('./notificationService');
 const db = require('../config/database');
 const activityLogService = require('./activityLogService');
-const logger = require('../core/utils/logger');
+const { logger } = require('../core/utils/logger');
 
 class StepNotificationService {
   /**
@@ -73,8 +73,12 @@ class StepNotificationService {
       };
 
       logger.info(`[StepNotificationService] 📤 Sending start notification to user ${userId}`);
+      logger.info(`[StepNotificationService] 📋 Payload:`, JSON.stringify(notificationPayload, null, 2));
+      logger.info(`[StepNotificationService] 🔍 Player ID: ${playerId || 'NOT SET'}`);
 
       const result = await notificationService.send(userId, notificationPayload, ['database', 'onesignal']);
+      
+      logger.info(`[StepNotificationService] 📊 Notification service result:`, JSON.stringify(result, null, 2));
       
       const onesignalResult = result.find(r => r.channel === 'onesignal');
       const databaseResult = result.find(r => r.channel === 'database');
@@ -83,6 +87,18 @@ class StepNotificationService {
         logger.info(`[StepNotificationService] ✅ OneSignal notification sent to user ${userId}`);
       } else {
         logger.warn(`[StepNotificationService] ⚠️ OneSignal notification failed: ${onesignalResult?.error || 'Unknown error'}`);
+        if (onesignalResult) {
+          logger.warn(`[StepNotificationService] ⚠️ OneSignal error details:`, JSON.stringify(onesignalResult, null, 2));
+        }
+      }
+      
+      if (databaseResult?.success) {
+        logger.info(`[StepNotificationService] ✅ Database notification saved for user ${userId}`);
+      } else {
+        logger.warn(`[StepNotificationService] ⚠️ Database notification failed: ${databaseResult?.error || 'Unknown error'}`);
+        if (databaseResult) {
+          logger.warn(`[StepNotificationService] ⚠️ Database error details:`, JSON.stringify(databaseResult, null, 2));
+        }
       }
 
       // Log activity
@@ -91,13 +107,20 @@ class StepNotificationService {
         playerId: playerId || null
       });
 
+      // result zaten bir array, channels property'si yok
+      // Bu yüzden direkt result'ı channels olarak döndürüyoruz
       return {
         success: onesignalResult?.success || databaseResult?.success || false,
-        channels: result
+        channels: result // result zaten array, channels property'si değil
       };
     } catch (error) {
       logger.error(`[StepNotificationService] ❌ Start notification error:`, error);
-      return { success: false, error: error.message };
+      // Hata durumunda da channels array'i döndür (boş olsa bile)
+      return { 
+        success: false, 
+        error: error.message,
+        channels: [] // Hata durumunda boş array döndür
+      };
     }
   }
 

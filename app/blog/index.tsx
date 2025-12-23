@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Image,
   Platform,
@@ -18,6 +19,7 @@ import {
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+// Footer removed to prevent horizontal scroll
 import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
 import { getApiBase } from '../../utils/api';
 
@@ -51,8 +53,12 @@ export default function BlogScreen(): React.JSX.Element {
   const [selectedCategory, setSelectedCategory] = useState('Tümü');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [featuredArticles, setFeaturedArticles] = useState<Article[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [readingProgress, setReadingProgress] = useState(0);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
+  const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     fetchArticles(currentPage, searchQuery, selectedCategory);
@@ -83,6 +89,7 @@ export default function BlogScreen(): React.JSX.Element {
 
   const fetchArticles = async (page = 1, search = '', category = '') => {
     try {
+      setLoading(true);
       const params = new URLSearchParams({
         page: page.toString(),
         limit: '12',
@@ -90,21 +97,51 @@ export default function BlogScreen(): React.JSX.Element {
       });
       if (search) params.append('search', search);
       if (category && category !== 'Tümü') params.append('category', category);
-      
-      const response = await fetch(`${getApiBase()}/api/articles?${params.toString()}`);
-      const data = await response.json();
-      
-      if (data.articles && Array.isArray(data.articles)) {
-        setArticles(data.articles);
-        setTotalPages(data.pagination?.totalPages || 1);
-        setCurrentPage(data.pagination?.currentPage || 1);
-      } else if (Array.isArray(data)) {
-        setArticles(data);
+
+      // Fetch featured articles separately
+      const [articlesRes, featuredRes] = await Promise.all([
+        fetch(`${getApiBase()}/api/articles?${params.toString()}`),
+        fetch(`${getApiBase()}/api/articles/featured`)
+      ]);
+
+      let data: any = {};
+      try {
+        const text = await articlesRes.text();
+        data = text ? JSON.parse(text) : {};
+      } catch (parseError) {
+        console.error('[Blog] Articles parse error:', parseError);
+        setLoading(false);
+        return;
+      }
+
+      const articlesArray = data.data?.articles || data.articles || (Array.isArray(data) ? data : []);
+
+      if (Array.isArray(articlesArray) && articlesArray.length > 0) {
+        setArticles(articlesArray);
+        setTotalPages(data.data?.pagination?.totalPages || data.pagination?.totalPages || 1);
+        setCurrentPage(data.data?.pagination?.currentPage || data.pagination?.currentPage || 1);
+      } else {
+        setArticles([]);
         setTotalPages(1);
         setCurrentPage(1);
       }
+
+      if (featuredRes.ok) {
+        try {
+          const featuredText = await featuredRes.text();
+          const featuredData = featuredText ? JSON.parse(featuredText) : {};
+          const featuredArray = featuredData.data?.articles || featuredData.articles || [];
+          if (Array.isArray(featuredArray) && featuredArray.length > 0) {
+            setFeaturedArticles(featuredArray.slice(0, 3));
+          }
+        } catch (parseError) {
+          console.warn('[Blog] Featured articles parse error:', parseError);
+        }
+      }
     } catch (error) {
       console.error('Error fetching articles:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -116,14 +153,39 @@ export default function BlogScreen(): React.JSX.Element {
   }, [searchQuery, selectedCategory]);
 
   const openArticle = async (article: Article) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => { });
     try {
-      const response = await fetch(`${getApiBase()}/api/articles/${article.id}?trackView=true`);
-      const fullArticle = await response.json();
-      setSelectedArticle(fullArticle);
-    } catch (error) {
-      console.error('Error fetching article:', error);
-    setSelectedArticle(article);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const response = await fetch(`${getApiBase()}/api/articles/${article.id}?trackView=true`, {
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        setSelectedArticle(article);
+        return;
+      }
+
+      let fullArticle: any = {};
+      try {
+        const text = await response.text();
+        fullArticle = text ? JSON.parse(text) : {};
+      } catch (parseError) {
+        console.error('[Blog] Article parse error:', parseError);
+        setSelectedArticle(article);
+        return;
+      }
+
+      const articleData = fullArticle.data || fullArticle;
+      setSelectedArticle(articleData);
+    } catch (error: any) {
+      if (error.name !== 'AbortError') {
+        console.error('[Blog] Error fetching article:', error);
+      }
+      setSelectedArticle(article);
     }
   };
 
@@ -139,7 +201,7 @@ export default function BlogScreen(): React.JSX.Element {
   };
 
   const closeArticle = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
     try {
       router.back();
     } catch (e) {
@@ -147,37 +209,40 @@ export default function BlogScreen(): React.JSX.Element {
     }
   };
 
-  // Filter articles
   const filteredArticles = useMemo(() => {
-    let filtered = articles;
+    if (!Array.isArray(articles)) return [];
 
-    // Category filter
+    let filtered = articles.filter(a => a);
+
     if (selectedCategory !== 'Tümü') {
-      filtered = filtered.filter(article => 
-        article.category === selectedCategory
+      filtered = filtered.filter(article =>
+        article && article.category === selectedCategory
       );
     }
 
-    // Search filter
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(article =>
-        article.title.toLowerCase().includes(query) ||
-        article.excerpt.toLowerCase().includes(query) ||
-        article.tags?.some(tag => tag.toLowerCase().includes(query))
-      );
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(article => {
+        if (!article) return false;
+        const titleMatch = article.title?.toLowerCase().includes(query);
+        const excerptMatch = article.excerpt?.toLowerCase().includes(query);
+        const tagsMatch = Array.isArray(article.tags) &&
+          article.tags.some(tag => tag && typeof tag === 'string' && tag.toLowerCase().includes(query));
+        return titleMatch || excerptMatch || tagsMatch;
+      });
     }
 
     return filtered.sort((a, b) => {
-      const dateA = new Date(a.createdAt || a.updatedAt).getTime();
-      const dateB = new Date(b.createdAt || b.updatedAt).getTime();
-      return dateB - dateA; // Newest first
+      if (!a || !b) return 0;
+      const dateA = new Date(a.createdAt || a.updatedAt || 0).getTime();
+      const dateB = new Date(b.createdAt || b.updatedAt || 0).getTime();
+      return dateB - dateA;
     });
   }, [articles, selectedCategory, searchQuery]);
 
   const getCategoryColor = (category?: string) => {
     const colors: Record<string, string> = {
-      'Genel': '#06b6d4',
+      'Genel': '#0EA5E9',
       'Teknoloji': '#7c3aed',
       'İş Dünyası': '#10b981',
       'Güvenlik': '#ef4444',
@@ -238,7 +303,7 @@ export default function BlogScreen(): React.JSX.Element {
           <View key={`list-${elements.length}`} style={styles.listContainer}>
             {listItems.map((item, idx) => (
               <View key={idx} style={styles.listItem}>
-                <Ionicons name="ellipse" size={6} color="#06b6d4" style={styles.listBullet} />
+                <Ionicons name="ellipse" size={6} color="#0EA5E9" style={styles.listBullet} />
                 <Text style={styles.listItemText}>{item.trim()}</Text>
               </View>
             ))}
@@ -312,9 +377,28 @@ export default function BlogScreen(): React.JSX.Element {
   // Article detail view
   if (selectedArticle) {
     const categoryColor = getCategoryColor(selectedArticle.category);
+
+    const handleScroll = (event: any) => {
+      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      const scrollPercentage = (contentOffset.y / (contentSize.height - layoutMeasurement.height)) * 100;
+      setReadingProgress(Math.min(Math.max(scrollPercentage, 0), 100));
+    };
+
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        {/* Reading Progress Bar */}
+        <View style={styles.progressBarContainer}>
+          <Animated.View
+            style={[
+              styles.progressBar,
+              {
+                width: `${readingProgress}%`,
+                backgroundColor: categoryColor
+              }
+            ]}
+          />
+        </View>
         <LinearGradient colors={['#0a0f1a', '#1a1f2e', '#2a2f3e']} style={styles.articleContainer}>
           {/* Article Header */}
           <View style={styles.articleHeader}>
@@ -327,15 +411,21 @@ export default function BlogScreen(): React.JSX.Element {
                 {selectedArticle.category || 'Genel'}
               </Text>
             </View>
-            <Pressable 
+            <Pressable
               style={styles.shareButton}
               onPress={() => shareArticle(selectedArticle)}
             >
-              <Ionicons name="share-outline" size={20} color="#06b6d4" />
+              <Ionicons name="share-outline" size={20} color="#0EA5E9" />
             </Pressable>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.articleContent}>
+          <ScrollView
+            ref={scrollViewRef}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.articleContent}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+          >
             <View style={styles.brandBadge}>
               <Text style={styles.brandBadgeText}>Bavaxe Bilgi Merkezi</Text>
             </View>
@@ -343,27 +433,35 @@ export default function BlogScreen(): React.JSX.Element {
             {/* Hero Image */}
             {selectedArticle.hero && (
               <View style={styles.heroImageContainer}>
-                <Image 
+                <Image
                   source={
-                    selectedArticle.hero === '../../app/blog/image/ChatGPT Image 9 Ara 2025 10_08_14.png'
-                      ? require('./image/ChatGPT Image 9 Ara 2025 10_08_14.png')
-                      : typeof selectedArticle.hero === 'string'
-                      ? { uri: selectedArticle.hero }
-                      : selectedArticle.hero
-                  } 
+                    selectedArticle.hero && selectedArticle.hero.includes('blog-hero-1')
+                      ? require('./image/BAVAXE blog başlığı ve tasarımı.png')
+                      : selectedArticle.hero && selectedArticle.hero.includes('blog-hero-2')
+                        ? require('./image/ChatGPT Image 9 Ara 2025 10_08_14.png')
+                        : typeof selectedArticle.hero === 'string' && selectedArticle.hero.startsWith('http')
+                          ? { uri: selectedArticle.hero }
+                          : typeof selectedArticle.hero === 'string'
+                            ? { uri: selectedArticle.hero }
+                            : selectedArticle.hero
+                  }
                   style={styles.heroImage}
                   resizeMode="cover"
+                />
+                <LinearGradient
+                  colors={['transparent', 'rgba(10, 15, 26, 0.8)']}
+                  style={styles.heroImageGradient}
                 />
               </View>
             )}
 
             {/* Title */}
             <Text style={styles.articleTitle}>{selectedArticle.title}</Text>
-            
+
             {/* Meta */}
             <View style={styles.articleMeta}>
               <View style={styles.metaItem}>
-                <Ionicons name="calendar-outline" size={18} color="#06b6d4" />
+                <Ionicons name="calendar-outline" size={18} color="#0EA5E9" />
                 <Text style={styles.metaText}>
                   {new Date(selectedArticle.createdAt || selectedArticle.updatedAt).toLocaleDateString('tr-TR', {
                     year: 'numeric',
@@ -373,14 +471,14 @@ export default function BlogScreen(): React.JSX.Element {
                 </Text>
               </View>
               <View style={styles.metaItem}>
-                <Ionicons name="time-outline" size={18} color="#06b6d4" />
+                <Ionicons name="time-outline" size={18} color="#0EA5E9" />
                 <Text style={styles.metaText}>{selectedArticle.readTime || '5 dk'}</Text>
               </View>
               {selectedArticle.views !== undefined && (
-              <View style={styles.metaItem}>
-                <Ionicons name="eye-outline" size={18} color="#06b6d4" />
+                <View style={styles.metaItem}>
+                  <Ionicons name="eye-outline" size={18} color="#0EA5E9" />
                   <Text style={styles.metaText}>{selectedArticle.views} görüntülenme</Text>
-              </View>
+                </View>
               )}
             </View>
 
@@ -434,7 +532,7 @@ export default function BlogScreen(): React.JSX.Element {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      
+
       {/* Header */}
       <LinearGradient colors={['#0a0f1a', '#1a1f2e']} style={styles.header}>
         <View style={styles.headerContent}>
@@ -442,8 +540,10 @@ export default function BlogScreen(): React.JSX.Element {
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </Pressable>
           <View style={styles.headerTextContainer}>
-            <Text style={styles.headerTitle}>Bavaxe Makaleleri</Text>
-            <Text style={styles.headerSubtitle}>Bavaxe bilgi merkezinde {filteredArticles.length} içerik</Text>
+            <Text style={styles.headerTitle}>Bavaxe Bilgi Merkezi</Text>
+            <Text style={styles.headerSubtitle}>
+              {loading ? 'Yükleniyor...' : `${filteredArticles.length} makale`}
+            </Text>
           </View>
           <View style={{ marginLeft: 12 }}>
             <NetworkStatusIcon size={20} />
@@ -468,8 +568,8 @@ export default function BlogScreen(): React.JSX.Element {
         </View>
 
         {/* Category Filter */}
-        <ScrollView 
-          horizontal 
+        <ScrollView
+          horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.categoryContainer}
         >
@@ -497,13 +597,68 @@ export default function BlogScreen(): React.JSX.Element {
         </ScrollView>
       </LinearGradient>
 
+      {/* Featured Articles Section */}
+      {featuredArticles.length > 0 && selectedCategory === 'Tümü' && !searchQuery && (
+        <View style={styles.featuredSection}>
+          <View style={styles.featuredHeader}>
+            <Ionicons name="star" size={24} color="#f59e0b" />
+            <Text style={styles.featuredTitle}>Öne Çıkan Makaleler</Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.featuredContainer}
+          >
+            {featuredArticles.map((article) => {
+              const categoryColor = getCategoryColor(article.category);
+              return (
+                <Pressable
+                  key={article.id}
+                  onPress={() => openArticle(article)}
+                  style={({ pressed }) => [
+                    styles.featuredCard,
+                    pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }
+                  ]}
+                >
+                  <LinearGradient
+                    colors={[categoryColor + '20', categoryColor + '10']}
+                    style={styles.featuredGradient}
+                  >
+                    <View style={styles.featuredBadge}>
+                      <Ionicons name="star" size={16} color="#f59e0b" />
+                      <Text style={styles.featuredBadgeText}>Öne Çıkan</Text>
+                    </View>
+                    <View style={[styles.featuredIcon, { backgroundColor: categoryColor + '30' }]}>
+                      <Ionicons name={getCategoryIcon(article.category) as any} size={28} color={categoryColor} />
+                    </View>
+                    <Text style={styles.featuredCardTitle} numberOfLines={2}>{article.title}</Text>
+                    <Text style={styles.featuredCardExcerpt} numberOfLines={2}>{article.excerpt}</Text>
+                    <View style={styles.featuredCardFooter}>
+                      <Text style={[styles.featuredCardTime, { color: categoryColor }]}>
+                        {article.readTime || '5 dk'}
+                      </Text>
+                      <Ionicons name="arrow-forward-circle" size={20} color={categoryColor} />
+                    </View>
+                  </LinearGradient>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
       {/* Articles List */}
       <Animated.ScrollView
         style={[styles.scrollView, { opacity: fadeAnim }]}
         contentContainerStyle={styles.articlesContainer}
         showsVerticalScrollIndicator={false}
       >
-        {filteredArticles.length === 0 ? (
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#0EA5E9" />
+            <Text style={styles.loadingText}>Makaleler yükleniyor...</Text>
+          </View>
+        ) : filteredArticles.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="document-text-outline" size={64} color="#64748b" />
             <Text style={styles.emptyStateText}>Makale bulunamadı</Text>
@@ -527,6 +682,27 @@ export default function BlogScreen(): React.JSX.Element {
                   colors={['rgba(15, 31, 53, 0.95)', 'rgba(11, 18, 32, 0.98)']}
                   style={styles.cardGradient}
                 >
+                  {article.hero && (
+                    <View style={styles.cardHeroContainer}>
+                      <Image
+                        source={
+                          article.hero && article.hero.includes('blog-hero-1')
+                            ? require('./image/BAVAXE blog başlığı ve tasarımı.png')
+                            : article.hero && article.hero.includes('blog-hero-2')
+                              ? require('./image/ChatGPT Image 9 Ara 2025 10_08_14.png')
+                              : typeof article.hero === 'string' && article.hero.startsWith('http')
+                                ? { uri: article.hero }
+                                : typeof article.hero === 'string'
+                                  ? { uri: article.hero }
+                                  : article.hero
+                        }
+                        style={styles.cardHeroImage}
+                        resizeMode="cover"
+                      />
+                      <View style={styles.cardHeroOverlay} />
+                    </View>
+                  )}
+
                   <View style={styles.cardHeader}>
                     <View style={[styles.cardIcon, { backgroundColor: `${categoryColor}20` }]}>
                       <Ionicons name={getCategoryIcon(article.category) as any} size={24} color={categoryColor} />
@@ -574,6 +750,7 @@ export default function BlogScreen(): React.JSX.Element {
             );
           })
         )}
+
       </Animated.ScrollView>
 
       {/* Pagination */}
@@ -588,13 +765,13 @@ export default function BlogScreen(): React.JSX.Element {
             disabled={currentPage === 1}
             style={[styles.paginationButton, currentPage === 1 && styles.paginationButtonDisabled]}
           >
-            <Ionicons name="chevron-back" size={20} color={currentPage === 1 ? "#64748b" : "#06b6d4"} />
+            <Ionicons name="chevron-back" size={20} color={currentPage === 1 ? "#64748b" : "#0EA5E9"} />
           </Pressable>
-          
+
           <Text style={styles.paginationText}>
             Sayfa {currentPage} / {totalPages}
           </Text>
-          
+
           <Pressable
             onPress={() => {
               if (currentPage < totalPages) {
@@ -604,7 +781,7 @@ export default function BlogScreen(): React.JSX.Element {
             disabled={currentPage === totalPages}
             style={[styles.paginationButton, currentPage === totalPages && styles.paginationButtonDisabled]}
           >
-            <Ionicons name="chevron-forward" size={20} color={currentPage === totalPages ? "#64748b" : "#06b6d4"} />
+            <Ionicons name="chevron-forward" size={20} color={currentPage === totalPages ? "#64748b" : "#0EA5E9"} />
           </Pressable>
         </View>
       )}
@@ -718,6 +895,7 @@ const styles = StyleSheet.create({
   },
   articlesContainer: {
     padding: 20,
+    paddingBottom: 0,
     gap: 16,
     alignItems: 'center',
     maxWidth: 800,
@@ -725,16 +903,23 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   articleCard: {
-    borderRadius: 20,
+    borderRadius: 24,
     overflow: 'hidden',
     width: '100%',
     maxWidth: 600,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
   },
   cardGradient: {
-    padding: 20,
+    padding: 24,
     borderWidth: 1.5,
-    borderColor: 'rgba(6,182,212,0.3)',
-    borderRadius: 20,
+    borderColor: 'rgba(6,182,212,0.25)',
+    borderRadius: 24,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -761,19 +946,19 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-Bold',
   },
   cardTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
     color: '#fff',
-    marginBottom: 10,
-    lineHeight: 28,
+    marginBottom: 12,
+    lineHeight: 30,
     fontFamily: 'Poppins-ExtraBold',
     letterSpacing: -0.3,
   },
   cardExcerpt: {
-    fontSize: 14,
-    color: '#94a3b8',
-    lineHeight: 22,
-    marginBottom: 16,
+    fontSize: 15,
+    color: '#cbd5e1',
+    lineHeight: 24,
+    marginBottom: 18,
     fontFamily: 'Poppins-Regular',
     letterSpacing: 0.1,
   },
@@ -793,8 +978,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: 'Poppins-SemiBold',
   },
-  
+
   // Article View
+  progressBarContainer: {
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+  },
+  progressBar: {
+    height: '100%',
+    borderRadius: 2,
+  },
   articleContainer: {
     flex: 1,
   },
@@ -838,14 +1036,46 @@ const styles = StyleSheet.create({
   heroImageContainer: {
     width: '100%',
     marginBottom: 24,
-    borderRadius: 16,
+    borderRadius: 20,
     overflow: 'hidden',
     backgroundColor: 'rgba(6,182,212,0.1)',
+    position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 12,
   },
   heroImage: {
     width: '100%',
-    height: 240,
+    height: 280,
+  },
+  heroImageGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 120,
+  },
+  cardHeroContainer: {
+    width: '100%',
+    height: 180,
+    marginBottom: 16,
     borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  cardHeroImage: {
+    width: '100%',
+    height: '100%',
+  },
+  cardHeroOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+    backgroundColor: 'rgba(10, 15, 26, 0.7)',
   },
   brandBadge: {
     alignSelf: 'flex-start',
@@ -856,7 +1086,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   brandBadgeText: {
-    color: '#06b6d4',
+    color: '#0EA5E9',
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.5,
@@ -890,7 +1120,7 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 13,
-    color: '#06b6d4',
+    color: '#0EA5E9',
     fontWeight: '600',
     fontFamily: 'Poppins-SemiBold',
   },
@@ -991,7 +1221,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(6,182,212,0.3)',
   },
   tagText: {
-    color: '#06b6d4',
+    color: '#0EA5E9',
     fontSize: 12,
     fontWeight: '600',
     fontFamily: 'Poppins-SemiBold',
@@ -1094,7 +1324,7 @@ const styles = StyleSheet.create({
   },
   relatedCardCategory: {
     fontSize: 12,
-    color: '#06b6d4',
+    color: '#0EA5E9',
     fontWeight: '600',
     fontFamily: 'Poppins-SemiBold',
   },
@@ -1102,5 +1332,90 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748b',
     fontFamily: 'Poppins-Regular',
+  },
+  featuredSection: {
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(10, 15, 26, 0.5)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(6,182,212,0.2)',
+  },
+  featuredHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  featuredTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#fff',
+    fontFamily: 'Poppins-Bold',
+  },
+  featuredContainer: {
+    gap: 16,
+    paddingRight: 20,
+  },
+  featuredCard: {
+    width: 280,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(245,158,11,0.3)',
+  },
+  featuredGradient: {
+    padding: 20,
+    minHeight: 200,
+  },
+  featuredBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: 'rgba(245,158,11,0.2)',
+    marginBottom: 16,
+  },
+  featuredBadgeText: {
+    color: '#f59e0b',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: 'Poppins-Bold',
+  },
+  featuredIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  featuredCardTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 8,
+    lineHeight: 24,
+    fontFamily: 'Poppins-Bold',
+  },
+  featuredCardExcerpt: {
+    fontSize: 13,
+    color: '#cbd5e1',
+    lineHeight: 18,
+    marginBottom: 16,
+    fontFamily: 'Poppins-Regular',
+  },
+  featuredCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 'auto',
+  },
+  featuredCardTime: {
+    fontSize: 12,
+    fontWeight: '600',
+    fontFamily: 'Poppins-SemiBold',
   },
 });

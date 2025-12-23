@@ -78,7 +78,7 @@ export const PullToRefresh: React.FC<PullToRefreshProps> = ({
         >
           <ActivityIndicator
             size="large"
-            color={theme.colors.primary.main}
+            color={theme.colors.primary}
           />
         </Animated.View>
       )}

@@ -2,18 +2,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import {
-    Animated,
-    Dimensions,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View
+  Animated,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Badge, StatsCard, useTheme } from '../ui';
-
-const { width } = Dimensions.get('window');
 
 interface DashboardStats {
   activeWorkers: number;
@@ -85,27 +82,27 @@ export const ModernDashboard: React.FC<ModernDashboardProps> = ({
       title: 'Aktif Çalışanlar',
       value: stats.activeWorkers.toString(),
       icon: 'people' as const,
-      iconColor: theme.colors.primary.main,
+      iconColor: theme.colors.primary,
       trend: { value: 12, isPositive: true },
     },
     {
       title: 'Toplam Grup',
       value: stats.totalGroups.toString(),
       icon: 'layers' as const,
-      iconColor: theme.colors.accent.main,
+      iconColor: theme.colors.accent,
     },
     {
       title: 'Bugünkü Mesafe',
       value: formatDistance(stats.todayDistance),
       icon: 'location' as const,
-      iconColor: theme.colors.semantic.success,
+      iconColor: theme.colors.success,
       subtitle: 'Toplam',
     },
     {
       title: 'Aktif Uyarılar',
       value: stats.activeAlerts.toString(),
       icon: 'notifications' as const,
-      iconColor: theme.colors.semantic.warning,
+      iconColor: theme.colors.warning,
     },
   ];
 
@@ -114,17 +111,17 @@ export const ModernDashboard: React.FC<ModernDashboardProps> = ({
       style={[
         styles.header,
         {
-          backgroundColor: theme.colors.bg.primary,
+          backgroundColor: theme.colors.background,
           opacity: headerOpacity,
         },
       ]}
     >
       <View style={styles.headerContent}>
         <View>
-          <Text style={[styles.greeting, { color: theme.colors.text.secondary }]}>
+          <Text style={[styles.greeting, { color: theme.colors.textSecondary }]}>
             Hoş geldiniz
           </Text>
-          <Text style={[styles.title, { color: theme.colors.text.primary }]}>
+          <Text style={[styles.title, { color: theme.colors.text }]}>
             Dashboard
           </Text>
         </View>
@@ -142,7 +139,7 @@ export const ModernDashboard: React.FC<ModernDashboardProps> = ({
 
   const renderStats = () => (
     <View style={styles.statsContainer}>
-      <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+      <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
         İstatistikler
       </Text>
       <View style={styles.statsGrid}>
@@ -160,7 +157,7 @@ export const ModernDashboard: React.FC<ModernDashboardProps> = ({
 
   const renderQuickActions = () => (
     <View style={styles.quickActionsContainer}>
-      <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+      <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
         Hızlı İşlemler
       </Text>
       <ScrollView
@@ -174,8 +171,8 @@ export const ModernDashboard: React.FC<ModernDashboardProps> = ({
             style={[
               styles.quickActionCard,
               {
-                backgroundColor: theme.colors.surface.elevated,
-                borderColor: theme.colors.border.default,
+                backgroundColor: theme.colors.surfaceElevated,
+                borderColor: theme.colors.border,
               },
             ]}
           >
@@ -186,7 +183,7 @@ export const ModernDashboard: React.FC<ModernDashboardProps> = ({
               <Ionicons name={action.icon} size={28} color={action.color} />
             </LinearGradient>
             <Text
-              style={[styles.quickActionTitle, { color: theme.colors.text.primary }]}
+              style={[styles.quickActionTitle, { color: theme.colors.text }]}
             >
               {action.title}
             </Text>
@@ -199,11 +196,11 @@ export const ModernDashboard: React.FC<ModernDashboardProps> = ({
   const renderRecentActivities = () => (
     <View style={styles.activitiesContainer}>
       <View style={styles.activitiesHeader}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
           Son Aktiviteler
         </Text>
         <Text
-          style={[styles.seeAll, { color: theme.colors.primary.main }]}
+          style={[styles.seeAll, { color: theme.colors.primary }]}
           onPress={() => {}}
         >
           Tümünü Gör
@@ -215,9 +212,9 @@ export const ModernDashboard: React.FC<ModernDashboardProps> = ({
             <Ionicons
               name="time-outline"
               size={48}
-              color={theme.colors.text.tertiary}
+              color={theme.colors.textTertiary}
             />
-            <Text style={[styles.emptyText, { color: theme.colors.text.tertiary }]}>
+            <Text style={[styles.emptyText, { color: theme.colors.textTertiary }]}>
               Henüz aktivite yok
             </Text>
           </View>
@@ -228,8 +225,8 @@ export const ModernDashboard: React.FC<ModernDashboardProps> = ({
               style={[
                 styles.activityItem,
                 {
-                  backgroundColor: theme.colors.surface.elevated,
-                  borderColor: theme.colors.border.subtle,
+                  backgroundColor: theme.colors.surfaceElevated,
+                  borderColor: theme.colors.borderSecondary,
                 },
               ]}
             >
@@ -242,10 +239,10 @@ export const ModernDashboard: React.FC<ModernDashboardProps> = ({
                 <Ionicons name={activity.icon} size={20} color={activity.color} />
               </View>
               <View style={styles.activityContent}>
-                <Text style={[styles.activityMessage, { color: theme.colors.text.primary }]}>
+                <Text style={[styles.activityMessage, { color: theme.colors.text }]}>
                   {activity.message}
                 </Text>
-                <Text style={[styles.activityTime, { color: theme.colors.text.tertiary }]}>
+                <Text style={[styles.activityTime, { color: theme.colors.textTertiary }]}>
                   {formatTime(activity.timestamp)}
                 </Text>
               </View>
@@ -257,7 +254,7 @@ export const ModernDashboard: React.FC<ModernDashboardProps> = ({
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.bg.primary }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <Animated.ScrollView
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
@@ -269,7 +266,7 @@ export const ModernDashboard: React.FC<ModernDashboardProps> = ({
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={theme.colors.primary.main}
+              tintColor={theme.colors.primary}
             />
           ) : undefined
         }

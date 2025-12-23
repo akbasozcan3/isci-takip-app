@@ -79,7 +79,7 @@ export default function NotificationsScreen() {
       case 'success': return '#10b981';
       case 'warning': return '#f59e0b';
       case 'error': return '#ef4444';
-      default: return '#06b6d4';
+      default: return '#0EA5E9';
     }
   };
 
@@ -130,7 +130,7 @@ export default function NotificationsScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="light-content" />
       
-      <LinearGradient colors={['#06b6d4', '#0ea5a4']} style={styles.header}>
+      <LinearGradient colors={['#0EA5E9', '#0ea5a4']} style={styles.header}>
         <View style={styles.headerInner}>
           <Pressable 
             onPress={() => router.back()} 
@@ -176,8 +176,8 @@ export default function NotificationsScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#06b6d4"
-              colors={['#06b6d4']}
+              tintColor="#0EA5E9"
+              colors={['#0EA5E9']}
             />
           }
         />
@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   notificationUnread: {
-    borderColor: '#06b6d4',
+    borderColor: '#0EA5E9',
     borderWidth: 2,
   },
   notificationIcon: {
@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#06b6d4',
+    backgroundColor: '#0EA5E9',
     marginLeft: 8,
   },
   notificationMessage: {

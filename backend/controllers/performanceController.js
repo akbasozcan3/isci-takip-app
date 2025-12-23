@@ -49,7 +49,15 @@ class PerformanceController {
    */
   async resetMetrics(req, res) {
     try {
-      // TODO: Add admin check
+      // Admin authorization check
+      if (!req.user || req.user.role !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          error: 'Admin access required',
+          code: 'FORBIDDEN'
+        });
+      }
+
       performanceService.reset();
       return res.json(ResponseFormatter.success(null, 'Metrikler sıfırlandı'));
     } catch (error) {

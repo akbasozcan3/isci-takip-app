@@ -3,16 +3,16 @@ const db = require('../../config/database');
 
 function getPlanBasedLimits(userId) {
   if (!userId) {
-    return { windowMs: 60000, maxRequests: 50 };
+    return { windowMs: 60000, maxRequests: 100 }; // Increased from 50 to 100
   }
   
   const subscription = db.getUserSubscription(userId);
   const planId = subscription?.planId || 'free';
   
   const planLimits = {
-    free: { windowMs: 60000, maxRequests: 50 },
-    plus: { windowMs: 60000, maxRequests: 200 },
-    business: { windowMs: 60000, maxRequests: 500 }
+    free: { windowMs: 60000, maxRequests: 100 }, // Increased from 50 to 100 for better UX
+    plus: { windowMs: 60000, maxRequests: 300 }, // Increased from 200 to 300
+    business: { windowMs: 60000, maxRequests: 1000 } // Increased from 500 to 1000
   };
   
   return planLimits[planId] || planLimits.free;
@@ -20,8 +20,63 @@ function getPlanBasedLimits(userId) {
 
 function rateLimiter(windowMs = 60000, maxRequests = 100) {
   return (req, res, next) => {
+    // Skip rate limiting for critical system endpoints
+    const criticalEndpoints = [
+      '/api/users/update-onesignal-id',
+      '/api/health',
+      '/api/auth/refresh',
+      '/api/steps/start-tracking',
+      '/api/steps/stop-tracking',
+    ];
+    
+    if (criticalEndpoints.some(endpoint => req.path.includes(endpoint))) {
+      return next();
+    }
+    
     const isStepsNotification = req.path.includes('/steps/start-tracking') || req.path.includes('/steps/stop-tracking');
     if (isStepsNotification) {
+      return next();
+    }
+    
+    // Steps endpoint'leri için özel rate limit (daha yüksek limit)
+    const isStepsEndpoint = req.path.includes('/steps/');
+    if (isStepsEndpoint) {
+      const stepsLimits = {
+        free: { windowMs: 60000, maxRequests: 60 }, // Free plan için 60 req/min (increased)
+        plus: { windowMs: 60000, maxRequests: 150 }, // Plus plan için 150 req/min
+        business: { windowMs: 60000, maxRequests: 300 } // Business plan için 300 req/min
+      };
+      
+      const userId = req.user?.id || req.subscription?.userId || null;
+      const subscription = userId ? db.getUserSubscription(userId) : null;
+      const planId = subscription?.planId || 'free';
+      const limits = stepsLimits[planId] || stepsLimits.free;
+      
+      const key = `steps:${userId || req.ip || req.connection.remoteAddress}`;
+      const now = Date.now();
+      
+      if (!rateLimitMap.has(key)) {
+        rateLimitMap.set(key, { count: 1, resetTime: now + limits.windowMs });
+        return next();
+      }
+      
+      const record = rateLimitMap.get(key);
+      
+      if (now > record.resetTime) {
+        record.count = 1;
+        record.resetTime = now + limits.windowMs;
+        return next();
+      }
+      
+      if (record.count >= limits.maxRequests) {
+        const ResponseFormatter = require('../utils/responseFormatter');
+        const retryAfter = Math.ceil((record.resetTime - now) / 1000);
+        return res.status(429).json(
+          ResponseFormatter.rateLimitError(retryAfter, limits.maxRequests, 0)
+        );
+      }
+      
+      record.count++;
       return next();
     }
     
@@ -29,9 +84,9 @@ function rateLimiter(windowMs = 60000, maxRequests = 100) {
     
     if (isAnalyticsEndpoint) {
       const analyticsLimits = {
-        free: { windowMs: 30000, maxRequests: 20 },
-        plus: { windowMs: 30000, maxRequests: 50 },
-        business: { windowMs: 30000, maxRequests: 100 }
+        free: { windowMs: 30000, maxRequests: 40 }, // Increased from 20 to 40
+        plus: { windowMs: 30000, maxRequests: 100 }, // Increased from 50 to 100
+        business: { windowMs: 30000, maxRequests: 200 } // Increased from 100 to 200
       };
       
       const userId = req.user?.id || req.subscription?.userId || null;
@@ -56,12 +111,11 @@ function rateLimiter(windowMs = 60000, maxRequests = 100) {
       }
       
       if (record.count >= limits.maxRequests) {
-        return res.status(429).json({
-          error: 'Too many requests',
-          message: `Analytics rate limit exceeded. Max ${limits.maxRequests} requests per ${limits.windowMs / 1000} seconds.`,
-          retryAfter: Math.ceil((record.resetTime - now) / 1000),
-          plan: planId
-        });
+        const ResponseFormatter = require('../utils/responseFormatter');
+        const retryAfter = Math.ceil((record.resetTime - now) / 1000);
+        return res.status(429).json(
+          ResponseFormatter.rateLimitError(retryAfter, limits.maxRequests, 0)
+        );
       }
       
       record.count++;
@@ -102,12 +156,11 @@ function rateLimiter(windowMs = 60000, maxRequests = 100) {
     }
     
     if (record.count >= effectiveMaxRequests) {
-      return res.status(429).json({
-        error: 'Too many requests',
-        message: `Rate limit exceeded. Max ${effectiveMaxRequests} requests per ${effectiveWindowMs / 1000} seconds.`,
-        retryAfter: Math.ceil((record.resetTime - now) / 1000),
-        plan: userId ? (db.getUserSubscription(userId)?.planId || 'free') : 'anonymous'
-      });
+      const ResponseFormatter = require('../utils/responseFormatter');
+      const retryAfter = Math.ceil((record.resetTime - now) / 1000);
+      return res.status(429).json(
+        ResponseFormatter.rateLimitError(retryAfter, effectiveMaxRequests, 0)
+      );
     }
     
     record.count++;

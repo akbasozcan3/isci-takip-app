@@ -53,7 +53,7 @@ export function EmptyState({
     >
       <View style={styles.iconContainer}>
         <LinearGradient
-          colors={['#06b6d4', '#7c3aed']}
+          colors={['#0EA5E9', '#7c3aed']}
           style={styles.iconGradient}
           start={[0, 0]}
           end={[1, 1]}
@@ -77,7 +77,7 @@ export function EmptyState({
               android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
             >
               <LinearGradient
-                colors={['#06b6d4', '#0ea5a4']}
+                colors={['#0EA5E9', '#0ea5a4']}
                 style={styles.buttonGradient}
                 start={[0, 0]}
                 end={[1, 1]}
@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
     borderRadius: 70,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#06b6d4',
+    shadowColor: '#0EA5E9',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.5,
     shadowRadius: 24,
@@ -177,7 +177,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e293b',
   },
   secondaryButtonText: {
-    color: '#06b6d4',
+    color: '#0EA5E9',
     fontSize: 16,
     fontWeight: '800',
     fontFamily: 'Poppins-Bold',

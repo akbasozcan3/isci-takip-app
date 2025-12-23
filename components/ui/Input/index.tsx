@@ -3,7 +3,7 @@ import React from 'react';
 import { Animated, Pressable, StyleProp, StyleSheet, Text, TextInput, TextInputProps, View, ViewStyle } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 
-interface InputProps extends TextInputProps {
+export interface InputProps extends TextInputProps {
   label?: string;
   error?: string;
   leftIcon?: keyof typeof Ionicons.glyphMap;
@@ -38,10 +38,10 @@ export const Input = React.forwardRef<TextInput, InputProps>(
     React.useEffect(() => {
       Animated.timing(borderAnim, {
         toValue: isFocused ? 1 : 0,
-        duration: theme.animation.fast,
+        duration: theme.animation.duration.fast,
         useNativeDriver: false,
       }).start();
-    }, [isFocused, borderAnim, theme.animation.fast]);
+    }, [isFocused, borderAnim, theme.animation.duration.fast]);
 
     React.useEffect(() => {
       if (error) {
@@ -62,7 +62,7 @@ export const Input = React.forwardRef<TextInput, InputProps>(
 
     const borderColor = borderAnim.interpolate({
       inputRange: [0, 1],
-      outputRange: [theme.colors.border.default, theme.colors.primary.main],
+      outputRange: [theme.colors.border, theme.colors.primary],
     });
 
     return (
@@ -74,7 +74,7 @@ export const Input = React.forwardRef<TextInput, InputProps>(
         ]}
       >
         {label && (
-          <Text style={[styles.label, { color: theme.colors.text.secondary }]}>
+          <Text style={[styles.label, { color: theme.colors.textSecondary }]}>
             {label}
           </Text>
         )}
@@ -82,9 +82,9 @@ export const Input = React.forwardRef<TextInput, InputProps>(
           style={[
             styles.inputWrapper,
             {
-              backgroundColor: theme.colors.surface.default,
+              backgroundColor: theme.colors.surface,
               borderColor: error
-                ? theme.colors.semantic.danger
+                ? theme.colors.error
                 : borderColor,
               borderWidth: isFocused ? 2 : error ? 1.5 : 1.5,
             },
@@ -96,18 +96,18 @@ export const Input = React.forwardRef<TextInput, InputProps>(
                 <Ionicons
                   name={leftIcon!}
                   size={20}
-                  color={theme.colors.text.tertiary}
+                  color={theme.colors.textTertiary}
                 />
               )}
             </View>
           )}
           <TextInput
             ref={ref}
-            placeholderTextColor={theme.colors.text.disabled}
+            placeholderTextColor={theme.colors.textTertiary}
             style={[
               styles.input,
               {
-                color: theme.colors.text.primary,
+                color: theme.colors.text,
               },
               ...((leftIcon || leftElement) ? [styles.inputWithLeft] : []),
               ...((rightIcon || rightElement) ? [styles.inputWithRight] : []),
@@ -128,7 +128,7 @@ export const Input = React.forwardRef<TextInput, InputProps>(
                 <Ionicons
                   name={rightIcon!}
                   size={20}
-                  color={theme.colors.text.tertiary}
+                  color={theme.colors.textTertiary}
                 />
               )}
             </Pressable>
@@ -136,7 +136,7 @@ export const Input = React.forwardRef<TextInput, InputProps>(
         </Animated.View>
         {error && (
           <Animated.View style={{ opacity: error ? 1 : 0 }}>
-            <Text style={[styles.error, { color: theme.colors.semantic.danger }]}>
+            <Text style={[styles.error, { color: theme.colors.error }]}>
               {error}
             </Text>
           </Animated.View>

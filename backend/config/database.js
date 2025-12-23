@@ -37,7 +37,8 @@ class Database {
       routes: {},
       pageShares: {},
       steps: {},
-      activities: []
+      activities: [],
+      transactions: [] // Shopier ve diğer ödeme transaction'ları için
     };
   }
 
@@ -260,20 +261,43 @@ class Database {
   }
 
   findUserByEmail(email) {
-    return Object.values(this.data.users).find(u => 
-      String(u.email).toLowerCase() === String(email).toLowerCase()
-    );
+    if (!email || typeof email !== 'string') return null;
+    if (!this.data || !this.data.users) return null;
+    try {
+      const emailLower = String(email).toLowerCase();
+      const users = Object.values(this.data.users);
+      return users.find(u => 
+        u && u.email && String(u.email).toLowerCase() === emailLower
+      ) || null;
+    } catch (error) {
+      console.error('[Database] Error finding user by email:', error.message);
+      return null;
+    }
   }
 
   findUserByUsername(username) {
+    if (!username || typeof username !== 'string') return null;
+    if (!this.data || !this.data.users) return null;
+    try {
     const norm = String(username).toLowerCase();
-    return Object.values(this.data.users).find(u => 
-      String(u.username || '').toLowerCase() === norm
-    );
+      const users = Object.values(this.data.users);
+      return users.find(u => 
+        u && u.username && String(u.username).toLowerCase() === norm
+      ) || null;
+    } catch (error) {
+      console.error('[Database] Error finding user by username:', error.message);
+      return null;
+    }
   }
 
   findUserById(id) {
-    return this.data.users[id];
+    if (!id || !this.data || !this.data.users) return null;
+    try {
+      return this.data.users[id] || null;
+    } catch (error) {
+      console.error('[Database] Error finding user by id:', error.message);
+      return null;
+    }
   }
 
   // Password operations
@@ -283,7 +307,13 @@ class Database {
   }
 
   getPassword(email) {
-    return this.data.emailPasswords[email];
+    if (!email || !this.data || !this.data.emailPasswords) return null;
+    try {
+      return this.data.emailPasswords[email] || null;
+    } catch (error) {
+      console.error('[Database] Error getting password:', error.message);
+      return null;
+    }
   }
 
   // Token operations

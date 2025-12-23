@@ -15,8 +15,9 @@ import {
   View
 } from 'react-native';
 import { BrandLogo } from '../../components/BrandLogo';
+import { PremiumBackground } from '../../components/PremiumBackground';
 import { Toast, useToast } from '../../components/Toast';
-import { Button } from '../../components/ui/Button';
+import { Button } from '../../components/ui/Button/index';
 import { getApiBase } from '../../utils/api';
 
 export default function VerifyEmailScreen() {
@@ -110,82 +111,120 @@ export default function VerifyEmailScreen() {
 
     setLoading(true);
     try {
-      // Verify the code
-      const verifyResponse = await fetch(`${getApiBase()}/api/auth/pre-verify-email/verify`, {
+      const apiBase = getApiBase();
+      const url = `${apiBase}/api/auth/pre-verify-email/verify`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const verifyResponse = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), code: fullCode.trim() }),
+        signal: controller.signal,
       });
 
-      const verifyData = await verifyResponse.json();
+      clearTimeout(timeoutId);
 
-      if (!verifyResponse.ok) {
-        showError(verifyData.error || 'Geçersiz doğrulama kodu');
-        // Clear code on error
-        setCodeDigits(['', '', '', '', '', '']);
-        setFocusedIndex(0);
+      let verifyData: any = {};
+      try {
+        const text = await verifyResponse.text();
+        verifyData = text ? JSON.parse(text) : {};
+      } catch (parseError) {
+        showError('Sunucu yanıtı işlenemedi. Lütfen tekrar deneyin.');
+        setLoading(false);
         return;
       }
 
-      showSuccess('E-posta doğrulandı! Giriş yapılıyor...');
-
-      // Auto-login: Check if user already exists and has password
-      try {
-        // Try to get user info to check if account is complete
-        const userCheckResponse = await fetch(`${getApiBase()}/api/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            email: email.trim(),
-            // We don't have password here, so this will fail
-            // But we use it to check if user exists
-            password: '__check_only__'
-          }),
-        });
-
-        // If user doesn't exist or password not set, redirect to login
-        // User needs to complete registration or login manually
-        setTimeout(() => {
-          router.replace('/auth/login');
-        }, 1000);
-      } catch (error) {
-        // On any error, just redirect to login
-        setTimeout(() => {
-          router.replace('/auth/login');
-        }, 1000);
+      if (!verifyResponse.ok) {
+        if (verifyData.error && verifyData.error.includes('süresi doldu')) {
+          showError('Doğrulama kodu süresi dolmuş. Lütfen yeni kod alın.');
+        } else {
+          showError(verifyData.error || 'Geçersiz doğrulama kodu');
+        }
+        setCodeDigits(['', '', '', '', '', '']);
+        setFocusedIndex(0);
+        setLoading(false);
+        return;
       }
-    } catch (error) {
-      console.error('Verify error:', error);
-      showError('Bağlantı hatası. Lütfen tekrar deneyin.');
-    } finally {
+
+      showSuccess('E-posta doğrulandı! Giriş sayfasına yönlendiriliyorsunuz...');
+
+      setTimeout(() => {
+        router.replace('/auth/login');
+      }, 1500);
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        showError('İstek zaman aşımına uğradı. Lütfen tekrar deneyin.');
+      } else if (error.message?.includes('Network request failed') || error.message?.includes('Failed to fetch')) {
+        showError('Backend bağlantısı kurulamadı. Lütfen internet bağlantınızı kontrol edin.');
+      } else {
+        showError('Bağlantı hatası. Lütfen tekrar deneyin.');
+      }
       setLoading(false);
     }
   };
 
   const handleResendCode = async () => {
+    if (!email.trim()) {
+      showError('E-posta adresi bulunamadı');
+      return;
+    }
+
     setSending(true);
     try {
-      const response = await fetch(`${getApiBase()}/api/auth/pre-verify-email`, {
+      const apiBase = getApiBase();
+      const url = `${apiBase}/api/auth/pre-verify-email`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim() }),
+        signal: controller.signal,
       });
 
-      const data = await response.json();
+      clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        showError(data.error || 'Kod gönderilemedi');
+      let data: any = {};
+      try {
+        const text = await response.text();
+        data = text ? JSON.parse(text) : {};
+      } catch (parseError) {
+        showError('Sunucu yanıtı işlenemedi. Lütfen tekrar deneyin.');
+        setSending(false);
         return;
       }
 
-      // Backend automatically sends email via Python service
-      // Just show success message
-      if (response.ok) {
-        showSuccess('Yeni doğrulama kodu e-posta adresinize gönderildi');
+      if (!response.ok) {
+        if (data.error && data.error.includes('zaten kayıtlı')) {
+          showError('Bu e-posta adresi zaten kayıtlıdır. Giriş yapmak için "Giriş Yap" sayfasına gidebilirsiniz.');
+        } else if (data.error && data.error.includes('Rate limit')) {
+          showError('Çok fazla istek gönderildi. Lütfen birkaç dakika sonra tekrar deneyin.');
+        } else {
+          showError(data.error || 'Kod gönderilemedi');
+        }
+        setSending(false);
+        return;
       }
-    } catch (error) {
-      console.error('Resend error:', error);
-      showError('Kod gönderilemedi. Lütfen tekrar deneyin.');
+
+      if (data.success !== false || response.ok) {
+        showSuccess('Yeni doğrulama kodu e-posta adresinize gönderildi');
+        setCodeDigits(['', '', '', '', '', '']);
+        setFocusedIndex(0);
+      } else {
+        showError(data.error || 'Kod gönderilemedi');
+      }
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        showError('İstek zaman aşımına uğradı. Lütfen tekrar deneyin.');
+      } else if (error.message?.includes('Network request failed') || error.message?.includes('Failed to fetch')) {
+        showError('Backend bağlantısı kurulamadı. Lütfen internet bağlantınızı kontrol edin.');
+      } else {
+        showError('Kod gönderilemedi. Lütfen tekrar deneyin.');
+      }
     } finally {
       setSending(false);
     }
@@ -235,12 +274,10 @@ export default function VerifyEmailScreen() {
         style={styles.gradient}
       >
         <StatusBar barStyle="light-content" />
-        <View style={styles.decorativeCircle1} />
-        <View style={styles.decorativeCircle2} />
-        <View style={styles.decorativeCircle3} />
+        <PremiumBackground color="#06B6D4" lineCount={8} circleCount={5} />
 
         <View style={styles.content}>
-          <Animated.View 
+          <Animated.View
             style={[
               styles.header,
               {
@@ -253,7 +290,7 @@ export default function VerifyEmailScreen() {
               <BrandLogo size={250} withSoftContainer={false} variant="default" />
             </View>
 
-            <Animated.View 
+            <Animated.View
               style={[
                 styles.iconContainer,
                 {
@@ -262,7 +299,7 @@ export default function VerifyEmailScreen() {
               ]}
             >
               <LinearGradient
-                colors={['#06b6d4', '#7c3aed']}
+                colors={['#0EA5E9', '#7c3aed']}
                 style={styles.iconGradient}
                 start={[0, 0]}
                 end={[1, 1]}
@@ -280,7 +317,7 @@ export default function VerifyEmailScreen() {
             </View>
           </Animated.View>
 
-          <Animated.View 
+          <Animated.View
             style={[
               styles.form,
               {
@@ -292,13 +329,13 @@ export default function VerifyEmailScreen() {
             {/* Email Info Card */}
             <View style={styles.emailCard}>
               <View style={styles.emailCardHeader}>
-                <Ionicons name="mail-outline" size={20} color="#06b6d4" />
+                <Ionicons name="mail-outline" size={20} color="#0EA5E9" />
                 <Text style={styles.emailCardTitle}>Doğrulanacak E-posta</Text>
               </View>
               <Text style={styles.emailCardText}>{email}</Text>
             </View>
 
-              {/* Code Input Grid */}
+            {/* Code Input Grid */}
             <View style={styles.codeContainer}>
               <Text style={styles.codeLabel}>Doğrulama Kodu</Text>
               <View style={styles.codeGrid}>
@@ -318,19 +355,19 @@ export default function VerifyEmailScreen() {
                   >
                     <Text style={styles.codeDigitText}>{digit || '•'}</Text>
                     {focusedIndex === index && !digit && (
-                      <Animated.View 
+                      <Animated.View
                         style={[
                           styles.codeCursor,
                           {
                             opacity: cursorBlink,
                           }
-                        ]} 
+                        ]}
                       />
                     )}
                   </Pressable>
                 ))}
               </View>
-              
+
               {/* Hidden input for keyboard */}
               <TextInput
                 ref={hiddenInputRef}
@@ -359,7 +396,7 @@ export default function VerifyEmailScreen() {
                 <Text style={styles.warningTitle}>Güvenlik Uyarısı</Text>
               </View>
               <Text style={styles.warningText}>
-                Bu kodu kimseyle paylaşmayın. Eğer bu işlemi siz yapmadıysanız, 
+                Bu kodu kimseyle paylaşmayın. Eğer bu işlemi siz yapmadıysanız,
                 bu e-postayı görmezden gelebilirsiniz.
               </Text>
             </View>
@@ -376,7 +413,7 @@ export default function VerifyEmailScreen() {
               disabled={sending}
               style={styles.resendButton}
             >
-              <Ionicons name="refresh" size={16} color="#06b6d4" />
+              <Ionicons name="refresh" size={16} color="#0EA5E9" />
               <Text style={styles.resendText}>
                 {sending ? 'Gönderiliyor...' : 'Kodu Tekrar Gönder'}
               </Text>
@@ -491,7 +528,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-Regular',
   },
   emailHighlight: {
-    color: '#06b6d4',
+    color: '#0EA5E9',
     fontWeight: '700',
     fontFamily: 'Poppins-SemiBold',
   },
@@ -515,7 +552,7 @@ const styles = StyleSheet.create({
   emailCardTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#06b6d4',
+    color: '#0EA5E9',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     fontFamily: 'Poppins-SemiBold',
@@ -553,7 +590,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   codeDigitFocused: {
-    borderColor: '#06b6d4',
+    borderColor: '#0EA5E9',
     backgroundColor: 'rgba(6, 182, 212, 0.15)',
   },
   codeDigitFilled: {
@@ -573,7 +610,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 2,
     height: 24,
-    backgroundColor: '#06b6d4',
+    backgroundColor: '#0EA5E9',
     bottom: 12,
   },
   hiddenInput: {
@@ -623,7 +660,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   resendText: {
-    color: '#06b6d4',
+    color: '#0EA5E9',
     fontSize: 14,
     fontWeight: '700',
     fontFamily: 'Poppins-SemiBold',

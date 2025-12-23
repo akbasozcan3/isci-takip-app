@@ -1,0 +1,65 @@
+// ADIM 1: Avatar UI Kodu Değiştir (Satır 548-561 arası)
+// ESKİ KOD:
+            <View style={styles.accountHeader}>
+              <View style={styles.accountAvatar}>
+                {initials ? (
+                  <Text style={styles.accountAvatarText}>{initials}</Text>
+                ) : (
+                  <Ionicons name="person" size={32} color="#06b6d4" />
+                )}
+              </View>
+              <View style={styles.accountInfo}>
+                <Text style={styles.accountName}>{displayName || 'Kullanıcı'}</Text>
+                <Text style={styles.accountEmail}>{email || 'Email bilgisi yok'}</Text>
+                {userId && <Text style={styles.accountId}>ID: {userId}</Text>}
+              </View>
+            </View>
+
+// YENİ KOD (BUNUNLA DEĞİŞTİR):
+            <View style={styles.accountHeader}>
+              <Pressable onPress={pickImageFromGallery} style={styles.avatarWrapper}>
+                <View style={styles.accountAvatar}>
+                  {uploadingAvatar ? (
+                    <Text style={styles.accountAvatarText}>⏳</Text>
+                  ) : avatarUrl ? (
+                    <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+                  ) : initials ? (
+                    <Text style={styles.accountAvatarText}>{initials}</Text>
+                  ) : (
+                    <Ionicons name="person" size={32} color="#06b6d4" />
+                  )}
+                </View>
+                <View style={styles.avatarPlusButton}>
+                  <Ionicons name="add" size={18} color="#fff" />
+                </View>
+              </Pressable>
+              <View style={styles.accountInfo}>
+                <Text style={styles.accountName}>{displayName || 'Kullanıcı'}</Text>
+                <Text style={styles.accountEmail}>{email || 'Email bilgisi yok'}</Text>
+                {userId && <Text style={styles.accountId}>ID: {userId}</Text>}
+              </View>
+            </View>
+
+// ADIM 2: Stiller ekle (accountAvatarText'ten hemen sonra, satır 920 civarı)
+// Bu stilleri ekle:
+  avatarWrapper: {
+    position: 'relative',
+  },
+  avatarImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  avatarPlusButton: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#10b981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#0f172a',
+  },

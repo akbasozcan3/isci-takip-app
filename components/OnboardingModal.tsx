@@ -78,7 +78,6 @@ export function OnboardingModal({ visible, onClose }: OnboardingModalProps) {
         })
       });
     } catch (error) {
-      console.error('Onboarding completion tracking error:', error);
     }
   }, []);
 
@@ -107,13 +106,13 @@ export function OnboardingModal({ visible, onClose }: OnboardingModalProps) {
   const renderSlide = ({ item }: { item: OnboardingSlide }) => {
     return (
       <View style={styles.slideContainer}>
-          <View style={styles.slideContent}>
+        <View style={styles.slideContent}>
           <View style={styles.textWrapper}>
             <Text style={styles.slideTitle}>{item.title}</Text>
             <Text style={styles.slideDescription}>{item.description}</Text>
-                  </View>
-                </View>
-              </View>
+          </View>
+        </View>
+      </View>
     );
   };
 
@@ -122,12 +121,12 @@ export function OnboardingModal({ visible, onClose }: OnboardingModalProps) {
       <View style={styles.overlay}>
         <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
           <View style={styles.container}>
-            <Pressable 
-              style={styles.skipButton} 
+            <Pressable
+              style={styles.skipButton}
               onPress={handleSkip}
               disabled={isCompleting}
             >
-                <Text style={styles.skipText}>Atla</Text>
+              <Text style={styles.skipText}>Atla</Text>
             </Pressable>
 
             <FlatList
@@ -143,37 +142,37 @@ export function OnboardingModal({ visible, onClose }: OnboardingModalProps) {
               onMomentumScrollEnd={(e) => {
                 const index = Math.round(e.nativeEvent.contentOffset.x / width);
                 if (index >= 0 && index < ONBOARDING_SLIDES.length) {
-                setCurrentIndex(index);
+                  setCurrentIndex(index);
                 }
               }}
             />
 
             <View style={styles.footer}>
-                <View style={styles.dotsContainer}>
+              <View style={styles.dotsContainer}>
                 {ONBOARDING_SLIDES.map((_, index) => (
                   <View
-                        key={index}
-                        style={[
-                          styles.dot,
+                    key={index}
+                    style={[
+                      styles.dot,
                       index === currentIndex && styles.dotActive
-                        ]}
-                      />
+                    ]}
+                  />
                 ))}
-                </View>
-
-                <Pressable 
-                  style={styles.nextButton} 
-                  onPress={handleNext}
-                  disabled={isCompleting}
-                  >
-                    <Text style={styles.nextButtonText}>
-                      {currentIndex === ONBOARDING_SLIDES.length - 1 ? 'Başlayalım' : 'İleri'}
-                    </Text>
-                </Pressable>
               </View>
+
+              <Pressable
+                style={styles.nextButton}
+                onPress={handleNext}
+                disabled={isCompleting}
+              >
+                <Text style={styles.nextButtonText}>
+                  {currentIndex === ONBOARDING_SLIDES.length - 1 ? 'Başlayalım' : 'İleri'}
+                </Text>
+              </Pressable>
             </View>
-        </SafeAreaView>
           </View>
+        </SafeAreaView>
+      </View>
     </Modal>
   );
 }
@@ -181,7 +180,7 @@ export function OnboardingModal({ visible, onClose }: OnboardingModalProps) {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: theme.colors.bg.primary
+    backgroundColor: theme.colors.background
   },
   safeArea: {
     flex: 1
@@ -197,13 +196,13 @@ const styles = StyleSheet.create({
     zIndex: 100,
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.sm + 2,
-    borderRadius: theme.radius.full,
-    backgroundColor: theme.colors.surface.elevated,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.surfaceElevated,
     borderWidth: 1,
-    borderColor: theme.colors.border.subtle
+    borderColor: theme.colors.borderSecondary
   },
   skipText: {
-    color: theme.colors.text.secondary,
+    color: theme.colors.textSecondary,
     fontSize: 15,
     fontWeight: '600',
     letterSpacing: 0.2
@@ -213,7 +212,7 @@ const styles = StyleSheet.create({
     width,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: theme.spacing.xl + 8
+    paddingHorizontal: theme.spacing['2xl']
   },
   slideContent: {
     alignItems: 'center',
@@ -229,13 +228,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
     marginBottom: theme.spacing.lg,
-    color: theme.colors.text.primary,
+    color: theme.colors.text,
     letterSpacing: -0.5,
     lineHeight: 46
   },
   slideDescription: {
     fontSize: 17,
-    color: theme.colors.text.secondary,
+    color: theme.colors.textSecondary,
     textAlign: 'center',
     lineHeight: 26,
     letterSpacing: 0.1,
@@ -244,10 +243,10 @@ const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: theme.spacing.xl + 8,
     paddingTop: theme.spacing.xl,
-    paddingBottom: Platform.OS === 'ios' ? theme.spacing.xxl + 8 : theme.spacing.xl + 8,
-    backgroundColor: theme.colors.bg.primary,
+    paddingBottom: Platform.OS === 'ios' ? theme.spacing['2xl'] + 8 : theme.spacing.xl + 8,
+    backgroundColor: theme.colors.background,
     borderTopWidth: 1,
-    borderTopColor: theme.colors.border.subtle
+    borderTopColor: theme.colors.borderSecondary
   },
   dotsContainer: {
     flexDirection: 'row',
@@ -260,27 +259,27 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: theme.colors.border.default,
+    backgroundColor: theme.colors.border,
     opacity: 0.4
   },
   dotActive: {
     width: 32,
     height: 8,
     opacity: 1,
-    backgroundColor: theme.colors.primary.main
+    backgroundColor: theme.colors.primary
   },
   nextButton: {
     width: '100%',
     paddingVertical: theme.spacing.md + 4,
     paddingHorizontal: theme.spacing.xl,
-    borderRadius: theme.radius.xl,
+    borderRadius: theme.borderRadius.xl,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.colors.primary.main
+    backgroundColor: theme.colors.primary
   },
   nextButtonText: {
-    color: theme.colors.text.primary,
+    color: theme.colors.text,
     fontSize: 17,
     fontWeight: '700',
     letterSpacing: 0.3
