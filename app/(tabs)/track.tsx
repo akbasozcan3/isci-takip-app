@@ -1637,37 +1637,55 @@ export default function TrackScreen(): React.JSX.Element {
             </View>
           </LinearGradient>
 
-          {/* Group Info Banner (if group selected) */}
-          {selectedGroup && (
-            <Pressable
-              onPress={() => setShowGroupSelector(true)}
-              style={styles.groupBannerWrapper}
-              android_ripple={{ color: 'rgba(255,255,255,0.1)' }}
+          {/* Group Selector Button - ALWAYS VISIBLE */}
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowGroupSelector(true);
+            }}
+            style={styles.groupBannerWrapper}
+            android_ripple={{ color: 'rgba(255,255,255,0.1)' }}
+          >
+            <LinearGradient
+              colors={selectedGroup 
+                ? ['rgba(124,58,237,0.15)', 'rgba(6,182,212,0.15)']
+                : ['rgba(100,116,139,0.15)', 'rgba(71,85,105,0.15)']}
+              start={[0, 0]}
+              end={[1, 0]}
+              style={styles.groupBanner}
             >
-              <LinearGradient
-                colors={['rgba(124,58,237,0.15)', 'rgba(6,182,212,0.15)']}
-                start={[0, 0]}
-                end={[1, 0]}
-                style={styles.groupBanner}
-              >
-                <View style={styles.groupBannerIcon}>
-                  <LinearGradient
-                    colors={['#7c3aed', '#0EA5E9']}
-                    style={styles.groupBannerIconGradient}
-                  >
-                    <Ionicons name="people" size={20} color="#fff" />
-                  </LinearGradient>
-                </View>
-                <View style={styles.groupBannerContent}>
-                  <Text style={styles.groupBannerName}>{selectedGroup.name}</Text>
-                  <Text style={styles.groupBannerStats}>
-                    {groupMembers.filter(m => m.isOnline).length}/{groupMembers.length} online • {groupMembers.length} üye
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.6)" />
-              </LinearGradient>
-            </Pressable>
-          )}
+              <View style={styles.groupBannerIcon}>
+                <LinearGradient
+                  colors={selectedGroup ? ['#7c3aed', '#0EA5E9'] : ['#64748b', '#475569']}
+                  style={styles.groupBannerIconGradient}
+                >
+                  <Ionicons name="people" size={20} color="#fff" />
+                </LinearGradient>
+              </View>
+              <View style={styles.groupBannerContent}>
+                {selectedGroup ? (
+                  <>
+                    <Text style={styles.groupBannerName}>{selectedGroup.name}</Text>
+                    <Text style={styles.groupBannerStats}>
+                      {groupMembers.filter(m => m.isOnline).length}/{groupMembers.length} online • {groupMembers.length} üye
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.groupBannerName}>
+                      {activeGroups.length > 0 ? 'Grup Seç' : 'Henüz Grup Yok'}
+                    </Text>
+                    <Text style={styles.groupBannerStats}>
+                      {activeGroups.length > 0 
+                        ? `${activeGroups.length} grup mevcut` 
+                        : 'Gruplar sekmesinden grup oluşturun'}
+                    </Text>
+                  </>
+                )}
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.6)" />
+            </LinearGradient>
+          </Pressable>
 
           {/* Araba Durumu Kartı */}
           {
