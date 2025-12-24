@@ -365,15 +365,8 @@ export default function GroupChatScreen() {
         <MessageBubble message={item} onDelete={handleDeleteMessage} />
     );
 
-    // Header opacity based on scroll
-    const headerOpacity = scrollY.interpolate({
-        inputRange: [0, 50],
-        outputRange: [1, 0.95],
-        extrapolate: 'clamp',
-    });
-
     const renderHeader = () => (
-        <Animated.View style={[styles.headerInList, { opacity: headerOpacity }]}>
+        <View style={styles.headerInList}>
             <LinearGradient colors={['#6366f1', '#8b5cf6']} style={styles.headerGradient}>
                 <View style={styles.headerTop}>
                     <Pressable
@@ -407,7 +400,7 @@ export default function GroupChatScreen() {
                     </Pressable>
                 </View>
             </LinearGradient>
-        </Animated.View>
+        </View>
     );
 
     const renderTypingIndicator = () => {
