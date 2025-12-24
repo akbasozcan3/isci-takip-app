@@ -6,6 +6,9 @@ import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import * as TaskManager from 'expo-task-manager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import theme from '../../constants/theme';
+import { PremiumCard } from '../../components/ui/PremiumCard';
+import { GradientButton } from '../../components/ui/GradientButton';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -2367,23 +2370,22 @@ export default function TrackScreen(): React.JSX.Element {
               )}
 
               <View style={styles.row}>
-                <Pressable
+                <GradientButton
+                  title={isTracking ? 'Takibi Durdur' : 'Takibi Başlat'}
                   onPress={async () => { await toggleTracking(); }}
-                  style={[
-                    styles.button,
-                    isTracking ? styles.buttonStop : styles.buttonStart,
-                    !selectedGroup && { opacity: 0.5 }
-                  ]}
-                  accessibilityLabel={isTracking ? 'Takibi durdur' : 'Takibi başlat'}
+                  gradient={isTracking ? theme.colors.primary.red : theme.colors.primary.green}
+                  icon={isTracking ? 'stop-circle' : 'play-circle'}
                   disabled={!selectedGroup && !isTracking}
-                >
-                  <Text style={styles.buttonText}>{isTracking ? 'Takibi Durdur' : 'Takibi Başlat'}</Text>
-                </Pressable>
+                  style={{ flex: 1, marginRight: 8 }}
+                />
 
-                <Pressable onPress={toggleAccuracy} style={styles.secondaryButton} accessibilityLabel="Hassasiyet değiştir">
-                  <Text style={styles.secondaryText}>Hassasiyet</Text>
-                  <Text style={styles.secondaryMeta}>{accuracyRef.current === Location.Accuracy.High ? 'Yüksek' : 'Dengeli'}</Text>
-                </Pressable>
+                <GradientButton
+                  title={accuracyRef.current === Location.Accuracy.High ? 'Yüksek' : 'Dengeli'}
+                  onPress={toggleAccuracy}
+                  gradient={theme.colors.primary.purple}
+                  icon="settings"
+                  style={{ flex: 0.6 }}
+                />
               </View>
 
               {/* Phone call input and action */}
