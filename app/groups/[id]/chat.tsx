@@ -46,7 +46,6 @@ export default function GroupChatScreen() {
     const router = useRouter();
     const { showError, showSuccess, showInfo } = useToast();
     const flatListRef = useRef<FlatList>(null);
-    const scrollY = useRef(new Animated.Value(0)).current;
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const groupId = params.id;
@@ -466,10 +465,6 @@ export default function GroupChatScreen() {
                                     colors={['#8b5cf6']}
                                 />
                             }
-                            onScroll={Animated.event(
-                                [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-                                { useNativeDriver: true }
-                            )}
                             scrollEventThrottle={16}
                             onContentSizeChange={() => {
                                 if (messages.length > 0 && !loading) {
