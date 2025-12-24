@@ -776,14 +776,7 @@ router.post('/location/validate-input', requireAuth, locationController.validate
 // Vehicle Tracking Routes
 // Google Maps API key (dynamic implementation - moved to config)
 
-// Group Admin Routes
-router.get('/groups/user/:userId/admin', requireAuth, asyncHandler(groupController.getGroupsByAdmin.bind(groupController)));
 
-// Group Location & Analytics Routes
-router.get('/groups/:groupId/analytics', requireAuth, validateGroupId, asyncHandler(locationController.getGroupAnalytics.bind(locationController)));
-router.post('/groups/:groupId/locations', requireAuth, validateGroupId, asyncHandler(groupController.recordGroupLocation.bind(groupController)));
-router.get('/groups/:groupId/locations', requireAuth, validateGroupId, asyncHandler(groupController.getGroupLocations.bind(groupController)));
-router.get('/groups/:groupId/members-with-locations', requireAuth, validateGroupId, asyncHandler(groupController.getMembersWithLocations.bind(groupController)));
 
 // Vehicle Routes
 router.post('/vehicles/session/start', requireAuth, asyncHandler(locationController.startVehicleSession.bind(locationController)));
