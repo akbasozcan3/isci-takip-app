@@ -5,6 +5,7 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import * as TaskManager from 'expo-task-manager';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -446,10 +447,30 @@ export default function TrackScreen(): React.JSX.Element {
         if (groupsArray.length > 0) {
           showSuccess(`${groupsArray.length} grup yüklendi`);
 
-          // İlk grubu otomatik seç
-          if (!selectedGroup) {
-            console.log('[Track] Auto-selecting first group:', groupsArray[0]);
-            selectGroup(groupsArray[0]);
+          try {
+            const savedGroupJson = await AsyncStorage.getItem('selectedGroup');
+            if (savedGroupJson && !selectedGroup) {
+              const savedGroup = JSON.parse(savedGroupJson);
+              // Check if saved group still exists in active groups
+              const groupStillExists = groupsArray.find(g => g.id === savedGroup.id);
+              if (groupStillExists) {
+                console.log('[Track] ✅ Restoring previously selected group:', groupStillExists.name);
+                selectGroup(groupStillExists);
+              } else {
+                console.log('[Track] Saved group no longer exists, selecting first group');
+                selectGroup(groupsArray[0]);
+              }
+            } else if (!selectedGroup) {
+              // No saved group, select first one
+              console.log('[Track] Auto-selecting first group:', groupsArray[0]);
+              selectGroup(groupsArray[0]);
+            }
+          } catch (storageError) {
+            console.warn('[Track] Failed to restore selected group:', storageError);
+            // Fallback to first group
+            if (!selectedGroup) {
+              selectGroup(groupsArray[0]);
+            }
           }
         } else {
           showInfo('Henüz bir gruba katılmadınız');
@@ -470,7 +491,8 @@ export default function TrackScreen(): React.JSX.Element {
     } finally {
       setLoadingGroups(false);
     }
-  }, [workerId, selectedGroup, showSuccess, showInfo, showWarning, showError]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workerId, showSuccess, showInfo, showWarning, showError]);
 
   // Grup üyelerini yükle
   const checkActivityStatus = React.useCallback(async () => {
@@ -608,6 +630,14 @@ export default function TrackScreen(): React.JSX.Element {
       setSelectedGroup(group);
       setGroupAddress(group.address || 'İstanbul, Türkiye');
 
+      // Save to AsyncStorage for persistence
+      try {
+        await AsyncStorage.setItem('selectedGroup', JSON.stringify(group));
+        console.log('[Track] ✅ Selected group saved to storage');
+      } catch (storageError) {
+        console.warn('[Track] Failed to save selected group:', storageError);
+      }
+
       if (group.lat && group.lng) {
         console.log('[Track] Group has coordinates:', group.lat, group.lng);
         setGroupCoord({ latitude: group.lat, longitude: group.lng });
@@ -734,6 +764,9 @@ export default function TrackScreen(): React.JSX.Element {
             if (!ev || !ev.groupId || ev.groupId !== currentGroupId) return;
             await stopBackgroundTracking();
             setSelectedGroup(null);
+            // Clear from AsyncStorage
+            await AsyncStorage.removeItem('selectedGroup');
+            console.log('[Track] ✅ Cleared selected group from storage');
             setGroupMembers([]);
             setGroupAddress('');
             setGroupCoord(null);
@@ -796,6 +829,8 @@ export default function TrackScreen(): React.JSX.Element {
       // Reset state
       setActiveGroups([]);
       setSelectedGroup(null);
+      // Clear from AsyncStorage
+      AsyncStorage.removeItem('selectedGroup').catch(e => console.warn('[Track] Storage clear error:', e));
       setGroupMembers([]);
       setShowGroupSelector(false);
       setCoords(null);
@@ -812,7 +847,8 @@ export default function TrackScreen(): React.JSX.Element {
     if (workerId) {
       loadActiveGroups();
     }
-  }, [workerId, loadActiveGroups]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workerId]);
 
   // showAllUsers değiştiğinde polling'i başlat/durdur
   React.useEffect(() => {
@@ -2211,45 +2247,94 @@ export default function TrackScreen(): React.JSX.Element {
           )}
 
           <View style={styles.controlPanel}>
-            {allUsers.length === 0 && (
-              <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#e6eef0', alignItems: 'center' }}>
-                <Text style={{ color: '#083344', fontWeight: '800', marginBottom: 6, textAlign: 'center' }}>Henüz çalışan görünmüyor</Text>
-                <Text style={{ color: '#64748b', marginBottom: 8, textAlign: 'center' }}>Aktif cihazları görmek için aramayı kullanın veya cihazlarda takibi başlatın.</Text>
-                <Pressable onPress={() => { setSearchModalVisible(true); searchActiveDevices(''); }} style={{ backgroundColor: '#0EA5E9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}>
-                  <Text style={{ color: '#fff', fontWeight: '800' }}>Aktifleri Ara</Text>
-                </Pressable>
+            {/* Premium Search Section */}
+            <View style={styles.searchSection}>
+              <Text style={styles.sectionTitle}>🔍 Konum Takibi</Text>
+
+              {/* Worker ID Search */}
+              <View style={styles.searchCard}>
+                <Text style={styles.searchLabel}>İşçi ID</Text>
+                <View style={styles.inputRow}>
+                  <TextInput
+                    placeholder="ID girin (örn: 0l7wfuyvqb)"
+                    placeholderTextColor="rgba(148, 163, 184, 0.6)"
+                    style={styles.input}
+                    value={workerId}
+                    onChangeText={setWorkerId}
+                    onSubmitEditing={() => { if (workerId) fetchHistoryAndRender(workerId); }}
+                    returnKeyType="search"
+                  />
+                  <Pressable
+                    onPress={() => { if (workerId) fetchHistoryAndRender(workerId); }}
+                    style={({ pressed }) => [
+                      styles.searchBtn,
+                      pressed && { opacity: 0.7, transform: [{ scale: 0.95 }] }
+                    ]}
+                    accessibilityLabel="Geçmişi getir"
+                  >
+                    <LinearGradient
+                      colors={workerId ? ['#0EA5E9', '#06B6D4'] : ['#475569', '#64748b']}
+                      style={styles.searchBtnGradient}
+                    >
+                      <Ionicons name="trail-sign-outline" size={20} color="#fff" />
+                    </LinearGradient>
+                  </Pressable>
+                </View>
               </View>
-            )}
-            <View style={styles.inputRow}>
-              <TextInput
-                placeholder="İşçi ID girin"
-                placeholderTextColor="#9ca3af"
-                style={styles.input}
-                value={workerId}
-                onChangeText={setWorkerId}
-                onSubmitEditing={() => { if (workerId) fetchHistoryAndRender(workerId); }}
-                returnKeyType="search"
-              />
-              <Pressable onPress={() => { if (workerId) fetchHistoryAndRender(workerId); }} style={styles.searchBtn} accessibilityLabel="Geçmişi getir">
-                <Ionicons name="trail-sign-outline" size={18} color="#fff" />
-              </Pressable>
+
+              {/* Active Devices Search */}
+              <View style={styles.searchCard}>
+                <Text style={styles.searchLabel}>Aktif Cihazlar</Text>
+                <View style={styles.inputRow}>
+                  <TextInput
+                    placeholder="İsim veya telefon ile ara"
+                    placeholderTextColor="rgba(148, 163, 184, 0.6)"
+                    style={styles.input}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    onSubmitEditing={() => { setSearchModalVisible(true); searchActiveDevices(searchQuery); }}
+                    returnKeyType="search"
+                  />
+                  <Pressable
+                    onPress={() => { setSearchModalVisible(true); searchActiveDevices(searchQuery); }}
+                    style={({ pressed }) => [
+                      styles.searchBtn,
+                      pressed && { opacity: 0.7, transform: [{ scale: 0.95 }] }
+                    ]}
+                    accessibilityLabel="Aktif cihazları ara"
+                  >
+                    <LinearGradient
+                      colors={['#10b981', '#059669']}
+                      style={styles.searchBtnGradient}
+                    >
+                      <Ionicons name="search" size={20} color="#fff" />
+                    </LinearGradient>
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Quick Actions */}
+              {allUsers.length === 0 && (
+                <Pressable
+                  onPress={() => { setSearchModalVisible(true); searchActiveDevices(''); }}
+                  style={({ pressed }) => [
+                    styles.quickActionBtn,
+                    pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] }
+                  ]}
+                >
+                  <LinearGradient
+                    colors={['#8b5cf6', '#7c3aed']}
+                    style={styles.quickActionGradient}
+                  >
+                    <Ionicons name="people" size={20} color="#fff" />
+                    <Text style={styles.quickActionText}>Tüm Aktifleri Göster</Text>
+                    <Ionicons name="arrow-forward" size={18} color="#fff" />
+                  </LinearGradient>
+                </Pressable>
+              )}
             </View>
 
-            <View style={[styles.inputRow, { marginTop: 8 }]}>
-              <TextInput
-                placeholder="İsim veya telefon ile ara"
-                placeholderTextColor="#9ca3af"
-                style={styles.input}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                onSubmitEditing={() => { setSearchModalVisible(true); searchActiveDevices(searchQuery); }}
-                returnKeyType="search"
-              />
-              <Pressable onPress={() => { setSearchModalVisible(true); searchActiveDevices(searchQuery); }} style={styles.searchBtn} accessibilityLabel="Aktif cihazları ara">
-                <Ionicons name="search" size={18} color="#fff" />
-              </Pressable>
-            </View>
-
+            {/* Group Warning */}
             {!selectedGroup && (
               <View style={{ backgroundColor: '#fef3c7', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#fbbf24', alignItems: 'center' }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
@@ -3343,10 +3428,97 @@ const styles = StyleSheet.create({
   calloutSub: { fontSize: 12, color: '#64748b', fontFamily: 'Poppins-Regular' },
 
 
-  controlPanel: { marginHorizontal: 14, gap: 12, marginBottom: 40, marginTop: 6 },
-  inputRow: { flexDirection: 'row' },
-  input: { flex: 1, height: 46, borderRadius: 12, borderWidth: 1, borderColor: '#334155', paddingHorizontal: 12, backgroundColor: '#1e293b', color: '#fff' },
-  searchBtn: { width: 46, height: 46, marginLeft: 8, borderRadius: 12, backgroundColor: '#0EA5E9', alignItems: 'center', justifyContent: 'center' },
+  controlPanel: {
+    marginHorizontal: 14,
+    marginBottom: Platform.OS === 'ios' ? 30 : 40,
+    marginTop: 6
+  },
+  searchSection: {
+    backgroundColor: 'rgba(30, 41, 59, 0.95)',
+    borderRadius: 20,
+    padding: 16,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#fff',
+    fontFamily: 'Poppins-ExtraBold',
+    marginBottom: 4,
+  },
+  searchCard: {
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    borderRadius: 16,
+    padding: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.15)',
+  },
+  searchLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontFamily: 'Poppins-SemiBold',
+    marginBottom: 4,
+  },
+  searchBtnGradient: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  quickActionBtn: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginTop: 4,
+  },
+  quickActionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  quickActionText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
+    fontFamily: 'Poppins-Bold',
+    flex: 1,
+    textAlign: 'center',
+  },
+  inputRow: { flexDirection: 'row', alignItems: 'center' },
+  input: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(99, 102, 241, 0.3)',
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    color: '#fff',
+    fontSize: 14,
+    fontFamily: 'Poppins-Regular',
+  },
+  searchBtn: {
+    marginLeft: 10,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
   callBtn: { width: 46, height: 46, marginLeft: 8, borderRadius: 12, backgroundColor: '#16a34a', alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', gap: 12 },
   button: { flex: 1, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },

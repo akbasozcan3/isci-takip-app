@@ -4,8 +4,9 @@ import { useFonts } from 'expo-font';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -258,9 +259,30 @@ export default function LocationFeaturesScreen() {
       const res = await authFetch(`/groups/user/${userId}/active`);
       if (res.ok) {
         const groups = await res.json();
-        setActiveGroups(Array.isArray(groups) ? groups : []);
-        if (Array.isArray(groups) && groups.length > 0 && !selectedGroup) {
-          setSelectedGroup(groups[0]);
+        const groupsArray = Array.isArray(groups) ? groups : [];
+        setActiveGroups(groupsArray);
+
+        // Try to restore previously selected group from AsyncStorage
+        try {
+          const savedGroupJson = await AsyncStorage.getItem('selectedGroup');
+          if (savedGroupJson) {
+            const savedGroup = JSON.parse(savedGroupJson);
+            // Check if saved group still exists in active groups
+            const groupStillExists = groupsArray.find((g: ActiveGroup) => g.id === savedGroup.id);
+            if (groupStillExists) {
+              console.log('[LocationFeatures] ✅ Restoring saved group:', groupStillExists.name);
+              setSelectedGroup(groupStillExists);
+              return;
+            }
+          }
+        } catch (storageError) {
+          console.warn('[LocationFeatures] Failed to restore group:', storageError);
+        }
+
+        // Fallback: select first group if no saved group
+        if (groupsArray.length > 0 && !selectedGroup) {
+          console.log('[LocationFeatures] Auto-selecting first group');
+          setSelectedGroup(groupsArray[0]);
         }
       } else {
         setActiveGroups([]);
@@ -573,6 +595,28 @@ export default function LocationFeaturesScreen() {
       loadActiveGroups();
     }
   }, [userId, loadActiveGroups]);
+
+  // Reload group from AsyncStorage when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      const reloadGroup = async () => {
+        try {
+          const savedGroupJson = await AsyncStorage.getItem('selectedGroup');
+          if (savedGroupJson && activeGroups.length > 0) {
+            const savedGroup = JSON.parse(savedGroupJson);
+            const groupExists = activeGroups.find((g: ActiveGroup) => g.id === savedGroup.id);
+            if (groupExists && (!selectedGroup || selectedGroup.id !== savedGroup.id)) {
+              console.log('[LocationFeatures] 🔄 Syncing group from storage:', groupExists.name);
+              setSelectedGroup(groupExists);
+            }
+          }
+        } catch (error) {
+          console.warn('[LocationFeatures] Failed to sync group:', error);
+        }
+      };
+      reloadGroup();
+    }, [activeGroups, selectedGroup])
+  );
 
   React.useEffect(() => {
     if (!fontsLoaded) return;

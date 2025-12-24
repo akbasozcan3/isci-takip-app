@@ -10,6 +10,7 @@ import { useProfile } from '../../contexts/ProfileContext';
 import { UnifiedHeader } from '../../components/UnifiedHeader';
 import { authFetch } from '../../utils/auth';
 import { initializeSocket, getSocket } from '../../utils/socketService';
+import { useNetworkStatus } from '../../utils/networkStatus';
 
 interface Group {
     id: string;
@@ -51,6 +52,17 @@ export default function MessagesScreen() {
     const [refreshing, setRefreshing] = React.useState(false);
     const [userId, setUserId] = React.useState('');
     const [socketConnected, setSocketConnected] = React.useState(false);
+    const networkState = useNetworkStatus();
+
+    // Combined connection status
+    const isFullyConnected = networkState.isConnected && networkState.isInternetReachable && socketConnected;
+    const connectionStatus = !networkState.isConnected
+        ? '📡 İnternet bağlantısı yok'
+        : !networkState.isInternetReachable
+            ? '🌐 İnternet erişilemiyor'
+            : !socketConnected
+                ? '🔌 Sunucuya bağlanıyor...'
+                : '✅ Bağlı';
 
     React.useEffect(() => {
         const loadUserId = async () => {
@@ -240,12 +252,12 @@ export default function MessagesScreen() {
 
             <UnifiedHeader
                 title="Mesajlar"
-                subtitle={socketConnected ? "Grup sohbetleriniz" : "Bağlantı kesildi"}
-                gradientColors={['#8b5cf6', '#7c3aed']}
+                subtitle={connectionStatus}
+                gradientColors={isFullyConnected ? ['#8b5cf6', '#7c3aed'] : ['#64748b', '#475569']}
                 brandLabel="MESAJLAR"
                 profileName={userName}
                 showProfile={true}
-                showNetwork={socketConnected}
+                showNetwork={isFullyConnected}
             />
 
             <ScrollView

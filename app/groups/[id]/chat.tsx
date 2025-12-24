@@ -24,6 +24,7 @@ import { MessageBubble } from '../../../components/chat/MessageBubble';
 import { useToast } from '../../../components/Toast';
 import { authFetch } from '../../../utils/auth';
 import { initializeSocket, getSocket, joinGroupRoom, leaveGroupRoom, sendTypingIndicator } from '../../../utils/socketService';
+import { useNetworkStatus } from '../../../utils/networkStatus';
 
 interface Message {
     id: string;
@@ -61,6 +62,10 @@ export default function GroupChatScreen() {
     const [isTyping, setIsTyping] = useState(false);
     const [typingUsers, setTypingUsers] = useState<string[]>([]);
     const [socketConnected, setSocketConnected] = useState(false);
+    const networkState = useNetworkStatus();
+
+    // Combined connection status
+    const isFullyConnected = networkState.isConnected && networkState.isInternetReachable && socketConnected;
 
     // Load user ID
     useEffect(() => {
@@ -382,9 +387,20 @@ export default function GroupChatScreen() {
                     <View style={styles.headerCenter}>
                         <Text style={styles.groupName}>{groupName}</Text>
                         <View style={styles.statusRow}>
-                            <View style={[styles.onlineIndicator, !socketConnected && { backgroundColor: '#ef4444' }]} />
+                            <View style={[
+                                styles.onlineIndicator,
+                                !isFullyConnected && { backgroundColor: '#ef4444' }
+                            ]} />
                             <Text style={styles.participantCount}>
-                                {socketConnected ? (memberCount > 0 ? `${memberCount} üye` : 'Grup Sohbeti') : 'Bağlantı kesildi'}
+                                {!networkState.isConnected
+                                    ? '📡 İnternet yok'
+                                    : !networkState.isInternetReachable
+                                        ? '🌐 Bağlantı zayıf'
+                                        : !socketConnected
+                                            ? '🔌 Bağlanıyor...'
+                                            : memberCount > 0
+                                                ? `${memberCount} üye`
+                                                : 'Grup Sohbeti'}
                             </Text>
                         </View>
                     </View>
@@ -471,7 +487,7 @@ export default function GroupChatScreen() {
                 {/* Input - Sticky at bottom */}
                 <ChatInput
                     onSend={sendMessage}
-                    disabled={sending || !socketConnected}
+                    disabled={sending}
                     onTyping={handleTyping}
                 />
             </KeyboardAvoidingView>
