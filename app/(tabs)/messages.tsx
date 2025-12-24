@@ -101,22 +101,36 @@ export default function MessagesScreen() {
             const groupsData = await groupsRes.json();
             const groups: Group[] = Array.isArray(groupsData) ? groupsData : (groupsData.data || groupsData.groups || []);
 
-            // For each group, fetch last message
+            // For each group, fetch last message and unread count
             const conversationPromises = groups.map(async (group) => {
                 try {
+                    // Fetch last message
                     const messagesRes = await authFetch(`/groups/${group.id}/messages?limit=1`);
+                    let lastMessage = undefined;
 
                     if (messagesRes.ok) {
                         const messagesData = await messagesRes.json();
                         const messages = messagesData.messages || [];
-                        const lastMessage = messages[0];
-
-                        return {
-                            group,
-                            lastMessage,
-                            unreadCount: 0, // TODO: Implement unread count from backend
-                        };
+                        lastMessage = messages[0];
                     }
+
+                    // Fetch unread count
+                    let unreadCount = 0;
+                    try {
+                        const unreadRes = await authFetch(`/groups/${group.id}/unread-count`);
+                        if (unreadRes.ok) {
+                            const unreadData = await unreadRes.json();
+                            unreadCount = unreadData.unreadCount || unreadData.count || 0;
+                        }
+                    } catch (unreadErr) {
+                        console.warn('[Messages] Failed to load unread count for group:', group.id);
+                    }
+
+                    return {
+                        group,
+                        lastMessage,
+                        unreadCount,
+                    };
                 } catch (err) {
                     console.warn('[Messages] Failed to load messages for group:', group.id);
                 }
