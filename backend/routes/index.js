@@ -776,14 +776,27 @@ router.post('/location/validate-input', requireAuth, locationController.validate
 // Vehicle Tracking Routes
 // Google Maps API key (dynamic implementation - moved to config)
 
+// Group Admin Routes
+router.get('/groups/user/:userId/admin', requireAuth, asyncHandler(groupController.getGroupsByAdmin.bind(groupController)));
+
+// Group Location & Analytics Routes
 router.get('/groups/:groupId/analytics', requireAuth, validateGroupId, asyncHandler(locationController.getGroupAnalytics.bind(locationController)));
+router.post('/groups/:groupId/locations', requireAuth, validateGroupId, asyncHandler(groupController.recordGroupLocation.bind(groupController)));
+router.get('/groups/:groupId/locations', requireAuth, validateGroupId, asyncHandler(groupController.getGroupLocations.bind(groupController)));
+router.get('/groups/:groupId/members-with-locations', requireAuth, validateGroupId, asyncHandler(groupController.getMembersWithLocations.bind(groupController)));
+
+// Vehicle Routes
 router.post('/vehicles/session/start', requireAuth, asyncHandler(locationController.startVehicleSession.bind(locationController)));
 router.post('/vehicles/session/:sessionId/end', requireAuth, asyncHandler(locationController.endVehicleSession.bind(locationController)));
 router.post('/vehicles/speed-violation', requireAuth, asyncHandler(locationController.recordSpeedViolation.bind(locationController)));
 router.get('/vehicles/sessions', requireAuth, asyncHandler(locationController.getVehicleSessions.bind(locationController)));
 router.get('/groups/:groupId/vehicles', requireAuth, validateGroupId, asyncHandler(locationController.getGroupVehicles.bind(locationController)));
 
-// Messaging Controller
+// Messaging Routes (using GroupController for consistency)
+router.get('/groups/:groupId/messages', requireAuth, validateGroupId, asyncHandler(groupController.getMessages.bind(groupController)));
+router.post('/groups/:groupId/messages', requireAuth, validateGroupId, asyncHandler(groupController.sendMessage.bind(groupController)));
+
+// Messaging Controller (Legacy/Direct Messages)
 const messagingController = require('../controllers/messagingController');
 router.post('/messages/send',
   requireAuth,
@@ -793,6 +806,31 @@ router.post('/messages/send',
 router.get('/messages', requireAuth, asyncHandler(messagingController.getMessages.bind(messagingController)));
 router.get('/messages/conversations', requireAuth, asyncHandler(messagingController.getConversations.bind(messagingController)));
 router.put('/messages/:messageId/read', requireAuth, asyncHandler(messagingController.markAsRead.bind(messagingController)));
+
+
+
+// Step Tracking Routes
+const stepController = require('../controllers/stepController');
+router.post('/steps/store', requireAuth, asyncHandler(stepController.storeSteps.bind(stepController)));
+router.get('/steps/today', requireAuth, asyncHandler(stepController.getTodaySteps.bind(stepController)));
+router.get('/steps/history', requireAuth, asyncHandler(stepController.getStepsHistory.bind(stepController)));
+router.get('/steps/stats', requireAuth, asyncHandler(stepController.getStepsStats.bind(stepController)));
+router.get('/steps/achievements', requireAuth, asyncHandler(stepController.getAchievements.bind(stepController)));
+router.get('/steps/streak', requireAuth, asyncHandler(stepController.getStreak.bind(stepController)));
+router.get('/steps/goal', requireAuth, asyncHandler(stepController.getGoal.bind(stepController)));
+router.post('/steps/goal', requireAuth, asyncHandler(stepController.setGoal.bind(stepController)));
+router.post('/steps/start-tracking', requireAuth, asyncHandler(stepController.startTracking.bind(stepController)));
+router.post('/steps/stop-tracking', requireAuth, asyncHandler(stepController.stopTracking.bind(stepController)));
+
+
+// Profile Stats Route
+const profileStatsController = require('../controllers/profileStatsController');
+router.get('/api/profile/stats', requireAuth, asyncHandler(profileStatsController.getStats.bind(profileStatsController)));
+
+// Billing Routes
+const billingController = require('../controllers/billingController');
+router.get('/me/subscription', requireAuth, asyncHandler(billingController.getMySubscription.bind(billingController)));
+router.get('/plans', requireAuth, asyncHandler(billingController.getPlans.bind(billingController)));
 
 // Dashboard Routes
 const dashboardController = require('../controllers/dashboardController');

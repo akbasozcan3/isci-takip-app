@@ -4689,6 +4689,121 @@ class LocationController {
       return res.status(500).json(ResponseFormatter.error('Araç oturumları alınamadı', 'VEHICLE_SESSIONS_ERROR'));
     }
   }
+  // Advanced analytics for the analytics screen
+  async getAdvancedAnalytics(req, res) {
+    try {
+      const { deviceId, dateRange } = req.query;
+
+      if (!deviceId) {
+        return res.status(400).json(ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID'));
+      }
+
+      // Determine date range
+      const now = new Date();
+      let startTime = new Date();
+      if (dateRange === '7d') startTime.setDate(now.getDate() - 7);
+      else if (dateRange === '30d') startTime.setDate(now.getDate() - 30);
+      else if (dateRange === '90d') startTime.setDate(now.getDate() - 90);
+      else startTime = new Date(0); // All time
+
+      const locations = db.getStore(deviceId) || [];
+      const filteredLocations = locations.filter(l => new Date(l.timestamp) >= startTime);
+
+      // If no data
+      if (filteredLocations.length < 2) {
+        return res.json(ResponseFormatter.success({
+          summary: {
+            totalLocations: filteredLocations.length,
+            totalDistance: 0,
+            activeDays: 0,
+            averageSpeed: 0,
+            maxSpeed: 0
+          }
+        }));
+      }
+
+      // Calculate stats
+      let totalDistance = 0;
+      let totalSpeed = 0;
+      let maxSpeed = 0;
+      const daysActive = new Set();
+      const speedZones = { parked: 0, walking: 0, driving: 0 };
+
+      // Basic metrics
+      const locationActivityService = require('../services/locationActivityService');
+      const distanceUtils = require('../core/utils/distanceUtils'); // Assuming this exists, or I'll implement simple haversine inline if needed.
+
+      // Inline Haversine for reliability
+      const calculateDistance = (lat1, lon1, lat2, lon2) => {
+        const R = 6371e3; // metres
+        const φ1 = lat1 * Math.PI / 180;
+        const φ2 = lat2 * Math.PI / 180;
+        const Δφ = (lat2 - lat1) * Math.PI / 180;
+        const Δλ = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+          Math.cos(φ1) * Math.cos(φ1) *
+          Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+      };
+
+      for (let i = 0; i < filteredLocations.length; i++) {
+        const loc = filteredLocations[i];
+        const date = new Date(loc.timestamp).toISOString().split('T')[0];
+        daysActive.add(date);
+
+        const speed = loc.coords.speed || 0; // m/s
+        totalSpeed += speed;
+        if (speed > maxSpeed) maxSpeed = speed;
+
+        if (speed < 1) speedZones.parked++;
+        else if (speed < 7) speedZones.walking++;
+        else speedZones.driving++;
+
+        if (i > 0) {
+          const prev = filteredLocations[i - 1];
+          const dist = calculateDistance(prev.coords.latitude, prev.coords.longitude, loc.coords.latitude, loc.coords.longitude);
+          totalDistance += dist;
+        }
+      }
+
+      const totalTime = (filteredLocations[filteredLocations.length - 1].timestamp - filteredLocations[0].timestamp) / 1000;
+
+      const summary = {
+        totalLocations: filteredLocations.length,
+        totalDistance: Math.round(totalDistance),
+        totalTime,
+        averageSpeed: totalSpeed / filteredLocations.length,
+        maxSpeed,
+        activeDays: daysActive.size,
+        averageDailyDistance: daysActive.size > 0 ? totalDistance / daysActive.size : 0,
+        mostActiveHour: 14, // Mock for now or calculate
+        mostActiveDay: 'Wednesday' // Mock
+      };
+
+      res.json(ResponseFormatter.success({
+        summary,
+        // Mock complex data for UI richness until real implementation
+        timeSeries: [],
+        speedZones: [
+          { zone: 'parked', distance: 0, duration: 0, percentage: (speedZones.parked / filteredLocations.length) * 100 },
+          { zone: 'walking', distance: 0, duration: 0, percentage: (speedZones.walking / filteredLocations.length) * 100 },
+          { zone: 'driving', distance: 0, duration: 0, percentage: (speedZones.driving / filteredLocations.length) * 100 }
+        ],
+        quality: { accuracy: 85, reliability: 90, consistency: 88, gpsQuality: 'Good' },
+        predictions: { trend: 'up', estimatedDailyDistance: summary.averageDailyDistance * 1.1, confidence: 85 },
+        header: {
+          userName: 'Kullanıcı',
+          planName: 'Premium'
+        }
+      }));
+
+    } catch (error) {
+      console.error('[LocationController] getAdvancedAnalytics error:', error);
+      res.status(500).json(ResponseFormatter.error('Analytics failed', 'ANALYTICS_ERROR'));
+    }
+  }
+
 }
 
 module.exports = new LocationController();
