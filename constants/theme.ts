@@ -1,278 +1,216 @@
-/**
- * BAVAXE Design System
- * Centralized theme constants for consistent UI/UX
- */
+// Premium Design System
+// Unified theme for consistent premium UI across all screens
 
-export const theme = {
-    // Color Palette
-    colors: {
-        // Primary Colors (Cyan/Blue)
-        primary: {
-            50: '#f0f9ff',
-            100: '#e0f2fe',
-            200: '#bae6fd',
-            300: '#7dd3fc',
-            400: '#38bdf8',
-            500: '#0EA5E9', // Main primary
-            600: '#0284c7',
-            700: '#0369a1',
-            800: '#075985',
-            900: '#0c4a6e',
-        },
-
-        // Secondary Colors (Purple)
-        secondary: {
-            50: '#f5f3ff',
-            100: '#ede9fe',
-            200: '#ddd6fe',
-            300: '#c4b5fd',
-            400: '#a78bfa',
-            500: '#6366F1', // Main secondary
-            600: '#4f46e5',
-            700: '#4338ca',
-            800: '#3730a3',
-            900: '#312e81',
-        },
-
-        // Semantic Colors
-        success: {
-            light: '#4ade80',
-            main: '#10b981',
-            dark: '#059669',
-        },
-        error: {
-            light: '#f87171',
-            main: '#ef4444',
-            dark: '#dc2626',
-        },
-        warning: {
-            light: '#fbbf24',
-            main: '#f59e0b',
-            dark: '#d97706',
-        },
-        info: {
-            light: '#60a5fa',
-            main: '#3b82f6',
-            dark: '#2563eb',
-        },
-
-        // Background Colors (Dark Theme)
-        background: {
-            primary: '#0f172a',     // Main background
-            secondary: '#1e293b',   // Card background
-            tertiary: '#334155',    // Elevated background
-            quaternary: '#475569',  // Hover states
-        },
-
-        // Text Colors
-        text: {
-            primary: '#ffffff',     // Main text
-            secondary: '#cbd5e1',   // Secondary text
-            tertiary: '#94a3b8',    // Muted text
-            disabled: '#64748b',    // Disabled text
-            inverse: '#0f172a',     // Text on light background
-        },
-
-        // Border Colors
-        border: {
-            light: 'rgba(255, 255, 255, 0.06)',
-            medium: 'rgba(255, 255, 255, 0.1)',
-            strong: 'rgba(255, 255, 255, 0.2)',
-        },
-
-        // Overlay Colors
-        overlay: {
-            light: 'rgba(0, 0, 0, 0.3)',
-            medium: 'rgba(0, 0, 0, 0.5)',
-            strong: 'rgba(0, 0, 0, 0.7)',
-        },
+export const colors = {
+    primary: {
+        purple: ['#8b5cf6', '#7c3aed'],
+        cyan: ['#0EA5E9', '#06B6D4'],
+        green: ['#10b981', '#059669'],
+        red: ['#ef4444', '#dc2626'],
+        orange: ['#f59e0b', '#d97706'],
     },
-
-    // Spacing Scale (4px base)
-    spacing: {
-        xs: 4,
-        sm: 8,
-        md: 16,
-        lg: 24,
-        xl: 32,
-        xxl: 48,
-        xxxl: 64,
+    background: {
+        dark: '#0f172a',
+        darker: '#020617',
+        card: 'rgba(30, 41, 59, 0.97)',
+        cardLight: 'rgba(30, 41, 59, 0.8)',
+        input: 'rgba(15, 23, 42, 0.6)',
+        modal: 'rgba(15, 23, 42, 0.95)',
     },
-
-    // Border Radius
-    borderRadius: {
-        xs: 4,
-        sm: 8,
-        md: 12,
-        lg: 16,
-        xl: 24,
-        xxl: 32,
-        full: 9999,
+    text: {
+        primary: '#e2e8f0',
+        secondary: '#94a3b8',
+        tertiary: '#64748b',
+        disabled: '#475569',
     },
-
-    // Typography
-    typography: {
-        // Font Families
-        fontFamily: {
-            regular: 'Poppins-Regular',
-            medium: 'Poppins-Medium',
-            semiBold: 'Poppins-SemiBold',
-            bold: 'Poppins-Bold',
-            extraBold: 'Poppins-ExtraBold',
-        },
-
-        // Font Sizes
-        fontSize: {
-            xs: 12,
-            sm: 14,
-            base: 16,
-            lg: 18,
-            xl: 20,
-            '2xl': 24,
-            '3xl': 28,
-            '4xl': 32,
-            '5xl': 36,
-        },
-
-        // Line Heights
-        lineHeight: {
-            tight: 1.2,
-            normal: 1.5,
-            relaxed: 1.75,
-        },
-
-        // Font Weights
-        fontWeight: {
-            regular: '400',
-            medium: '500',
-            semiBold: '600',
-            bold: '700',
-            extraBold: '800',
-            black: '900',
-        },
-
-        // Predefined Text Styles
-        styles: {
-            h1: {
-                fontSize: 32,
-                fontWeight: '900',
-                lineHeight: 1.2,
-                fontFamily: 'Poppins-ExtraBold',
-            },
-            h2: {
-                fontSize: 24,
-                fontWeight: '800',
-                lineHeight: 1.3,
-                fontFamily: 'Poppins-Bold',
-            },
-            h3: {
-                fontSize: 20,
-                fontWeight: '700',
-                lineHeight: 1.4,
-                fontFamily: 'Poppins-Bold',
-            },
-            h4: {
-                fontSize: 18,
-                fontWeight: '600',
-                lineHeight: 1.4,
-                fontFamily: 'Poppins-SemiBold',
-            },
-            body: {
-                fontSize: 16,
-                fontWeight: '400',
-                lineHeight: 1.5,
-                fontFamily: 'Poppins-Regular',
-            },
-            bodyMedium: {
-                fontSize: 16,
-                fontWeight: '500',
-                lineHeight: 1.5,
-                fontFamily: 'Poppins-Medium',
-            },
-            caption: {
-                fontSize: 14,
-                fontWeight: '400',
-                lineHeight: 1.5,
-                fontFamily: 'Poppins-Regular',
-            },
-            small: {
-                fontSize: 12,
-                fontWeight: '400',
-                lineHeight: 1.5,
-                fontFamily: 'Poppins-Regular',
-            },
-        },
+    border: {
+        primary: 'rgba(99, 102, 241, 0.25)',
+        secondary: 'rgba(148, 163, 184, 0.2)',
+        cyan: 'rgba(14, 165, 233, 0.3)',
+        purple: 'rgba(139, 92, 246, 0.3)',
     },
+    status: {
+        online: '#10b981',
+        offline: '#64748b',
+        away: '#f59e0b',
+    }
+};
 
-    // Shadows
-    shadows: {
-        sm: {
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.05,
-            shadowRadius: 2,
-            elevation: 1,
-        },
-        md: {
-            shadowColor: '#000',
+export const spacing = {
+    xs: 4,
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 20,
+    xxl: 24,
+    xxxl: 32,
+};
+
+export const typography = {
+    h1: {
+        fontSize: 28,
+        fontWeight: '900' as const,
+        fontFamily: 'Poppins-Black',
+        color: colors.text.primary,
+    },
+    h2: {
+        fontSize: 24,
+        fontWeight: '800' as const,
+        fontFamily: 'Poppins-ExtraBold',
+        color: colors.text.primary,
+    },
+    h3: {
+        fontSize: 20,
+        fontWeight: '700' as const,
+        fontFamily: 'Poppins-Bold',
+        color: colors.text.primary,
+    },
+    h4: {
+        fontSize: 18,
+        fontWeight: '600' as const,
+        fontFamily: 'Poppins-SemiBold',
+        color: colors.text.primary,
+    },
+    body: {
+        fontSize: 15,
+        fontWeight: '400' as const,
+        fontFamily: 'Poppins-Regular',
+        color: colors.text.primary,
+    },
+    bodyBold: {
+        fontSize: 15,
+        fontWeight: '600' as const,
+        fontFamily: 'Poppins-SemiBold',
+        color: colors.text.primary,
+    },
+    caption: {
+        fontSize: 12,
+        fontWeight: '500' as const,
+        fontFamily: 'Poppins-Medium',
+        color: colors.text.secondary,
+    },
+    small: {
+        fontSize: 11,
+        fontWeight: '400' as const,
+        fontFamily: 'Poppins-Regular',
+        color: colors.text.tertiary,
+    },
+};
+
+export const shadows = {
+    none: {
+        shadowColor: 'transparent',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0,
+        shadowRadius: 0,
+        elevation: 0,
+    },
+    sm: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    md: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+        elevation: 4,
+    },
+    lg: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.2,
+        shadowRadius: 16,
+        elevation: 8,
+    },
+    xl: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.25,
+        shadowRadius: 24,
+        elevation: 12,
+    },
+    colored: {
+        cyan: {
+            shadowColor: '#0EA5E9',
             shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.1,
+            shadowOpacity: 0.3,
             shadowRadius: 4,
             elevation: 3,
         },
-        lg: {
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.15,
-            shadowRadius: 8,
-            elevation: 6,
+        purple: {
+            shadowColor: '#8b5cf6',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.3,
+            shadowRadius: 4,
+            elevation: 3,
         },
-        xl: {
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.2,
-            shadowRadius: 16,
-            elevation: 10,
+        green: {
+            shadowColor: '#10b981',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.3,
+            shadowRadius: 4,
+            elevation: 3,
         },
-        colored: {
-            primary: {
-                shadowColor: '#0EA5E9',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.3,
-                shadowRadius: 8,
-                elevation: 6,
-            },
-            secondary: {
-                shadowColor: '#6366F1',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.3,
-                shadowRadius: 8,
-                elevation: 6,
-            },
-        },
-    },
+    }
+};
 
-    // Animation Durations
-    animation: {
-        fast: 150,
-        normal: 300,
-        slow: 500,
-    },
+export const borderRadius = {
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 20,
+    xxl: 24,
+    full: 9999,
+};
 
-    // Z-Index Scale
-    zIndex: {
-        base: 0,
-        dropdown: 1000,
-        sticky: 1100,
-        modal: 1200,
-        popover: 1300,
-        tooltip: 1400,
-        toast: 1500,
-    },
-} as const;
+export const animations = {
+    fast: 200,
+    normal: 300,
+    slow: 500,
+};
 
-// Type exports for TypeScript
-export type Theme = typeof theme;
-export type ThemeColors = typeof theme.colors;
-export type ThemeSpacing = typeof theme.spacing;
-export type ThemeTypography = typeof theme.typography;
+// Premium card style
+export const premiumCard = {
+    backgroundColor: colors.background.card,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    borderWidth: 1.5,
+    borderColor: colors.border.primary,
+    ...shadows.lg,
+};
+
+// Premium button style
+export const premiumButton = {
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    ...shadows.md,
+};
+
+// Premium input style
+export const premiumInput = {
+    backgroundColor: colors.background.input,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border.secondary,
+    color: colors.text.primary,
+    fontFamily: 'Poppins-Regular',
+    fontSize: 15,
+};
+
+export default {
+    colors,
+    spacing,
+    typography,
+    shadows,
+    borderRadius,
+    animations,
+    premiumCard,
+    premiumButton,
+    premiumInput,
+};

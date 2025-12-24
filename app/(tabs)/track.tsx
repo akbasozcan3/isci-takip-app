@@ -514,15 +514,17 @@ export default function TrackScreen(): React.JSX.Element {
           const newActivity = data.data.activity;
 
           if (prevActivity && prevActivity !== newActivity) {
-            const activityNames: Record<string, string> = {
-              'home': '🏠 Ev',
-              'stationary': '📍 Duruyor',
-              'walking': '🚶 Yürüyor',
-              'cycling': '🚴 Bisiklet',
-              'motorcycle': '🏍️ Motor',
-              'driving': '🚗 Araba'
+            const activityMap: Record<string, string> = {
+              'still': 'Duruyor',
+              'walking': 'Yürüyor',
+              'running': 'Koşuyor',
+              'automotive': 'Araçta',
+              'stationary': 'Duruyor',
+              'cycling': 'Bisiklet',
+              'unknown': 'Bilinmiyor',
+              'motorcycle': 'Motor',
             };
-            showInfo(`${data.data.icon} ${activityNames[newActivity] || newActivity} - ${data.data.speed.toFixed(1)} km/h`);
+            showInfo(`${data.data.icon} ${activityMap[newActivity] || newActivity} - ${data.data.speed.toFixed(1)} km/h`);
           }
         }
       }
@@ -952,7 +954,7 @@ export default function TrackScreen(): React.JSX.Element {
       const appleMapsUrl = `https://maps.apple.com/?ll=${lat},${lng}&q=${encodeURIComponent(name)}`;
       const shareUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
 
-      const shareMessage = `📍 ${name}\n\nKonum: ${lat.toFixed(6)}, ${lng.toFixed(6)}\n\nGoogle Maps: ${googleMapsUrl}\n\nApple Maps: ${appleMapsUrl}`;
+      const shareMessage = `${name}\n\nKonum: ${lat.toFixed(6)}, ${lng.toFixed(6)}\n\nGoogle Maps: ${googleMapsUrl}\n\nApple Maps: ${appleMapsUrl}`;
 
       const result = await Share.share({
         message: shareMessage,
@@ -1109,7 +1111,7 @@ export default function TrackScreen(): React.JSX.Element {
           if (events.length > 0) {
             setGeofenceEvents((prev) => [...prev, ...events]);
             events.forEach((event) => {
-              showInfo(`${event.type === 'enter' ? '📍' : '🚪'} ${event.geofenceName} - ${event.type === 'enter' ? 'Girdi' : 'Çıktı'}`);
+              showInfo(`${event.geofenceName} - ${event.type === 'enter' ? 'Girdi' : 'Çıktı'}`);
             });
           }
 
@@ -2247,180 +2249,197 @@ export default function TrackScreen(): React.JSX.Element {
           )}
 
           <View style={styles.controlPanel}>
-            {/* Premium Search Section */}
-            <View style={styles.searchSection}>
-              <Text style={styles.sectionTitle}>🔍 Konum Takibi</Text>
+            <ScrollView
+              style={styles.controlPanelScroll}
+              contentContainerStyle={styles.controlPanelContent}
+              showsVerticalScrollIndicator={false}
+              bounces={true}
+            >
+              {/* Premium Search Section */}
+              <View style={styles.searchSection}>
+                <View style={styles.sectionHeader}>
+                  <View style={styles.sectionIconWrapper}>
+                    <LinearGradient
+                      colors={['#0EA5E9', '#06B6D4']}
+                      style={styles.sectionIconGradient}
+                    >
+                      <Ionicons name="location" size={18} color="#fff" />
+                    </LinearGradient>
+                  </View>
+                  <Text style={styles.sectionTitle}>Konum Takibi</Text>
+                </View>
 
-              {/* Worker ID Search */}
-              <View style={styles.searchCard}>
-                <Text style={styles.searchLabel}>İşçi ID</Text>
-                <View style={styles.inputRow}>
-                  <TextInput
-                    placeholder="ID girin (örn: 0l7wfuyvqb)"
-                    placeholderTextColor="rgba(148, 163, 184, 0.6)"
-                    style={styles.input}
-                    value={workerId}
-                    onChangeText={setWorkerId}
-                    onSubmitEditing={() => { if (workerId) fetchHistoryAndRender(workerId); }}
-                    returnKeyType="search"
-                  />
+                {/* Worker ID Search */}
+                <View style={styles.searchCard}>
+                  <Text style={styles.searchLabel}>İşçi ID</Text>
+                  <View style={styles.inputRow}>
+                    <TextInput
+                      placeholder="ID girin (örn: 0l7wfuyvqb)"
+                      placeholderTextColor="rgba(148, 163, 184, 0.6)"
+                      style={styles.input}
+                      value={workerId}
+                      onChangeText={setWorkerId}
+                      onSubmitEditing={() => { if (workerId) fetchHistoryAndRender(workerId); }}
+                      returnKeyType="search"
+                    />
+                    <Pressable
+                      onPress={() => { if (workerId) fetchHistoryAndRender(workerId); }}
+                      style={({ pressed }) => [
+                        styles.searchBtn,
+                        pressed && { opacity: 0.7, transform: [{ scale: 0.95 }] }
+                      ]}
+                      accessibilityLabel="Geçmişi getir"
+                    >
+                      <LinearGradient
+                        colors={workerId ? ['#0EA5E9', '#06B6D4'] : ['#475569', '#64748b']}
+                        style={styles.searchBtnGradient}
+                      >
+                        <Ionicons name="trail-sign-outline" size={20} color="#fff" />
+                      </LinearGradient>
+                    </Pressable>
+                  </View>
+                </View>
+
+                {/* Active Devices Search */}
+                <View style={styles.searchCard}>
+                  <Text style={styles.searchLabel}>Aktif Cihazlar</Text>
+                  <View style={styles.inputRow}>
+                    <TextInput
+                      placeholder="İsim veya telefon ile ara"
+                      placeholderTextColor="rgba(148, 163, 184, 0.6)"
+                      style={styles.input}
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                      onSubmitEditing={() => { setSearchModalVisible(true); searchActiveDevices(searchQuery); }}
+                      returnKeyType="search"
+                    />
+                    <Pressable
+                      onPress={() => { setSearchModalVisible(true); searchActiveDevices(searchQuery); }}
+                      style={({ pressed }) => [
+                        styles.searchBtn,
+                        pressed && { opacity: 0.7, transform: [{ scale: 0.95 }] }
+                      ]}
+                      accessibilityLabel="Aktif cihazları ara"
+                    >
+                      <LinearGradient
+                        colors={['#10b981', '#059669']}
+                        style={styles.searchBtnGradient}
+                      >
+                        <Ionicons name="search" size={20} color="#fff" />
+                      </LinearGradient>
+                    </Pressable>
+                  </View>
+                </View>
+
+                {/* Quick Actions */}
+                {allUsers.length === 0 && (
                   <Pressable
-                    onPress={() => { if (workerId) fetchHistoryAndRender(workerId); }}
+                    onPress={() => { setSearchModalVisible(true); searchActiveDevices(''); }}
                     style={({ pressed }) => [
-                      styles.searchBtn,
-                      pressed && { opacity: 0.7, transform: [{ scale: 0.95 }] }
+                      styles.quickActionBtn,
+                      pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] }
                     ]}
-                    accessibilityLabel="Geçmişi getir"
                   >
                     <LinearGradient
-                      colors={workerId ? ['#0EA5E9', '#06B6D4'] : ['#475569', '#64748b']}
-                      style={styles.searchBtnGradient}
+                      colors={['#8b5cf6', '#7c3aed']}
+                      style={styles.quickActionGradient}
                     >
-                      <Ionicons name="trail-sign-outline" size={20} color="#fff" />
+                      <Ionicons name="people" size={20} color="#fff" />
+                      <Text style={styles.quickActionText}>Tüm Aktifleri Göster</Text>
+                      <Ionicons name="arrow-forward" size={18} color="#fff" />
                     </LinearGradient>
                   </Pressable>
-                </View>
-              </View>
-
-              {/* Active Devices Search */}
-              <View style={styles.searchCard}>
-                <Text style={styles.searchLabel}>Aktif Cihazlar</Text>
-                <View style={styles.inputRow}>
-                  <TextInput
-                    placeholder="İsim veya telefon ile ara"
-                    placeholderTextColor="rgba(148, 163, 184, 0.6)"
-                    style={styles.input}
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    onSubmitEditing={() => { setSearchModalVisible(true); searchActiveDevices(searchQuery); }}
-                    returnKeyType="search"
-                  />
-                  <Pressable
-                    onPress={() => { setSearchModalVisible(true); searchActiveDevices(searchQuery); }}
-                    style={({ pressed }) => [
-                      styles.searchBtn,
-                      pressed && { opacity: 0.7, transform: [{ scale: 0.95 }] }
-                    ]}
-                    accessibilityLabel="Aktif cihazları ara"
-                  >
-                    <LinearGradient
-                      colors={['#10b981', '#059669']}
-                      style={styles.searchBtnGradient}
-                    >
-                      <Ionicons name="search" size={20} color="#fff" />
-                    </LinearGradient>
-                  </Pressable>
-                </View>
-              </View>
-
-              {/* Quick Actions */}
-              {allUsers.length === 0 && (
-                <Pressable
-                  onPress={() => { setSearchModalVisible(true); searchActiveDevices(''); }}
-                  style={({ pressed }) => [
-                    styles.quickActionBtn,
-                    pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] }
-                  ]}
-                >
-                  <LinearGradient
-                    colors={['#8b5cf6', '#7c3aed']}
-                    style={styles.quickActionGradient}
-                  >
-                    <Ionicons name="people" size={20} color="#fff" />
-                    <Text style={styles.quickActionText}>Tüm Aktifleri Göster</Text>
-                    <Ionicons name="arrow-forward" size={18} color="#fff" />
-                  </LinearGradient>
-                </Pressable>
-              )}
-            </View>
-
-            {/* Group Warning */}
-            {!selectedGroup && (
-              <View style={{ backgroundColor: '#fef3c7', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#fbbf24', alignItems: 'center' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                  <Ionicons name="warning" size={16} color="#92400e" style={{ marginRight: 6 }} />
-                  <Text style={{ color: '#92400e', fontWeight: '700', textAlign: 'center' }}>Grup Seçilmedi</Text>
-                </View>
-                <Text style={{ color: '#92400e', fontSize: 13, marginBottom: 8, textAlign: 'center' }}>Konum takibini başlatmak için bir grup seçmelisiniz.</Text>
-                <Pressable onPress={() => setShowGroupSelector(true)} style={{ backgroundColor: '#f59e0b', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}>
-                  <Text style={{ color: '#fff', fontWeight: '700' }}>Grup Seç</Text>
-                </Pressable>
-              </View>
-            )}
-
-            <View style={styles.row}>
-              <Pressable
-                onPress={async () => { await toggleTracking(); }}
-                style={[
-                  styles.button,
-                  isTracking ? styles.buttonStop : styles.buttonStart,
-                  !selectedGroup && { opacity: 0.5 }
-                ]}
-                accessibilityLabel={isTracking ? 'Takibi durdur' : 'Takibi başlat'}
-                disabled={!selectedGroup && !isTracking}
-              >
-                <Text style={styles.buttonText}>{isTracking ? 'Takibi Durdur' : 'Takibi Başlat'}</Text>
-              </Pressable>
-
-              <Pressable onPress={toggleAccuracy} style={styles.secondaryButton} accessibilityLabel="Hassasiyet değiştir">
-                <Text style={styles.secondaryText}>Hassasiyet</Text>
-                <Text style={styles.secondaryMeta}>{accuracyRef.current === Location.Accuracy.High ? 'Yüksek' : 'Dengeli'}</Text>
-              </Pressable>
-            </View>
-
-            {/* Phone call input and action */}
-            <View style={styles.inputRow}>
-              <TextInput
-                placeholder="Telefon numarası girin"
-                placeholderTextColor="#9ca3af"
-                keyboardType="phone-pad"
-                style={styles.input}
-                value={phoneToCall}
-                onChangeText={setPhoneToCall}
-                returnKeyType="go"
-                onSubmitEditing={makePhoneCall}
-              />
-              <Pressable onPress={makePhoneCall} style={styles.callBtn} accessibilityLabel="Ara">
-                <Ionicons name="call" size={18} color="#fff" />
-              </Pressable>
-            </View>
-
-            {currentGeocode && (
-              <View style={{ backgroundColor: '#1e293b', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#334155' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                  <Ionicons name="location" size={18} color="#0EA5E9" style={{ marginRight: 8 }} />
-                  <Text style={{ color: '#0EA5E9', fontWeight: '700', fontSize: 14 }}>Konum Bilgisi</Text>
-                </View>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                  {currentGeocode.city && (
-                    <View style={{ backgroundColor: '#334155', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
-                      <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>Şehir</Text>
-                      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{currentGeocode.city}</Text>
-                    </View>
-                  )}
-                  {currentGeocode.province && (
-                    <View style={{ backgroundColor: '#334155', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
-                      <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>İl</Text>
-                      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{currentGeocode.province}</Text>
-                    </View>
-                  )}
-                  {currentGeocode.district && (
-                    <View style={{ backgroundColor: '#334155', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
-                      <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>İlçe</Text>
-                      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{currentGeocode.district}</Text>
-                    </View>
-                  )}
-                </View>
-                {currentGeocode.fullAddress && (
-                  <Text style={{ color: '#64748b', fontSize: 12, marginTop: 8 }} numberOfLines={2}>{currentGeocode.fullAddress}</Text>
                 )}
               </View>
-            )}
-            <View style={styles.metricsRow}>
-              <View style={styles.metricItem}><Text style={styles.metricLabel}>Lat</Text><Text style={styles.metricVal}>{coords?.latitude != null ? coords.latitude.toFixed(6) : '-'}</Text></View>
-              <View style={styles.metricItem}><Text style={styles.metricLabel}>Lng</Text><Text style={styles.metricVal}>{coords?.longitude != null ? coords.longitude.toFixed(6) : '-'}</Text></View>
-              <View style={styles.metricItem}><Text style={styles.metricLabel}>Hız</Text><Text style={styles.metricVal}>{formatSpeed(speedKmh)}</Text></View>
-            </View>
+
+              {/* Group Warning */}
+              {!selectedGroup && (
+                <View style={{ backgroundColor: '#fef3c7', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#fbbf24', alignItems: 'center' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                    <Ionicons name="warning" size={16} color="#92400e" style={{ marginRight: 6 }} />
+                    <Text style={{ color: '#92400e', fontWeight: '700', textAlign: 'center' }}>Grup Seçilmedi</Text>
+                  </View>
+                  <Text style={{ color: '#92400e', fontSize: 13, marginBottom: 8, textAlign: 'center' }}>Konum takibini başlatmak için bir grup seçmelisiniz.</Text>
+                  <Pressable onPress={() => setShowGroupSelector(true)} style={{ backgroundColor: '#f59e0b', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}>
+                    <Text style={{ color: '#fff', fontWeight: '700' }}>Grup Seç</Text>
+                  </Pressable>
+                </View>
+              )}
+
+              <View style={styles.row}>
+                <Pressable
+                  onPress={async () => { await toggleTracking(); }}
+                  style={[
+                    styles.button,
+                    isTracking ? styles.buttonStop : styles.buttonStart,
+                    !selectedGroup && { opacity: 0.5 }
+                  ]}
+                  accessibilityLabel={isTracking ? 'Takibi durdur' : 'Takibi başlat'}
+                  disabled={!selectedGroup && !isTracking}
+                >
+                  <Text style={styles.buttonText}>{isTracking ? 'Takibi Durdur' : 'Takibi Başlat'}</Text>
+                </Pressable>
+
+                <Pressable onPress={toggleAccuracy} style={styles.secondaryButton} accessibilityLabel="Hassasiyet değiştir">
+                  <Text style={styles.secondaryText}>Hassasiyet</Text>
+                  <Text style={styles.secondaryMeta}>{accuracyRef.current === Location.Accuracy.High ? 'Yüksek' : 'Dengeli'}</Text>
+                </Pressable>
+              </View>
+
+              {/* Phone call input and action */}
+              <View style={styles.inputRow}>
+                <TextInput
+                  placeholder="Telefon numarası girin"
+                  placeholderTextColor="#9ca3af"
+                  keyboardType="phone-pad"
+                  style={styles.input}
+                  value={phoneToCall}
+                  onChangeText={setPhoneToCall}
+                  returnKeyType="go"
+                  onSubmitEditing={makePhoneCall}
+                />
+                <Pressable onPress={makePhoneCall} style={styles.callBtn} accessibilityLabel="Ara">
+                  <Ionicons name="call" size={18} color="#fff" />
+                </Pressable>
+              </View>
+
+              {currentGeocode && (
+                <View style={{ backgroundColor: '#1e293b', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#334155' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                    <Ionicons name="location" size={18} color="#0EA5E9" style={{ marginRight: 8 }} />
+                    <Text style={{ color: '#0EA5E9', fontWeight: '700', fontSize: 14 }}>Konum Bilgisi</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {currentGeocode.city && (
+                      <View style={{ backgroundColor: '#334155', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
+                        <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>Şehir</Text>
+                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{currentGeocode.city}</Text>
+                      </View>
+                    )}
+                    {currentGeocode.province && (
+                      <View style={{ backgroundColor: '#334155', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
+                        <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>İl</Text>
+                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{currentGeocode.province}</Text>
+                      </View>
+                    )}
+                    {currentGeocode.district && (
+                      <View style={{ backgroundColor: '#334155', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
+                        <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>İlçe</Text>
+                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{currentGeocode.district}</Text>
+                      </View>
+                    )}
+                  </View>
+                  {currentGeocode.fullAddress && (
+                    <Text style={{ color: '#64748b', fontSize: 12, marginTop: 8 }} numberOfLines={2}>{currentGeocode.fullAddress}</Text>
+                  )}
+                </View>
+              )}
+              <View style={styles.metricsRow}>
+                <View style={styles.metricItem}><Text style={styles.metricLabel}>Lat</Text><Text style={styles.metricVal}>{coords?.latitude != null ? coords.latitude.toFixed(6) : '-'}</Text></View>
+                <View style={styles.metricItem}><Text style={styles.metricLabel}>Lng</Text><Text style={styles.metricVal}>{coords?.longitude != null ? coords.longitude.toFixed(6) : '-'}</Text></View>
+                <View style={styles.metricItem}><Text style={styles.metricLabel}>Hız</Text><Text style={styles.metricVal}>{formatSpeed(speedKmh)}</Text></View>
+              </View>
+            </ScrollView>
           </View>
 
           {/* FABs - Profesyonel Control Layer */}
@@ -3447,6 +3466,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: Platform.OS === 'ios' ? 32 : 44,
     marginTop: 8,
+    maxHeight: '50%', // Limit height to 50% of screen
+  },
+  controlPanelScroll: {
+    flex: 1,
+  },
+  controlPanelContent: {
+    paddingBottom: 20,
   },
   searchSection: {
     backgroundColor: 'rgba(30, 41, 59, 0.97)',
@@ -3460,6 +3486,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 8,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 12,
+  },
+  sectionIconWrapper: {
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sectionIconGradient: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sectionTitle: {
     fontSize: 18,

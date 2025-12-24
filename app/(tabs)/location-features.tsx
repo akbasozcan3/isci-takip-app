@@ -1209,10 +1209,10 @@ export default function LocationFeaturesScreen() {
                       </View>
                       <View style={[styles.statusBadge, styles[`status${delivery.status}`]]}>
                         <Text style={styles.statusText}>
-                          {delivery.status === 'pending' ? '⏳ Bekliyor' :
-                            delivery.status === 'in_progress' ? '🚚 Yolda' :
-                              delivery.status === 'delivered' ? '✅ Teslim' :
-                                '❌ İptal'}
+                          {delivery.status === 'pending' ? 'Bekliyor' :
+                            delivery.status === 'in_progress' ? 'Yolda' :
+                              delivery.status === 'delivered' ? 'Teslim' :
+                                'İptal'}
                         </Text>
                       </View>
                     </View>
