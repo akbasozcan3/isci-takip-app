@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import theme from '../constants/theme';
+import theme from '../../constants/theme';
 
 interface PremiumCardProps {
     children: React.ReactNode;

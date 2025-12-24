@@ -3,7 +3,7 @@ import { Pressable, Text, StyleSheet, ActivityIndicator, ViewStyle, TextStyle } 
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import theme from '../constants/theme';
+import theme from '../../constants/theme';
 
 interface GradientButtonProps {
     title: string;
