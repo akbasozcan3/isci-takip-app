@@ -96,6 +96,10 @@
       "apiBaseDev": "http://10.0.2.2:4000",
       "apiBaseIOS": "http://localhost:4000",
       "apiBaseWeb": "http://localhost:4000",
+      "googleExpoClientId": "984232035409-7dauhh2jakbrf56abhooq7si1ukdp8t9o.apps.googleusercontent.com",
+      "googleAndroidClientId": "984232035409-qi843tamturicj7po9mn7d4035f5gphd.apps.googleusercontent.com",
+      "googleIosClientId": "984232035409-9u6euau23aua4blq380t4n49l2d7hf41.apps.googleusercontent.com",
+      "googleWebClientId": "984232035409-7dauhh2jakbrf56abhoq7si1ukdp8t9o.apps.googleusercontent.com",
       "router": {},
       "eas": {
         "projectId": "3122850c-b69c-40f3-b1fd-935cc91346fd"

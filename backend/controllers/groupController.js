@@ -869,6 +869,103 @@ class GroupController {
       return res.error('Mesaj silinemedi', 'MESSAGE_DELETE_ERROR', 500);
     }
   }
+
+  // PUT /api/groups/:groupId/messages/:messageId/read
+  async markMessageAsRead(req, res) {
+    try {
+      const { groupId, messageId } = req.params;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.error('Kullanıcı bilgisi gerekli', 'UNAUTHORIZED', 401);
+      }
+
+      const group = db.getGroupById(groupId);
+      if (!group) {
+        return res.error('Grup bulunamadı', 'GROUP_NOT_FOUND', 404);
+      }
+
+      // Get messages
+      const messages = db.data.messages?.[groupId] || [];
+      const message = messages.find(m => m.id === messageId);
+
+      if (!message) {
+        return res.error('Mesaj bulunamadı', 'MESSAGE_NOT_FOUND', 404);
+      }
+
+      // Don't mark own messages as read
+      if (message.senderId === userId) {
+        return res.success({ messageId, readBy: message.readBy || [] });
+      }
+
+      // Initialize readBy array if not exists
+      if (!message.readBy) {
+        message.readBy = [];
+      }
+
+      // Add user to readBy if not already there
+      if (!message.readBy.includes(userId)) {
+        message.readBy.push(userId);
+        message.read = true;
+        db.scheduleSave();
+
+        // Emit Socket.IO event
+        const io = req.app.get('io');
+        if (io) {
+          io.to(`group-${groupId}`).emit('message_read', {
+            messageId,
+            userId,
+            readBy: message.readBy,
+            groupId,
+          });
+        }
+
+        // Log activity
+        activityLogService.logActivity(userId, 'message', 'mark_as_read', {
+          groupId,
+          messageId,
+          path: req.path
+        });
+      }
+
+      return res.success({ messageId, readBy: message.readBy });
+    } catch (error) {
+      logger.error('markMessageAsRead error', error);
+      return res.error('Mesaj okundu olarak işaretlenemedi', 'MARK_READ_ERROR', 500);
+    }
+  }
+
+  // GET /api/groups/:groupId/unread-count
+  async getUnreadCount(req, res) {
+    try {
+      const { groupId } = req.params;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.error('Kullanıcı bilgisi gerekli', 'UNAUTHORIZED', 401);
+      }
+
+      const group = db.getGroupById(groupId);
+      if (!group) {
+        return res.error('Grup bulunamadı', 'GROUP_NOT_FOUND', 404);
+      }
+
+      // Get messages
+      const messages = db.data.messages?.[groupId] || [];
+
+      // Count unread messages (not sent by user and not read by user)
+      const unreadCount = messages.filter(m =>
+        !m.deleted &&
+        m.senderId !== userId &&
+        (!m.readBy || !m.readBy.includes(userId))
+      ).length;
+
+      return res.success({ unreadCount, groupId });
+    } catch (error) {
+      logger.error('getUnreadCount error', error);
+      return res.error('Okunmamış mesaj sayısı alınamadı', 'UNREAD_COUNT_ERROR', 500);
+    }
+  }
 }
 
 module.exports = new GroupController();

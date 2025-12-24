@@ -14,11 +14,14 @@ interface MessageBubbleProps {
         createdAt: string;
         isOwn: boolean;
         deleted?: boolean;
+        read?: boolean;
+        readBy?: string[];
     };
     onDelete?: (messageId: string) => void;
+    totalMembers?: number;
 }
 
-export function MessageBubble({ message, onDelete }: MessageBubbleProps) {
+export function MessageBubble({ message, onDelete, totalMembers = 0 }: MessageBubbleProps) {
     const isOwn = message.isOwn;
     const translateX = useRef(new Animated.Value(0)).current;
 
@@ -26,6 +29,37 @@ export function MessageBubble({ message, onDelete }: MessageBubbleProps) {
         hour: '2-digit',
         minute: '2-digit',
     });
+
+    // Determine read receipt icon and color
+    const getReadReceiptIcon = () => {
+        if (!isOwn) return null;
+
+        const readByCount = message.readBy?.length || 0;
+        const isRead = message.read || readByCount > 0;
+        const isReadByAll = totalMembers > 0 && readByCount >= totalMembers - 1; // -1 for sender
+
+        if (isReadByAll || isRead) {
+            // Read by all or marked as read - blue double check
+            return {
+                name: 'checkmark-done' as const,
+                color: '#0EA5E9', // Blue
+            };
+        } else if (readByCount > 0) {
+            // Read by some - gray double check
+            return {
+                name: 'checkmark-done' as const,
+                color: 'rgba(255,255,255,0.6)',
+            };
+        } else {
+            // Sent but not read - single check
+            return {
+                name: 'checkmark' as const,
+                color: 'rgba(255,255,255,0.6)',
+            };
+        }
+    };
+
+    const readReceipt = getReadReceiptIcon();
 
     // Swipe to delete gesture (only for own messages)
     const panResponder = useRef(
@@ -107,12 +141,14 @@ export function MessageBubble({ message, onDelete }: MessageBubbleProps) {
                         <Text style={styles.ownMessageText}>{message.messageText}</Text>
                         <View style={styles.ownTimestampRow}>
                             <Text style={styles.ownTimestamp}>{timestamp}</Text>
-                            <Ionicons
-                                name="checkmark-done"
-                                size={14}
-                                color="rgba(255,255,255,0.8)"
-                                style={{ marginLeft: 4 }}
-                            />
+                            {readReceipt && (
+                                <Ionicons
+                                    name={readReceipt.name}
+                                    size={14}
+                                    color={readReceipt.color}
+                                    style={{ marginLeft: 4 }}
+                                />
+                            )}
                         </View>
                     </LinearGradient>
                 ) : (

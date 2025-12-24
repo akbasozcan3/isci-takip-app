@@ -5,6 +5,7 @@ import * as SecureStore from 'expo-secure-store';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -26,6 +27,7 @@ import { setOneSignalExternalUserId } from '../../utils/onesignal';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import { makeRedirectUri } from 'expo-auth-session';
+import Constants from 'expo-constants';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -35,29 +37,72 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  // Google Sign-In Request
+  // Google OAuth Configuration from environment
+  const googleConfig = {
+    expoClientId: Constants.expoConfig?.extra?.googleExpoClientId ||
+      '984232035409-7dauhh2jakbrf56abhooq7si1ukdp8t9o.apps.googleusercontent.com',
+    iosClientId: Constants.expoConfig?.extra?.googleIosClientId ||
+      '984232035409-7dauhh2jakbrf56abhooq7si1ukdp8t9o.apps.googleusercontent.com',
+    androidClientId: Constants.expoConfig?.extra?.googleAndroidClientId ||
+      '984232035409-qi843tamturicj7po9mn7d4035f5gphd.apps.googleusercontent.com',
+    webClientId: Constants.expoConfig?.extra?.googleWebClientId,
+  };
+
   const redirectUri = makeRedirectUri({
     scheme: 'bavaxe',
-    useProxy: false  // Development build için proxy kullanma - direkt Google
+    path: 'auth/callback',
   });
 
-  console.log('🔍 Google OAuth Redirect URI:', redirectUri);
+  console.log('🔍 [Google OAuth] Configuration:', {
+    redirectUri,
+    platform: Platform.OS,
+    expoClientId: googleConfig.expoClientId?.substring(0, 20) + '...',
+  });
 
   const [request, response, promptAsync] = Google.useAuthRequest({
-    expoClientId: '984232035409-7dauhh2jakbrf56abhooq7si1ukdp8t9o.apps.googleusercontent.com',
-    androidClientId: '984232035409-qi843tamturicj7po9mn7d4035f5gphd.apps.googleusercontent.com',
+    ...googleConfig,
     scopes: ['profile', 'email'],
-    responseType: 'id_token', // Important for getting user info
+    responseType: 'id_token',
+    redirectUri,
   });
 
+  // Log when request is ready
   useEffect(() => {
-    if (response?.type === 'success') {
+    if (request) {
+      console.log('✅ [Google OAuth] Request ready');
+    }
+  }, [request]);
+
+  // Handle OAuth response
+  useEffect(() => {
+    if (!response) return;
+
+    setGoogleLoading(false);
+
+    console.log('📥 [Google OAuth] Response:', {
+      type: response.type,
+      hasIdToken: !!response.params?.id_token,
+    });
+
+    if (response.type === 'success') {
       const { id_token } = response.params;
-      handleGoogleLogin(id_token);
-    } else if (response?.type === 'error') {
-      showError('Google girişi başarısız oldu.');
+      if (id_token) {
+        handleGoogleLogin(id_token);
+      } else {
+        showError('Google token alınamadı. Lütfen tekrar deneyin.');
+        console.error('❌ [Google OAuth] No ID token in response:', response);
+      }
+    } else if (response.type === 'error') {
+      const errorMsg = response.error?.message || 'Google girişi başarısız oldu.';
+      showError(errorMsg);
+      console.error('❌ [Google OAuth] Error:', response.error);
+    } else if (response.type === 'cancel') {
+      console.log('⚠️ [Google OAuth] User cancelled');
+    } else if (response.type === 'dismiss') {
+      console.log('⚠️ [Google OAuth] Modal dismissed');
     }
   }, [response]);
 
@@ -70,94 +115,66 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
-      console.log('[Google Login] Frontend-only authentication started...');
+      console.log('[Google Login] Calling backend API...');
+      const apiBase = getApiBase();
 
-      // Decode ID token to get user info (basic JWT decode)
-      const base64Url = idToken.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(
-        atob(base64)
-          .split('')
-          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-          .join('')
-      );
+      const response = await fetch(`${apiBase}/api/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      });
 
-      const payload = JSON.parse(jsonPayload);
-      const { email, name, sub: googleId, picture } = payload;
+      const data = await response.json();
 
-      if (!email) {
-        showError('Google hesabından email alınamadı');
+      if (!response.ok) {
+        console.error('[Google Login] Backend error:', data);
+
+        if (data.error?.includes('EMAIL_ALREADY_REGISTERED') || data.error?.includes('already registered')) {
+          showError('Bu e-posta adresi zaten kayıtlı. Lütfen e-posta ve şifre ile giriş yapın.');
+        } else if (data.error?.includes('TOKEN_EXPIRED')) {
+          showError('Google token süresi doldu. Lütfen tekrar deneyin.');
+        } else if (data.error?.includes('INVALID_TOKEN')) {
+          showError('Geçersiz Google token. Lütfen tekrar deneyin.');
+        } else {
+          showError(data.error || 'Google girişi başarısız oldu');
+        }
         return;
       }
 
-      console.log('[Google Login] User info retrieved:', { email, name, googleId });
+      const { user, token } = data.data;
 
-      // ✅ CHECK: Email SMTP ile kayıtlı mı?
-      try {
-        const apiBase = getApiBase();
-        console.log('[Google Login] Checking if email is registered with SMTP...');
-
-        const checkResponse = await fetch(`${apiBase}/api/auth/check-email-registration`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: email.toLowerCase().trim() })
-        });
-
-        if (!checkResponse.ok) {
-          console.warn('[Google Login] Email check failed, proceeding anyway');
-        } else {
-          const checkData = await checkResponse.json();
-
-          if (checkData.data?.exists && checkData.data?.registeredWithSMTP) {
-            console.log('[Google Login] Email is registered with SMTP, blocking Google login');
-            showError('Bu e-posta adresi zaten kayıtlı. Lütfen e-posta ve şifre ile giriş yapın.');
-            setLoading(false);
-            return;
-          }
-
-          console.log('[Google Login] Email check passed:', checkData.data);
-        }
-      } catch (checkError) {
-        console.error('[Google Login] Email check error:', checkError);
-        // Non-critical error, continue with login
-        console.warn('[Google Login] Proceeding despite email check failure');
-      }
-
-      // Create mock user data for development
-      const mockUserId = googleId; // Use Google ID as user ID
-      const mockToken = idToken; // Use Google ID token as app token
+      console.log('[Google Login] Login successful:', { userId: user.id, email: user.email });
 
       // Save token
-      await saveToken(mockToken);
+      await saveToken(token);
 
       // Save user data
-      await SecureStore.setItemAsync('workerId', mockUserId);
-      await SecureStore.setItemAsync('userEmail', email);
-      await SecureStore.setItemAsync('displayName', name || email.split('@')[0]);
-      await SecureStore.setItemAsync('loginMethod', 'google'); // Mark as Google user
-      await SecureStore.setItemAsync('googleIdToken', idToken); // Save Google ID token
+      await SecureStore.setItemAsync('workerId', user.id);
+      await SecureStore.setItemAsync('userEmail', user.email);
+      await SecureStore.setItemAsync('displayName', user.displayName || user.name || user.email.split('@')[0]);
+      await SecureStore.setItemAsync('loginMethod', 'google');
 
-      if (picture) {
-        await SecureStore.setItemAsync('avatarUrl', picture);
+      if (user.avatar) {
+        await SecureStore.setItemAsync('avatarUrl', user.avatar);
       }
 
       // Set context
-      setUserId(mockUserId);
+      setUserId(user.id);
 
       // Analytics
       logEvent(AnalyticsEvents.LOGIN, {
         method: 'google',
-        user_id: mockUserId,
+        user_id: user.id,
       });
 
       // OneSignal (optional)
       try {
-        await setOneSignalExternalUserId(mockUserId);
+        await setOneSignalExternalUserId(user.id);
 
         const { updateUserSegments, markUserActive } = await import('../../utils/onesignal');
         updateUserSegments({
           segment: 'active',
-          role: 'user',
+          role: user.role || 'user',
           subscription: 'free',
           lastActive: new Date().toISOString(),
         });
@@ -166,13 +183,17 @@ export default function LoginScreen() {
         console.warn('[Google Login] OneSignal error (non-critical):', onesignalError);
       }
 
-      showSuccess(`Hoş geldiniz, ${name || 'Kullanıcı'}!`);
+      showSuccess(`Hoş geldiniz, ${user.displayName || user.name || 'Kullanıcı'}!`);
       console.log('[Google Login] Login complete, redirecting...');
       setTimeout(() => router.replace('/(tabs)'), 500);
 
     } catch (error: any) {
       console.error('[Google Login] Error:', error);
-      showError('Google girişi sırasında bir hata oluştu. Lütfen tekrar deneyin.');
+      if (error.message?.includes('Network request failed') || error.message?.includes('Failed to fetch')) {
+        showError('Backend bağlantısı kurulamadı. Lütfen backend\'in çalıştığından emin olun.');
+      } else {
+        showError('Google girişi sırasında bir hata oluştu. Lütfen tekrar deneyin.');
+      }
     } finally {
       setLoading(false);
     }
@@ -432,12 +453,28 @@ export default function LoginScreen() {
                 />
 
                 <TouchableOpacity
-                  style={styles.googleButton}
-                  onPress={() => promptAsync()}
-                  disabled={loading}
+                  style={[
+                    styles.googleButton,
+                    (loading || googleLoading || !request) && styles.googleButtonDisabled
+                  ]}
+                  onPress={() => {
+                    console.log('🚀 [Google OAuth] Button pressed');
+                    setGoogleLoading(true);
+                    promptAsync();
+                  }}
+                  disabled={loading || googleLoading || !request}
+                  activeOpacity={0.7}
                 >
-                  {loading && !password ? (
-                    <Text style={styles.googleButtonText}>Yükleniyor...</Text>
+                  {googleLoading ? (
+                    <View style={styles.googleContent}>
+                      <ActivityIndicator size="small" color="#0f172a" style={{ marginRight: 10 }} />
+                      <Text style={styles.googleButtonText}>Google'a bağlanılıyor...</Text>
+                    </View>
+                  ) : !request ? (
+                    <View style={styles.googleContent}>
+                      <ActivityIndicator size="small" color="#0f172a" style={{ marginRight: 10 }} />
+                      <Text style={styles.googleButtonText}>Hazırlanıyor...</Text>
+                    </View>
                   ) : (
                     <View style={styles.googleContent}>
                       <Ionicons name="logo-google" size={20} color="#0f172a" style={{ marginRight: 10 }} />
@@ -606,6 +643,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'rgba(148, 163, 184, 0.15)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  googleButtonDisabled: {
+    opacity: 0.6,
   },
   googleContent: {
     flexDirection: 'row',

@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useProfile } from '../../contexts/ProfileContext';
 import { UnifiedHeader } from '../../components/UnifiedHeader';
 import { authFetch } from '../../utils/auth';
+import { initializeSocket, getSocket } from '../../utils/socketService';
 
 interface Group {
     id: string;
@@ -49,6 +50,7 @@ export default function MessagesScreen() {
     const [loading, setLoading] = React.useState(true);
     const [refreshing, setRefreshing] = React.useState(false);
     const [userId, setUserId] = React.useState('');
+    const [socketConnected, setSocketConnected] = React.useState(false);
 
     React.useEffect(() => {
         const loadUserId = async () => {
@@ -139,6 +141,72 @@ export default function MessagesScreen() {
         }
     }, [userId]);
 
+    // Initialize Socket.IO for real-time updates
+    React.useEffect(() => {
+        if (!userId) return;
+
+        const setupSocket = async () => {
+            try {
+                const socket = await initializeSocket();
+                if (socket) {
+                    setSocketConnected(socket.connected);
+
+                    // Listen for new messages in any group
+                    socket.on('new_message', (data: any) => {
+                        console.log('[Messages] New message received:', data);
+                        // Update last message for the group
+                        setConversations((prev) => {
+                            return prev.map((conv) => {
+                                if (conv.group.id === data.groupId) {
+                                    return {
+                                        ...conv,
+                                        lastMessage: {
+                                            id: data.id,
+                                            senderId: data.senderId,
+                                            senderName: data.sender?.name || data.senderName || 'Unknown',
+                                            messageText: data.message || data.messageText,
+                                            createdAt: new Date(data.createdAt).toISOString(),
+                                        },
+                                        unreadCount: data.senderId !== userId ? conv.unreadCount + 1 : conv.unreadCount,
+                                    };
+                                }
+                                return conv;
+                            }).sort((a, b) => {
+                                // Sort by last message time
+                                if (!a.lastMessage) return 1;
+                                if (!b.lastMessage) return -1;
+                                return new Date(b.lastMessage.createdAt).getTime() - new Date(a.lastMessage.createdAt).getTime();
+                            });
+                        });
+                    });
+
+                    socket.on('connect', () => {
+                        setSocketConnected(true);
+                        console.log('[Messages] Socket connected');
+                    });
+
+                    socket.on('disconnect', () => {
+                        setSocketConnected(false);
+                        console.log('[Messages] Socket disconnected');
+                    });
+                }
+            } catch (error) {
+                console.error('[Messages] Socket setup error:', error);
+            }
+        };
+
+        setupSocket();
+
+        return () => {
+            const socket = getSocket();
+            if (socket) {
+                socket.off('new_message');
+                socket.off('connect');
+                socket.off('disconnect');
+            }
+        };
+    }, [userId]);
+
     // Reload on focus
     useFocusEffect(
         React.useCallback(() => {
@@ -172,12 +240,12 @@ export default function MessagesScreen() {
 
             <UnifiedHeader
                 title="Mesajlar"
-                subtitle="Grup sohbetleriniz"
+                subtitle={socketConnected ? "Grup sohbetleriniz" : "Bağlantı kesildi"}
                 gradientColors={['#8b5cf6', '#7c3aed']}
                 brandLabel="MESAJLAR"
                 profileName={userName}
                 showProfile={true}
-                showNetwork={true}
+                showNetwork={socketConnected}
             />
 
             <ScrollView
@@ -263,9 +331,9 @@ export default function MessagesScreen() {
 
                                 <View style={styles.conversationFooter}>
                                     {conv.lastMessage ? (
-                                        <Text style={styles.lastMessage} numberOfLines={1}>
+                                        <Text style={[styles.lastMessage, conv.unreadCount > 0 && { fontWeight: '600', color: '#e2e8f0' }]} numberOfLines={1}>
                                             <Text style={styles.senderName}>
-                                                {conv.lastMessage.senderName}:
+                                                {conv.lastMessage.senderId === userId ? 'Sen' : conv.lastMessage.senderName}:
                                             </Text>{' '}
                                             {conv.lastMessage.messageText}
                                         </Text>
@@ -305,7 +373,6 @@ const styles = StyleSheet.create({
     },
     content: {
         flex: 1,
-        top: -35,
         padding: 16,
     },
     conversationCard: {

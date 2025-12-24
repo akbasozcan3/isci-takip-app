@@ -7,10 +7,16 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 interface ChatInputProps {
     onSend: (message: string) => void;
     disabled?: boolean;
+    onTyping?: (text: string) => void;
 }
 
-export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
+export function ChatInput({ onSend, disabled = false, onTyping }: ChatInputProps) {
     const [message, setMessage] = useState('');
+
+    const handleChangeText = (text: string) => {
+        setMessage(text);
+        onTyping?.(text);
+    };
 
     const handleSend = () => {
         const trimmed = message.trim();
@@ -29,7 +35,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
                     placeholder="Mesaj yazın..."
                     placeholderTextColor="#64748b"
                     value={message}
-                    onChangeText={setMessage}
+                    onChangeText={handleChangeText}
                     multiline
                     maxLength={500}
                     editable={!disabled}

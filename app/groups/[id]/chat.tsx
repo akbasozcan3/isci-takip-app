@@ -15,6 +15,7 @@ import {
     Text,
     View,
     Animated,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChatInput } from '../../../components/chat/ChatInput';
@@ -22,6 +23,7 @@ import { EmptyChat } from '../../../components/chat/EmptyChat';
 import { MessageBubble } from '../../../components/chat/MessageBubble';
 import { useToast } from '../../../components/Toast';
 import { authFetch } from '../../../utils/auth';
+import { initializeSocket, getSocket, joinGroupRoom, leaveGroupRoom, sendTypingIndicator } from '../../../utils/socketService';
 
 interface Message {
     id: string;
@@ -42,9 +44,10 @@ interface ChatScreenParams {
 export default function GroupChatScreen() {
     const params = useLocalSearchParams<ChatScreenParams>();
     const router = useRouter();
-    const { showError, showSuccess } = useToast();
+    const { showError, showSuccess, showInfo } = useToast();
     const flatListRef = useRef<FlatList>(null);
     const scrollY = useRef(new Animated.Value(0)).current;
+    const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const groupId = params.id;
     const groupName = params.name || 'Grup Sohbet';
@@ -56,6 +59,9 @@ export default function GroupChatScreen() {
     const [userId, setUserId] = useState('');
     const [hasMore, setHasMore] = useState(true);
     const [memberCount, setMemberCount] = useState(0);
+    const [isTyping, setIsTyping] = useState(false);
+    const [typingUsers, setTypingUsers] = useState<string[]>([]);
+    const [socketConnected, setSocketConnected] = useState(false);
 
     // Load user ID
     useEffect(() => {
@@ -63,23 +69,104 @@ export default function GroupChatScreen() {
         loadGroupInfo();
     }, []);
 
+    // Initialize Socket.IO
+    useEffect(() => {
+        if (!userId || !groupId) return;
+
+        const setupSocket = async () => {
+            try {
+                const socket = await initializeSocket();
+                if (socket) {
+                    setSocketConnected(socket.connected);
+
+                    // Join group room
+                    joinGroupRoom(groupId);
+
+                    // Listen for new messages
+                    socket.on('new_message', (data: any) => {
+                        console.log('[Chat] New message received:', data);
+                        if (data.groupId === groupId) {
+                            const newMessage: Message = {
+                                id: data.id,
+                                senderId: data.senderId,
+                                senderName: data.sender?.name || data.senderName || 'Unknown',
+                                senderAvatar: data.senderAvatar,
+                                messageText: data.message || data.messageText,
+                                createdAt: new Date(data.createdAt).toISOString(),
+                                isOwn: data.senderId === userId,
+                                deleted: data.deleted || false,
+                            };
+
+                            setMessages((prev) => {
+                                // Remove temp message if exists
+                                const filtered = prev.filter(m => !m.id.startsWith('temp-'));
+                                // Check if message already exists
+                                if (filtered.some(m => m.id === newMessage.id)) {
+                                    return prev;
+                                }
+                                return [...filtered, newMessage];
+                            });
+
+                            // Auto scroll to bottom
+                            setTimeout(() => {
+                                flatListRef.current?.scrollToEnd({ animated: true });
+                            }, 100);
+                        }
+                    });
+
+                    // Listen for typing indicators
+                    socket.on('user_typing', (data: any) => {
+                        if (data.groupId === groupId && data.userId !== userId) {
+                            if (data.isTyping) {
+                                setTypingUsers((prev) => {
+                                    if (!prev.includes(data.userName)) {
+                                        return [...prev, data.userName];
+                                    }
+                                    return prev;
+                                });
+                            } else {
+                                setTypingUsers((prev) => prev.filter(u => u !== data.userName));
+                            }
+                        }
+                    });
+
+                    // Listen for connection status
+                    socket.on('connect', () => {
+                        setSocketConnected(true);
+                        joinGroupRoom(groupId);
+                        showSuccess('Bağlantı kuruldu');
+                    });
+
+                    socket.on('disconnect', () => {
+                        setSocketConnected(false);
+                        showInfo('Bağlantı kesildi');
+                    });
+                }
+            } catch (error) {
+                console.error('[Chat] Socket setup error:', error);
+            }
+        };
+
+        setupSocket();
+
+        return () => {
+            const socket = getSocket();
+            if (socket) {
+                leaveGroupRoom(groupId);
+                socket.off('new_message');
+                socket.off('user_typing');
+                socket.off('connect');
+                socket.off('disconnect');
+            }
+        };
+    }, [userId, groupId]);
+
     // Load messages on mount
     useEffect(() => {
         if (userId) {
             loadMessages();
         }
     }, [userId]);
-
-    // Poll for new messages every 3 seconds
-    useEffect(() => {
-        if (!userId) return;
-
-        const interval = setInterval(() => {
-            loadMessages(true); // Silent refresh
-        }, 3000);
-
-        return () => clearInterval(interval);
-    }, [userId, messages]);
 
     const loadUserId = async () => {
         try {
@@ -97,7 +184,8 @@ export default function GroupChatScreen() {
             const response = await authFetch(`/groups/${groupId}`);
             if (response.ok) {
                 const data = await response.json();
-                setMemberCount(data.group?.memberCount || 0);
+                const groupData = data.data || data.group || data;
+                setMemberCount(groupData?.memberCount || 0);
             }
         } catch (error) {
             console.error('[Chat] Failed to load group info:', error);
@@ -122,24 +210,20 @@ export default function GroupChatScreen() {
             }
 
             const data = await response.json();
+            const messagesData = data.data?.messages || data.messages || [];
 
-            if (data.success && data.messages) {
-                const messagesWithOwn = data.messages.map((msg: any) => ({
-                    ...msg,
-                    isOwn: msg.senderId === userId,
-                }));
+            const messagesWithOwn = messagesData.map((msg: any) => ({
+                ...msg,
+                isOwn: msg.senderId === userId,
+            }));
 
-                const tempMessages = messages.filter(msg => msg.id.startsWith('temp-'));
-                const mergedMessages = [...messagesWithOwn, ...tempMessages];
+            setMessages(messagesWithOwn);
+            setHasMore(data.data?.pagination?.hasMore || data.pagination?.hasMore || false);
 
-                setMessages(mergedMessages);
-                setHasMore(data.pagination?.hasMore || false);
-
-                if (!silent || mergedMessages.length > messages.length) {
-                    setTimeout(() => {
-                        flatListRef.current?.scrollToEnd({ animated: true });
-                    }, 100);
-                }
+            if (!silent) {
+                setTimeout(() => {
+                    flatListRef.current?.scrollToEnd({ animated: false });
+                }, 100);
             }
         } catch (error: any) {
             console.error('[Chat] Load messages error:', error);
@@ -159,6 +243,14 @@ export default function GroupChatScreen() {
         try {
             setSending(true);
 
+            // Stop typing indicator
+            if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
+                typingTimeoutRef.current = null;
+            }
+            sendTypingIndicator(groupId, false);
+
+            // Optimistic UI update
             const optimisticMessage: Message = {
                 id: `temp-${Date.now()}`,
                 senderId: userId,
@@ -174,6 +266,7 @@ export default function GroupChatScreen() {
                 flatListRef.current?.scrollToEnd({ animated: true });
             }, 50);
 
+            // Send via HTTP (Socket.IO will broadcast to others)
             const response = await authFetch(`/groups/${groupId}/messages`, {
                 method: 'POST',
                 headers: {
@@ -183,21 +276,18 @@ export default function GroupChatScreen() {
             });
 
             if (!response.ok) {
-                if (response.status === 404) {
-                    console.log('[Chat] Send endpoint not yet implemented, keeping optimistic message');
-                    showError('Backend API henüz hazır değil - mesaj lokal olarak gösteriliyor');
-                    return;
-                }
                 throw new Error('Failed to send message');
             }
 
             const data = await response.json();
+            const sentMessage = data.data?.message || data.message;
 
-            if (data.success && data.message) {
+            if (sentMessage) {
+                // Replace optimistic message with real one
                 setMessages((prev) =>
                     prev.map((msg) =>
                         msg.id === optimisticMessage.id
-                            ? { ...data.message, isOwn: true }
+                            ? { ...sentMessage, isOwn: true }
                             : msg
                     )
                 );
@@ -206,14 +296,36 @@ export default function GroupChatScreen() {
             Keyboard.dismiss();
         } catch (error: any) {
             console.error('[Chat] Send message error:', error);
-
-            if (!error.message?.includes('404')) {
-                showError(error.message || 'Mesaj gönderilemedi');
-                setMessages((prev) => prev.filter((msg) => !msg.id.startsWith('temp-')));
-            }
+            showError(error.message || 'Mesaj gönderilemedi');
+            // Remove optimistic message on error
+            setMessages((prev) => prev.filter((msg) => !msg.id.startsWith('temp-')));
         } finally {
             setSending(false);
         }
+    };
+
+    const handleTyping = (text: string) => {
+        if (!text.trim()) {
+            sendTypingIndicator(groupId, false);
+            if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
+                typingTimeoutRef.current = null;
+            }
+            return;
+        }
+
+        // Send typing indicator
+        sendTypingIndicator(groupId, true);
+
+        // Clear existing timeout
+        if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current);
+        }
+
+        // Stop typing after 3 seconds of inactivity
+        typingTimeoutRef.current = setTimeout(() => {
+            sendTypingIndicator(groupId, false);
+        }, 3000);
     };
 
     const onRefresh = useCallback(() => {
@@ -278,9 +390,9 @@ export default function GroupChatScreen() {
                     <View style={styles.headerCenter}>
                         <Text style={styles.groupName}>{groupName}</Text>
                         <View style={styles.statusRow}>
-                            <View style={styles.onlineIndicator} />
+                            <View style={[styles.onlineIndicator, !socketConnected && { backgroundColor: '#ef4444' }]} />
                             <Text style={styles.participantCount}>
-                                {memberCount > 0 ? `${memberCount} üye` : 'Grup Sohbeti'}
+                                {socketConnected ? (memberCount > 0 ? `${memberCount} üye` : 'Grup Sohbeti') : 'Bağlantı kesildi'}
                             </Text>
                         </View>
                     </View>
@@ -299,6 +411,27 @@ export default function GroupChatScreen() {
         </Animated.View>
     );
 
+    const renderTypingIndicator = () => {
+        if (typingUsers.length === 0) return null;
+
+        return (
+            <View style={styles.typingContainer}>
+                <View style={styles.typingBubble}>
+                    <Text style={styles.typingText}>
+                        {typingUsers.length === 1
+                            ? `${typingUsers[0]} yazıyor...`
+                            : `${typingUsers.length} kişi yazıyor...`}
+                    </Text>
+                    <View style={styles.typingDots}>
+                        <View style={[styles.typingDot, { animationDelay: '0s' }]} />
+                        <View style={[styles.typingDot, { animationDelay: '0.2s' }]} />
+                        <View style={[styles.typingDot, { animationDelay: '0.4s' }]} />
+                    </View>
+                </View>
+            </View>
+        );
+    };
+
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
             <StatusBar barStyle="light-content" />
@@ -310,41 +443,49 @@ export default function GroupChatScreen() {
             >
                 {loading && messages.length === 0 ? (
                     <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color="#6366f1" />
                         <Text style={styles.loadingText}>Mesajlar yükleniyor...</Text>
                     </View>
                 ) : (
-                    <FlatList
-                        ref={flatListRef}
-                        data={messages}
-                        renderItem={renderMessage}
-                        keyExtractor={(item) => item.id}
-                        contentContainerStyle={styles.messageList}
-                        showsVerticalScrollIndicator={false}
-                        ListHeaderComponent={renderHeader}
-                        ListEmptyComponent={<EmptyChat />}
-                        refreshControl={
-                            <RefreshControl
-                                refreshing={refreshing}
-                                onRefresh={onRefresh}
-                                tintColor="#8b5cf6"
-                                colors={['#8b5cf6']}
-                            />
-                        }
-                        onScroll={Animated.event(
-                            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-                            { useNativeDriver: true }
-                        )}
-                        scrollEventThrottle={16}
-                        onContentSizeChange={() => {
-                            if (messages.length > 0) {
-                                flatListRef.current?.scrollToEnd({ animated: false });
+                    <>
+                        <FlatList
+                            ref={flatListRef}
+                            data={messages}
+                            renderItem={renderMessage}
+                            keyExtractor={(item) => item.id}
+                            contentContainerStyle={styles.messageList}
+                            showsVerticalScrollIndicator={false}
+                            ListHeaderComponent={renderHeader}
+                            ListEmptyComponent={<EmptyChat />}
+                            ListFooterComponent={renderTypingIndicator}
+                            refreshControl={
+                                <RefreshControl
+                                    refreshing={refreshing}
+                                    onRefresh={onRefresh}
+                                    tintColor="#8b5cf6"
+                                    colors={['#8b5cf6']}
+                                />
                             }
-                        }}
-                    />
+                            onScroll={Animated.event(
+                                [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+                                { useNativeDriver: true }
+                            )}
+                            scrollEventThrottle={16}
+                            onContentSizeChange={() => {
+                                if (messages.length > 0 && !loading) {
+                                    flatListRef.current?.scrollToEnd({ animated: false });
+                                }
+                            }}
+                        />
+                    </>
                 )}
 
                 {/* Input - Sticky at bottom */}
-                <ChatInput onSend={sendMessage} disabled={sending} />
+                <ChatInput
+                    onSend={sendMessage}
+                    disabled={sending || !socketConnected}
+                    onTyping={handleTyping}
+                />
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
@@ -362,6 +503,7 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
+        gap: 16,
     },
     loadingText: {
         color: '#94a3b8',
@@ -433,5 +575,35 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255,255,255,0.2)',
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    typingContainer: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+    },
+    typingBubble: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(30, 41, 59, 0.6)',
+        borderRadius: 16,
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        alignSelf: 'flex-start',
+        gap: 8,
+    },
+    typingText: {
+        fontSize: 13,
+        color: '#94a3b8',
+        fontFamily: 'Poppins-Medium',
+        fontStyle: 'italic',
+    },
+    typingDots: {
+        flexDirection: 'row',
+        gap: 4,
+    },
+    typingDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: '#6366f1',
     },
 });

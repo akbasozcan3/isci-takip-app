@@ -194,6 +194,7 @@ export default function TrackScreen(): React.JSX.Element {
   const [selectedGroup, setSelectedGroup] = React.useState<ActiveGroup | null>(null);
   const [groupMembers, setGroupMembers] = React.useState<GroupMember[]>([]);
   const [showGroupSelector, setShowGroupSelector] = React.useState(false);
+  const [loadingGroups, setLoadingGroups] = React.useState(false);
   const [showTrackInfo, setShowTrackInfo] = React.useState(false);
 
   // Araba takip özellikleri
@@ -422,6 +423,7 @@ export default function TrackScreen(): React.JSX.Element {
       return;
     }
     try {
+      setLoadingGroups(true);
       console.log('[Track] Loading active groups for user:', workerId);
       const token = await SecureStore.getItemAsync('token');
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -429,25 +431,46 @@ export default function TrackScreen(): React.JSX.Element {
 
       const response = await fetch(`${API_BASE}/api/groups/user/${workerId}/active`, { headers });
       console.log('[Track] Groups response status:', response.status);
-      if (response.ok) {
-        const groups = await response.json();
-        console.log('[Track] Loaded groups:', groups);
-        setActiveGroups(Array.isArray(groups) ? groups : []);
 
-        // İlk grubu otomatik seç
-        if (Array.isArray(groups) && groups.length > 0 && !selectedGroup) {
-          console.log('[Track] Auto-selecting first group:', groups[0]);
-          selectGroup(groups[0]);
+      if (response.ok) {
+        const result = await response.json();
+        console.log('[Track] API response:', result);
+
+        // Backend returns { success: true, data: [...groups] }
+        const groups = result.data || result;
+        console.log('[Track] Extracted groups array:', groups);
+
+        const groupsArray = Array.isArray(groups) ? groups : [];
+        setActiveGroups(groupsArray);
+
+        if (groupsArray.length > 0) {
+          showSuccess(`${groupsArray.length} grup yüklendi`);
+
+          // İlk grubu otomatik seç
+          if (!selectedGroup) {
+            console.log('[Track] Auto-selecting first group:', groupsArray[0]);
+            selectGroup(groupsArray[0]);
+          }
+        } else {
+          showInfo('Henüz bir gruba katılmadınız');
         }
       } else {
-        if (response.status !== 429) {
-          console.warn('[Track] Failed to load groups:', response.status);
+        if (response.status === 429) {
+          showWarning('Çok fazla istek gönderildi, lütfen bekleyin');
+        } else if (response.status === 401) {
+          showError('Oturum süreniz dolmuş, lütfen tekrar giriş yapın');
+        } else {
+          showError('Gruplar yüklenemedi');
         }
+        console.warn('[Track] Failed to load groups:', response.status);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('[Track] Load active groups error:', e);
+      showError('Gruplar yüklenirken bir hata oluştu');
+    } finally {
+      setLoadingGroups(false);
     }
-  }, [workerId, selectedGroup]);
+  }, [workerId, selectedGroup, showSuccess, showInfo, showWarning, showError]);
 
   // Grup üyelerini yükle
   const checkActivityStatus = React.useCallback(async () => {
@@ -1637,7 +1660,6 @@ export default function TrackScreen(): React.JSX.Element {
             </View>
           </LinearGradient>
 
-          {/* Group Selector Button - ALWAYS VISIBLE */}
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1647,7 +1669,7 @@ export default function TrackScreen(): React.JSX.Element {
             android_ripple={{ color: 'rgba(255,255,255,0.1)' }}
           >
             <LinearGradient
-              colors={selectedGroup 
+              colors={selectedGroup
                 ? ['rgba(124,58,237,0.15)', 'rgba(6,182,212,0.15)']
                 : ['rgba(100,116,139,0.15)', 'rgba(71,85,105,0.15)']}
               start={[0, 0]}
@@ -1676,8 +1698,8 @@ export default function TrackScreen(): React.JSX.Element {
                       {activeGroups.length > 0 ? 'Grup Seç' : 'Henüz Grup Yok'}
                     </Text>
                     <Text style={styles.groupBannerStats}>
-                      {activeGroups.length > 0 
-                        ? `${activeGroups.length} grup mevcut` 
+                      {activeGroups.length > 0
+                        ? `${activeGroups.length} grup mevcut`
                         : 'Gruplar sekmesinden grup oluşturun'}
                     </Text>
                   </>
@@ -2158,9 +2180,11 @@ export default function TrackScreen(): React.JSX.Element {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                 setShowGroupSelector(true);
               }}
+              disabled={loadingGroups}
               style={({ pressed }) => [
                 styles.groupSelectorFAB,
-                pressed && { transform: [{ scale: 0.95 }], opacity: 0.9 }
+                pressed && { transform: [{ scale: 0.95 }], opacity: 0.9 },
+                loadingGroups && { opacity: 0.6 }
               ]}
             >
               <LinearGradient
@@ -2385,7 +2409,13 @@ export default function TrackScreen(): React.JSX.Element {
                 <Pressable onPress={() => setShowGroupSelector(false)} style={styles.modalClose}><Ionicons name="close" size={20} color="white" /></Pressable>
               </View>
               <ScrollView style={styles.modalList} contentContainerStyle={{ flexGrow: 1 }}>
-                {activeGroups.map((group) => (
+                {loadingGroups && (
+                  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+                    <ActivityIndicator size="large" color="#0EA5E9" />
+                    <Text style={{ color: '#64748b', marginTop: 16, textAlign: 'center' }}>Gruplar yükleniyor...</Text>
+                  </View>
+                )}
+                {!loadingGroups && activeGroups.map((group) => (
                   <Pressable
                     key={group.id}
                     style={[styles.userRow, selectedGroup?.id === group.id && { borderColor: '#10b981', borderWidth: 2 }]}
@@ -2406,7 +2436,7 @@ export default function TrackScreen(): React.JSX.Element {
                     )}
                   </Pressable>
                 ))}
-                {activeGroups.length === 0 && (
+                {!loadingGroups && activeGroups.length === 0 && (
                   <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 }}>
                     <Text style={{ color: '#64748b', textAlign: 'center' }}>Henüz bir gruba katılmadınız.</Text>
                   </View>

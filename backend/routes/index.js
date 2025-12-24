@@ -907,6 +907,10 @@ router.get('/groups/:groupId/messages', requireAuth, validateGroupId, asyncHandl
 router.post('/groups/:groupId/messages', requireAuth, validateGroupId, asyncHandler(groupController.sendMessage.bind(groupController)));
 router.delete('/groups/:groupId/messages/:messageId', requireAuth, validateGroupId, asyncHandler(groupController.deleteMessage.bind(groupController)));
 
+// Message read receipts
+router.put('/groups/:groupId/messages/:messageId/read', requireAuth, validateGroupId, asyncHandler(groupController.markMessageAsRead.bind(groupController)));
+router.get('/groups/:groupId/unread-count', requireAuth, validateGroupId, asyncHandler(groupController.getUnreadCount.bind(groupController)));
+
 router.post('/groups/:groupId/leave', requireAuth, groupController.leaveGroup.bind(groupController));
 router.post('/groups/:groupId/transfer-admin', requireAuth, groupController.transferAdmin.bind(groupController));
 router.delete('/groups/:groupId', requireAuth, groupController.deleteGroup.bind(groupController));
