@@ -696,6 +696,40 @@ export default function LocationFeaturesScreen() {
         showNetwork={true}
       />
 
+      {/* Group Selector Banner */}
+      <Pressable
+        onPress={() => router.push('/(tabs)/groups')}
+        style={styles.groupSelectorBanner}
+        android_ripple={{ color: 'rgba(255,255,255,0.1)' }}
+      >
+        <LinearGradient
+          colors={selectedGroup
+            ? ['rgba(14,165,233,0.15)', 'rgba(14,165,164,0.15)']
+            : ['rgba(100,116,139,0.15)', 'rgba(71,85,105,0.15)']}
+          start={[0, 0]}
+          end={[1, 0]}
+          style={styles.groupSelectorGradient}
+        >
+          <View style={styles.groupSelectorIcon}>
+            <LinearGradient
+              colors={selectedGroup ? ['#0EA5E9', '#0ea5a4'] : ['#64748b', '#475569']}
+              style={styles.groupSelectorIconGradient}
+            >
+              <Ionicons name="people" size={20} color="#fff" />
+            </LinearGradient>
+          </View>
+          <View style={styles.groupSelectorContent}>
+            <Text style={styles.groupSelectorLabel}>
+              {selectedGroup ? 'Seçili Grup' : 'Grup Seç'}
+            </Text>
+            <Text style={styles.groupSelectorText}>
+              {selectedGroup ? selectedGroup.name : 'Konum özellikleri için grup seçin'}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={selectedGroup ? '#0EA5E9' : '#64748b'} />
+        </LinearGradient>
+      </Pressable>
+
       {/* Tabs - Modern Design */}
       <View style={styles.tabsContainer}>
         <ScrollView
@@ -1876,6 +1910,51 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0f172a',
   },
+
+  // Group Selector Banner
+  groupSelectorBanner: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  groupSelectorGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(14,165,233,0.2)',
+    gap: 12,
+  },
+  groupSelectorIcon: {
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  groupSelectorIconGradient: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupSelectorContent: {
+    flex: 1,
+  },
+  groupSelectorLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    fontFamily: 'Poppins-Medium',
+    marginBottom: 2,
+  },
+  groupSelectorText: {
+    fontSize: 15,
+    color: '#e2e8f0',
+    fontFamily: 'Poppins-SemiBold',
+  },
+
   tabsContainer: {
     backgroundColor: '#0f172a',
     paddingVertical: 12,

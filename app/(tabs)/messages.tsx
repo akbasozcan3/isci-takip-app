@@ -266,12 +266,12 @@ export default function MessagesScreen() {
 
             <UnifiedHeader
                 title="Mesajlar"
-                subtitle={connectionStatus}
-                gradientColors={isFullyConnected ? ['#8b5cf6', '#7c3aed'] : ['#64748b', '#475569']}
+                subtitle="Grup sohbetleriniz"
+                gradientColors={['#8b5cf6', '#7c3aed']}
                 brandLabel="MESAJLAR"
                 profileName={userName}
                 showProfile={true}
-                showNetwork={isFullyConnected}
+                showNetwork={true}
             />
 
             <ScrollView

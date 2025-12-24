@@ -73,7 +73,6 @@ export function ChatInput({ onSend, disabled = false, onTyping, autoFocus = fals
                     onBlur={handleBlur}
                     multiline
                     maxLength={maxChars}
-                    editable={!disabled}
                     returnKeyType="send"
                     blurOnSubmit={false}
                     onSubmitEditing={handleSend}

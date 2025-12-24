@@ -487,7 +487,6 @@ export default function GroupChatScreen() {
                 {/* Input - Sticky at bottom */}
                 <ChatInput
                     onSend={sendMessage}
-                    disabled={sending}
                     onTyping={handleTyping}
                 />
             </KeyboardAvoidingView>
