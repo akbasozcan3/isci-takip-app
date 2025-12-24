@@ -20,9 +20,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
-import { UnifiedHeader } from '../../components/UnifiedHeader';
-import { authFetch } from '../../utils/auth';
-import { Toast, useToast } from '../../components/Toast';
+import { UnifiedHeader } from '../../../components/UnifiedHeader';
+import { authFetch } from '../../../utils/auth';
+import { Toast, useToast } from '../../../components/Toast';
 
 const { width } = Dimensions.get('window');
 
