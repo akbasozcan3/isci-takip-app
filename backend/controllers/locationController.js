@@ -798,33 +798,123 @@ class LocationController {
       const devices = [];
       const store = db.data.store;
 
-      for (const deviceId in store) {
-        const locations = store[deviceId];
-        if (locations.length > 0) {
-          const latestLocation = locations[locations.length - 1];
+      for (const [deviceId, locations] of Object.entries(store)) {
+        if (Array.isArray(locations) && locations.length > 0) {
+          const latest = locations[locations.length - 1];
+          const locationActivityService = require('../services/locationActivityService');
+          const activity = locationActivityService.getActivityForLocation(deviceId, latest);
+
           devices.push({
             deviceId,
-            latestLocation,
-            totalLocations: locations.length,
-            lastUpdate: latestLocation.timestamp
+            latestLocation: {
+              ...latest,
+              activity
+            }
           });
         }
       }
 
-      const userId = getUserIdFromToken(req);
-      if (userId) {
-        activityLogService.logActivity(userId, 'location', 'view_all_devices', {
-          deviceCount: devices.length,
-          path: req.path
-        });
-      }
-
-      return res.json({ devices });
+      return res.json(devices);
     } catch (error) {
       console.error('Get all devices error:', error);
-      return res.status(500).json(
-        ResponseFormatter.error('Failed to get devices', 'DEVICE_FETCH_ERROR')
+      return res.status(500).json(ResponseFormatter.error('Cihazlar alınamadı', 'DEVICES_ERROR'));
+    }
+  }
+
+  // Group Analytics
+  async getGroupAnalytics(req, res) {
+    try {
+      const { groupId } = req.params;
+      const { duration = '24h' } = req.query; // 24h, 7d, 30d
+
+      // Verify group access
+      await checkGroupAccess(req.user.id, groupId);
+
+      const db = req.db;
+
+      let interval = '24 hours';
+      if (duration === '7d') interval = '7 days';
+      if (duration === '30d') interval = '30 days';
+
+      // Get group members
+      const membersQuery = await db.query(
+        `SELECT m.user_id, u.name 
+         FROM group_members m 
+         JOIN users u ON m.user_id = u.id 
+         WHERE m.group_id = $1`,
+        [groupId]
       );
+
+      const memberStats = [];
+      let groupTotalDistance = 0;
+      let groupMaxSpeed = 0;
+
+      for (const member of membersQuery.rows) {
+        // Get locations for this member in duration
+        const locationsResult = await db.query(
+          `SELECT latitude, longitude, speed, timestamp 
+           FROM locations 
+           WHERE user_id = $1 
+           AND timestamp > NOW() - $2::INTERVAL 
+           ORDER BY timestamp ASC`,
+          [member.user_id, interval]
+        );
+
+        const locations = locationsResult.rows;
+        let distance = 0;
+        let maxSpeed = 0;
+        let avgSpeed = 0;
+
+        if (locations.length > 1) {
+          // Calculate stats
+          for (let i = 1; i < locations.length; i++) {
+            const prev = locations[i - 1];
+            const curr = locations[i];
+
+            // Haversine distance
+            const R = 6371e3; // metres
+            const φ1 = prev.latitude * Math.PI / 180;
+            const φ2 = curr.latitude * Math.PI / 180;
+            const Δφ = (curr.latitude - prev.latitude) * Math.PI / 180;
+            const Δλ = (curr.longitude - prev.longitude) * Math.PI / 180;
+
+            const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            const d = R * c;
+
+            distance += d;
+
+            if (curr.speed > maxSpeed) maxSpeed = curr.speed;
+            avgSpeed += curr.speed || 0;
+          }
+          avgSpeed = avgSpeed / locations.length;
+        }
+
+        memberStats.push({
+          userId: member.user_id,
+          name: member.name,
+          distance: Math.round(distance), // meters
+          maxSpeed: Math.round(maxSpeed),
+          avgSpeed: Math.round(avgSpeed),
+          points: locations.length
+        });
+
+        groupTotalDistance += distance;
+        groupMaxSpeed = Math.max(groupMaxSpeed, maxSpeed);
+      }
+
+      return res.json(ResponseFormatter.success({
+        groupTotalDistance: Math.round(groupTotalDistance),
+        groupMaxSpeed: Math.round(groupMaxSpeed),
+        memberStats,
+        period: duration
+      }));
+
+    } catch (error) {
+      console.error('Group analytics error:', error);
+      return res.status(500).json(ResponseFormatter.error('Analiz verileri alınamadı', 'ANALYTICS_ERROR'));
     }
   }
 

@@ -48,6 +48,8 @@ import { getSyncService } from '../../utils/syncService';
 import { calculateOptimalTracking, getDeviceState } from '../../utils/trackingOptimizer';
 import { processRoute } from '../../utils/routeSmoothing';
 import { Accelerometer } from 'expo-sensors';
+import MemberDetailModal from '../../components/MemberDetailModal';
+import { calculateMemberDistance, formatDistance, sortMembersByDistance } from '../../utils/distance';
 // Android'de API key gerektirmeyen Leaflet haritası kullanıyoruz
 const USE_LEAFLET = Platform.OS === 'android';
 // Guard react-native-maps for web bundling (iOS için)
@@ -250,6 +252,34 @@ export default function TrackScreen(): React.JSX.Element {
   const [isRecordingRoute, setIsRecordingRoute] = React.useState(false);
   const [currentRoute, setCurrentRoute] = React.useState<Route | null>(null);
   const [geofenceEvents, setGeofenceEvents] = React.useState<GeofenceEvent[]>([]);
+
+  // Member details modal state
+  const [detailMember, setDetailMember] = React.useState<GroupMember | null>(null);
+  const [detailModalVisible, setDetailModalVisible] = React.useState(false);
+
+  // Proximity Alert State
+  const alertedMembersRef = React.useRef<Set<string>>(new Set());
+
+  // Proximity Check Effect
+  React.useEffect(() => {
+    if (!coords || !groupMembers.length) return;
+
+    groupMembers.forEach(member => {
+      if (!member.location || member.userId === workerId) return;
+
+      const dist = calculateMemberDistance(coords, member.location);
+      const isClose = dist < 500; // 500 meters threshold
+      const isFar = dist > 1000; // Reset threshold
+
+      if (isClose && !alertedMembersRef.current.has(member.userId)) {
+        alertedMembersRef.current.add(member.userId);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showInfo(`${member.displayName || 'Bir üye'} yakınınızda! (${formatDistance(dist)})`);
+      } else if (isFar && alertedMembersRef.current.has(member.userId)) {
+        alertedMembersRef.current.delete(member.userId);
+      }
+    });
+  }, [coords, groupMembers]);
 
   const initials = React.useMemo(() => {
     if (!profileName) return '';
@@ -851,6 +881,7 @@ export default function TrackScreen(): React.JSX.Element {
   React.useEffect(() => {
     if (workerId) {
       loadActiveGroups();
+      fetchHistoryAndRender(workerId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workerId]);
@@ -1389,7 +1420,7 @@ export default function TrackScreen(): React.JSX.Element {
         setPath(pts);
         setTotalDistance(pts.slice(1).reduce((acc, cur, i) => acc + haversineMeters(pts[i], cur), 0));
         setCoords(pts[pts.length - 1]);
-        setFollow(false);
+        // Do not disable follow on initial load
       }
     } catch (e) {
       console.warn('fetchHistoryAndRender failed', e);
@@ -2507,10 +2538,13 @@ export default function TrackScreen(): React.JSX.Element {
                         key={member.userId}
                         onPress={() => {
                           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                          if (member.location) {
-                            setCoords({ latitude: member.location.lat, longitude: member.location.lng });
-                            setFollow(false);
-                          }
+                          // Calculate distance for the selected member
+                          const distance = coords && member.location
+                            ? calculateMemberDistance(coords, member.location)
+                            : null;
+
+                          setDetailMember({ ...member, distance } as any);
+                          setDetailModalVisible(true);
                         }}
                         style={({ pressed }) => [
                           styles.memberCard,
@@ -2533,6 +2567,13 @@ export default function TrackScreen(): React.JSX.Element {
                                 {member.displayName || member.userId}
                               </Text>
                               <View style={styles.memberMeta}>
+                                {member.location && coords && (
+                                  <View style={styles.activityBadge}>
+                                    <Text style={styles.activityText}>
+                                      📍 {formatDistance(calculateMemberDistance(coords, member.location))}
+                                    </Text>
+                                  </View>
+                                )}
                                 {member.activity?.type && (
                                   <View style={styles.activityBadge}>
                                     <Text style={styles.activityIcon}>{member.activity.icon}</Text>
@@ -2908,6 +2949,25 @@ export default function TrackScreen(): React.JSX.Element {
               </Pressable>
             </Pressable>
           </Modal>
+
+          {/* Member Detail Modal */}
+          <MemberDetailModal
+            visible={detailModalVisible}
+            member={detailMember as any}
+            onClose={() => setDetailModalVisible(false)}
+            onShowOnMap={() => {
+              if (detailMember && detailMember.location) {
+                setCoords({ latitude: detailMember.location.lat, longitude: detailMember.location.lng });
+                setFollow(false);
+              }
+            }}
+            onOpenChat={() => {
+              if (selectedGroup) {
+                router.push(`/groups/${selectedGroup.id}/chat`);
+              }
+            }}
+          />
+
         </ScrollView>
       </LinearGradient >
     </SafeAreaView >

@@ -29,9 +29,9 @@ function detectActivityType(locationData, previousLocation = null) {
   if (!previousLocation) {
     if (speedKmh < ACTIVITY_THRESHOLDS.stationary.maxSpeed && accuracy < ACTIVITY_THRESHOLDS.stationary.maxAccuracy) {
       return {
-        type: 'home',
-        icon: '🏠',
-        name: 'Ev',
+        type: 'stationary',
+        icon: '🛑',
+        name: 'Sabit',
         confidence: 0.7
       };
     }
@@ -55,9 +55,9 @@ function detectActivityType(locationData, previousLocation = null) {
 
   if (finalSpeed < ACTIVITY_THRESHOLDS.stationary.maxSpeed && accuracy < ACTIVITY_THRESHOLDS.home.maxAccuracy && timeDiff > ACTIVITY_THRESHOLDS.home.minStayTime) {
     return {
-      type: 'home',
-      icon: '🏠',
-      name: 'Ev',
+      type: 'stationary',
+      icon: '🛑',
+      name: 'Sabit',
       confidence: 0.9
     };
   }
@@ -134,7 +134,7 @@ function getActivityForLocation(userId, locationData) {
   try {
     const db = require('../config/database');
     const locations = db.getStore(userId) || [];
-    
+
     if (locations.length === 0) {
       return detectActivityType(locationData);
     }
@@ -154,7 +154,7 @@ function getActivityForLocation(userId, locationData) {
 
 function updateLocationWithActivity(userId, locationData) {
   const activity = getActivityForLocation(userId, locationData);
-  
+
   return {
     ...locationData,
     activity: {

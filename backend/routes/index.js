@@ -774,6 +774,9 @@ router.get('/location/routes', requireAuth, locationController.listRoutes.bind(l
 router.post('/location/validate-input', requireAuth, locationController.validateInput.bind(locationController));
 
 // Vehicle Tracking Routes
+// Google Maps API key (dynamic implementation - moved to config)
+
+router.get('/groups/:groupId/analytics', requireAuth, validateGroupId, asyncHandler(locationController.getGroupAnalytics.bind(locationController)));
 router.post('/vehicles/session/start', requireAuth, asyncHandler(locationController.startVehicleSession.bind(locationController)));
 router.post('/vehicles/session/:sessionId/end', requireAuth, asyncHandler(locationController.endVehicleSession.bind(locationController)));
 router.post('/vehicles/speed-violation', requireAuth, asyncHandler(locationController.recordSpeedViolation.bind(locationController)));

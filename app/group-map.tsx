@@ -62,16 +62,16 @@ interface MemberWithLocation {
     inWorkArea?: boolean;
 }
 
-interface GroupInfo { 
-    id: string; 
-    code: string; 
-    name: string; 
-    address: string; 
-    lat: number | null; 
-    lng: number | null; 
-    memberCount: number; 
+interface GroupInfo {
+    id: string;
+    code: string;
+    name: string;
+    address: string;
+    lat: number | null;
+    lng: number | null;
+    memberCount: number;
     // optional geofence radius (meters). If absent, default will be applied on client
-    workRadius?: number; 
+    workRadius?: number;
 }
 
 // SecureStore keys must be [A-Za-z0-9_.-], no colon
@@ -80,33 +80,33 @@ const PERSIST_KEY = (groupId: string) => `sharePersistent_${groupId}`;
 // --- helpers: distance & formatting ---
 function toRad(v: number) { return (v * Math.PI) / 180; }
 function haversineMeters(aLat: number, aLng: number, bLat: number, bLng: number): number {
-  const R = 6371e3;
-  const dLat = toRad(bLat - aLat);
-  const dLng = toRad(bLng - aLng);
-  const lat1 = toRad(aLat);
-  const lat2 = toRad(bLat);
-  const h = Math.sin(dLat/2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng/2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-  return Math.round(R * c);
+    const R = 6371e3;
+    const dLat = toRad(bLat - aLat);
+    const dLng = toRad(bLng - aLng);
+    const lat1 = toRad(aLat);
+    const lat2 = toRad(bLat);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+    return Math.round(R * c);
 }
 function fmtMeters(m?: number | null) {
-  if (m == null) return '-';
-  if (m < 1000) return `${m} m`;
-  return `${(m/1000).toFixed(2)} km`;
+    if (m == null) return '-';
+    if (m < 1000) return `${m} m`;
+    return `${(m / 1000).toFixed(2)} km`;
 }
 
 // Background task definition
 interface LocationTaskData {
-  locations?: Array<{
-    timestamp: number;
-    coords: {
-      latitude: number;
-      longitude: number;
-      accuracy?: number;
-      heading?: number;
-      speed?: number;
-    };
-  }>;
+    locations?: Array<{
+        timestamp: number;
+        coords: {
+            latitude: number;
+            longitude: number;
+            accuracy?: number;
+            heading?: number;
+            speed?: number;
+        };
+    }>;
 }
 
 TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
@@ -114,22 +114,22 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
         console.error('Background location error:', error);
         return;
     }
-    
+
     if (data) {
         const taskData = data as LocationTaskData;
         const { locations } = taskData;
         if (!locations || locations.length === 0) return;
         const location = locations[0];
-        
+
         if (!location) return;
-        
+
         try {
             // Get stored groupId and userId
             const groupId = await SecureStore.getItemAsync('activeGroupId');
             const userId = await SecureStore.getItemAsync('workerId');
-            
+
             if (!groupId || !userId) return;
-            
+
             const payload = {
                 userId,
                 lat: location.coords.latitude,
@@ -138,14 +138,14 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
                 accuracy: location.coords.accuracy,
                 timestamp: location.timestamp
             };
-            
+
             // Send to backend
             await fetch(`${API_BASE}/api/groups/${groupId}/locations`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            
+
             console.log('Background location sent:', payload);
         } catch (e) {
             console.error('Background location send error:', e);
@@ -178,7 +178,7 @@ export default function GroupMapScreen() {
     const [userId, setUserId] = React.useState('');
     const [mapFeatures, setMapFeatures] = React.useState<MapFeatures | null>(null);
     const [availableLayers, setAvailableLayers] = React.useState<Record<string, any>>({});
-    
+
     // Animasyonlar
     const fadeAnim = React.useRef(new Animated.Value(0)).current;
     const slideAnim = React.useRef(new Animated.Value(50)).current;
@@ -192,13 +192,13 @@ export default function GroupMapScreen() {
 
     // Türkiye merkez koordinatları - Profesyonel GPS takip için
     const TURKEY_CENTER = { latitude: 39.0, longitude: 35.2433 };
-    const TURKEY_REGION = { 
-        latitude: TURKEY_CENTER.latitude, 
-        longitude: TURKEY_CENTER.longitude, 
-        latitudeDelta: 13.0, 
-        longitudeDelta: 20.0 
+    const TURKEY_REGION = {
+        latitude: TURKEY_CENTER.latitude,
+        longitude: TURKEY_CENTER.longitude,
+        latitudeDelta: 13.0,
+        longitudeDelta: 20.0
     };
-    
+
     // Responsive map height calculation (professional defaults)
     const windowHeight = Dimensions.get('window').height;
     const MAP_MIN_HEIGHT = 160; // small devices
@@ -222,10 +222,10 @@ export default function GroupMapScreen() {
             // fallback for older RN: keep no-op (listener not critical)
         }
         return () => {
-            try { if (sub && sub.remove) sub.remove(); } catch {}
+            try { if (sub && sub.remove) sub.remove(); } catch { }
         };
     }, []);
-    
+
 
     // --- initial load: workerId + persisted preference ---
     React.useEffect(() => {
@@ -259,7 +259,7 @@ export default function GroupMapScreen() {
                     await AsyncStorage.setItem(`group_members_${groupId}`, JSON.stringify(data));
                 }
             }
-        } catch (e) { 
+        } catch (e) {
             console.warn('Load members error:', e);
             try {
                 const cached = await AsyncStorage.getItem(`group_members_${groupId}`);
@@ -269,7 +269,7 @@ export default function GroupMapScreen() {
                         setMembersWithLocations(parsed);
                     }
                 }
-            } catch {}
+            } catch { }
         }
     }, [groupId]);
 
@@ -291,7 +291,7 @@ export default function GroupMapScreen() {
             lat: payload.lat,
             lng: payload.lng
         });
-        
+
         try {
             const s = socketRef.current;
             if (s && (s as any).connected) {
@@ -304,7 +304,7 @@ export default function GroupMapScreen() {
         } catch (e) {
             console.warn('[GroupMap] ❌ Socket emit failed', e);
         }
-        
+
         try {
             const response = await fetch(`${API_BASE}/api/groups/${groupId}/locations`, {
                 method: 'POST',
@@ -343,21 +343,21 @@ export default function GroupMapScreen() {
             console.log('[GroupMap] No groupId, skipping socket');
             return;
         }
-        
+
         console.log('[GroupMap] Setting up socket for group:', groupId);
-        const s = io(API_BASE, { 
-            transports: ['websocket'], 
+        const s = io(API_BASE, {
+            transports: ['websocket'],
             reconnection: true,
             reconnectionAttempts: 5,
             reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000 
+            reconnectionDelayMax: 5000
         });
         socketRef.current = s;
 
         const join = () => {
-            try { 
+            try {
                 console.log('[GroupMap] Emitting join_group:', groupId);
-                s.emit('join_group', groupId); 
+                s.emit('join_group', groupId);
             } catch (e) {
                 console.error('[GroupMap] Join group error:', e);
             }
@@ -419,15 +419,15 @@ export default function GroupMapScreen() {
                 stopLocationSharing();
                 try {
                     await SecureStore.deleteItemAsync(PERSIST_KEY(groupId));
-                } catch {}
+                } catch { }
                 try {
                     await SecureStore.deleteItemAsync('activeGroupId');
-                } catch {}
-                try { await AsyncStorage.removeItem(`group_members_${groupId}`); } catch {}
+                } catch { }
+                try { await AsyncStorage.removeItem(`group_members_${groupId}`); } catch { }
                 showWarning('Grup silindi. Ekran kapatılıyor.');
                 // Navigate back to groups
                 setTimeout(() => {
-                    try { router.replace('/(tabs)/groups' as any); } catch {}
+                    try { router.replace('/(tabs)/groups' as any); } catch { }
                 }, 300);
             } catch (e) {
                 console.warn('[GroupMap] group_deleted handling failed', e);
@@ -456,7 +456,7 @@ export default function GroupMapScreen() {
                 const responseData = await response.json();
                 const info = responseData.data || responseData;
                 if (info && typeof info === 'object') {
-                    const withRadius: GroupInfo = { 
+                    const withRadius: GroupInfo = {
                         id: info.id || '',
                         code: info.code || groupCode,
                         name: info.name || 'Grup',
@@ -469,8 +469,8 @@ export default function GroupMapScreen() {
                     setGroupInfo(withRadius);
                 }
             }
-        } catch (e) { 
-            console.warn('Load group info error:', e); 
+        } catch (e) {
+            console.warn('Load group info error:', e);
         }
     }, [groupCode]);
 
@@ -505,8 +505,8 @@ export default function GroupMapScreen() {
                     setMapLoading(false);
                 }
             }
-        } catch (e) { 
-            console.warn('Load locations error:', e); 
+        } catch (e) {
+            console.warn('Load locations error:', e);
             // tolerate errors but stop showing initial loader after a moment
             setTimeout(() => setMapLoading(false), 1000);
         }
@@ -516,7 +516,7 @@ export default function GroupMapScreen() {
     React.useEffect(() => {
         if (!groupId) return;
         const id = setInterval(() => {
-            loadLocations().catch(() => {});
+            loadLocations().catch(() => { });
         }, 10000); // every 10s
         return () => clearInterval(id);
     }, [groupId, loadLocations]);
@@ -526,7 +526,7 @@ export default function GroupMapScreen() {
         loadGroupInfo();
         loadMembersWithLocations();
         loadLocations();
-        
+
         (async () => {
             try {
                 const features = await getMapFeatures();
@@ -537,7 +537,7 @@ export default function GroupMapScreen() {
                 console.warn('[GroupMap] Map features load error:', e);
             }
         })();
-        
+
         // Giriş animasyonu
         Animated.parallel([
             Animated.timing(fadeAnim, {
@@ -558,7 +558,7 @@ export default function GroupMapScreen() {
                 useNativeDriver: true,
             }),
         ]).start();
-        
+
         // Pulse animasyonu
         Animated.loop(
             Animated.sequence([
@@ -590,7 +590,7 @@ export default function GroupMapScreen() {
     // Tüm konumları göster (benim + çalışanlar)
     const fitAllLocations = React.useCallback(() => {
         const allCoords: Array<{ latitude: number; longitude: number }> = [];
-        
+
         // Benim konumum
         if (myLocation) {
             allCoords.push({
@@ -598,17 +598,17 @@ export default function GroupMapScreen() {
                 longitude: myLocation.coords.longitude
             });
         }
-        
+
         // Tüm çalışanlar
         Object.values(locations).forEach(loc => {
             allCoords.push({ latitude: loc.lat, longitude: loc.lng });
         });
-        
+
         // Grup merkezi
         if (groupInfo?.lat && groupInfo?.lng) {
             allCoords.push({ latitude: groupInfo.lat, longitude: groupInfo.lng });
         }
-        
+
         if (allCoords.length === 0) return;
     }, [myLocation, locations, groupInfo]);
 
@@ -667,13 +667,13 @@ export default function GroupMapScreen() {
                     console.warn('SecureStore error:', e);
                 }
             }
-            
+
             if (!currentUserId) {
                 console.log('[GroupMap] ❌ No userId, cannot start sharing');
                 showError('Lütfen önce giriş yapın.');
                 return;
             }
-            
+
             console.log('[GroupMap] ✅ UserId confirmed:', currentUserId);
 
             // ensure permission
@@ -687,10 +687,10 @@ export default function GroupMapScreen() {
             }
 
             // persist preference if requested by ui (handled separately)
-            try { await SecureStore.setItemAsync('workerId', currentUserId); } catch (e) {}
+            try { await SecureStore.setItemAsync('workerId', currentUserId); } catch (e) { }
 
             console.log('[GroupMap] 📍 Starting location watch...');
-            
+
             // start watch
             const sub = await Location.watchPositionAsync(
                 { accuracy: Location.Accuracy.High, timeInterval: 8000, distanceInterval: 5 },
@@ -747,12 +747,12 @@ export default function GroupMapScreen() {
         if (isSharing) {
             // turning off: also clear persist setting
             stopLocationSharing();
-            try { await SecureStore.deleteItemAsync(PERSIST_KEY(groupId)); setPersistShare(false); } catch {}
+            try { await SecureStore.deleteItemAsync(PERSIST_KEY(groupId)); setPersistShare(false); } catch { }
         } else {
             await startLocationSharing();
             // if user chose to persist via UI, that action should save the key; here we keep current persistShare
             if (persistShare) {
-                try { await SecureStore.setItemAsync(PERSIST_KEY(groupId), '1'); } catch {}
+                try { await SecureStore.setItemAsync(PERSIST_KEY(groupId), '1'); } catch { }
             }
         }
     }, [isSharing, startLocationSharing, stopLocationSharing, sharingLoading, persistShare, groupId]);
@@ -781,7 +781,7 @@ export default function GroupMapScreen() {
     React.useEffect(() => {
         return () => {
             stopLocationSharing();
-            try { socketRef.current?.disconnect(); } catch (e) {}
+            try { socketRef.current?.disconnect(); } catch (e) { }
         };
     }, [stopLocationSharing]);
 
@@ -790,20 +790,20 @@ export default function GroupMapScreen() {
         if (m >= 1000) return `${(m / 1000).toFixed(2)} km`;
         return `${Math.round(m)} m`;
     }
-    
+
     // Haversine mesafe hesaplama (metre)
     function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
         const R = 6371000; // Dünya yarıçapı (metre)
         const dLat = (lat2 - lat1) * Math.PI / 180;
         const dLon = (lon2 - lon1) * Math.PI / 180;
-        const a = 
+        const a =
             Math.sin(dLat / 2) * Math.sin(dLat / 2) +
             Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
             Math.sin(dLon / 2) * Math.sin(dLon / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return R * c;
     }
-    
+
     // Grup merkezine olan mesafe
     const distanceToCenter = React.useMemo(() => {
         if (!myLocation || !groupInfo?.lat || !groupInfo?.lng) return null;
@@ -850,7 +850,7 @@ export default function GroupMapScreen() {
                         >
                             <Ionicons name="scan-outline" size={20} color="#042f35" />
                         </Pressable>
-                        
+
                         {mapFeatures?.satelliteView && (
                             <Pressable
                                 onPress={() => setMapType((t) => (t === 'standard' ? 'hybrid' : 'standard'))}
@@ -916,10 +916,9 @@ export default function GroupMapScreen() {
                     centerLng={groupInfo?.lng ?? 35.2433}
                     height={mapHeight}
                     onReady={() => setMapLoading(false)}
-                    showMarkers
                     markers={(() => {
                         const allMarkers = [];
-                        
+
                         // Grup merkezi
                         if (groupInfo?.lat && groupInfo?.lng) {
                             allMarkers.push({
@@ -952,7 +951,7 @@ export default function GroupMapScreen() {
                                     const distance = haversineMeters(groupInfo.lat, groupInfo.lng, loc.lat, loc.lng);
                                     inWork = distance <= (groupInfo.workRadius ?? 150);
                                 }
-                                
+
                                 allMarkers.push({
                                     lat: loc.lat,
                                     lng: loc.lng,
@@ -962,7 +961,7 @@ export default function GroupMapScreen() {
                                 });
                             }
                         });
-                        
+
                         return allMarkers;
                     })()}
                 />
@@ -978,7 +977,7 @@ export default function GroupMapScreen() {
                         <Ionicons name={isSharing ? 'radio-button-on' : 'radio-button-off'} size={16} color={isSharing ? '#10b981' : '#ef4444'} />
                         <Text style={[styles.statusText, isSharing && styles.statusTextActive]}>{isSharing ? 'Paylaşılıyor' : 'Paylaşılmıyor'}</Text>
                     </View>
-                    
+
                     {distanceToCenter !== null && (
                         <View style={styles.statusItem}>
                             <Ionicons name="navigate" size={16} color={distanceToCenter > 1000 ? '#f59e0b' : '#10b981'} />
@@ -987,7 +986,7 @@ export default function GroupMapScreen() {
                             </Text>
                         </View>
                     )}
-                    
+
                     <Text style={styles.statusText}>{Object.keys(locations).length} aktif üye</Text>
                 </View>
             </View>
@@ -1035,17 +1034,17 @@ export default function GroupMapScreen() {
                         </View>
                     </View>
                 </View>
-                <ScrollView 
-                    horizontal 
-                    showsHorizontalScrollIndicator={false} 
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
                     style={styles.membersList}
                     refreshControl={
                         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
                     }
                 >
                     {membersWithLocations.map((member) => (
-                        <Pressable 
-                            key={member.userId} 
+                        <Pressable
+                            key={member.userId}
                             style={({ pressed }) => [
                                 styles.memberCard,
                                 pressed && { transform: [{ scale: 0.95 }], opacity: 0.8 }
@@ -1089,8 +1088,8 @@ export default function GroupMapScreen() {
                 transparent
                 onRequestClose={() => setShowMemberModal(false)}
             >
-                <Pressable 
-                    style={styles.modalOverlay} 
+                <Pressable
+                    style={styles.modalOverlay}
                     onPress={() => setShowMemberModal(false)}
                 >
                     <View style={styles.modalContent}>
@@ -1103,8 +1102,8 @@ export default function GroupMapScreen() {
                                         </Text>
                                         {selectedMember.isOnline && <View style={styles.onlineIndicatorLarge} />}
                                     </View>
-                                    <Pressable 
-                                        onPress={() => setShowMemberModal(false)} 
+                                    <Pressable
+                                        onPress={() => setShowMemberModal(false)}
                                         style={styles.modalClose}
                                     >
                                         <Ionicons name="close" size={24} color="#64748b" />
@@ -1124,10 +1123,10 @@ export default function GroupMapScreen() {
                                     </View>
 
                                     <View style={styles.infoRow}>
-                                        <Ionicons 
-                                            name={selectedMember.isOnline ? "radio-button-on" : "radio-button-off"} 
-                                            size={20} 
-                                            color={selectedMember.isOnline ? "#10b981" : "#ef4444"} 
+                                        <Ionicons
+                                            name={selectedMember.isOnline ? "radio-button-on" : "radio-button-off"}
+                                            size={20}
+                                            color={selectedMember.isOnline ? "#10b981" : "#ef4444"}
                                         />
                                         <Text style={styles.infoLabel}>Durum:</Text>
                                         <Text style={[styles.infoValue, selectedMember.isOnline && styles.infoValueOnline]}>
@@ -1209,7 +1208,7 @@ export default function GroupMapScreen() {
                                 </View>
 
                                 {selectedMember.location && (
-                                    <Pressable 
+                                    <Pressable
                                         style={styles.focusButton}
                                         onPress={() => {
                                             focusOnMember(selectedMember);
@@ -1225,7 +1224,7 @@ export default function GroupMapScreen() {
                     </View>
                 </Pressable>
             </Modal>
-            
+
             <Toast
                 message={toast.message}
                 type={toast.type}
@@ -1252,18 +1251,18 @@ const styles = StyleSheet.create({
     actionButton: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.9)', alignItems: 'center', justifyContent: 'center' },
     actionButtonActive: { backgroundColor: '#042f35' },
 
-    mapContainer: { 
-      flex: 1, 
-      position: 'relative',
-      borderRadius: 20,
-      overflow: 'hidden',
-      margin: 14,
-      marginTop: 8,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.5,
-      shadowRadius: 16,
-      elevation: 16,
+    mapContainer: {
+        flex: 1,
+        position: 'relative',
+        borderRadius: 20,
+        overflow: 'hidden',
+        margin: 14,
+        marginTop: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.5,
+        shadowRadius: 16,
+        elevation: 16,
     },
     map: { flex: 1 },
     centerMarker: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#ef4444', alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff' },
@@ -1284,7 +1283,7 @@ const styles = StyleSheet.create({
     statCard: { flex: 1, backgroundColor: '#1e293b', borderRadius: 12, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: '#334155' },
     statValue: { fontSize: 20, fontWeight: '900', color: '#fff', marginTop: 4 },
     statLabel: { fontSize: 11, color: '#94a3b8', marginTop: 2, textAlign: 'center' },
-    
+
     membersContainer: { backgroundColor: '#1e293b', borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 18, maxHeight: 180, borderWidth: 1, borderColor: '#334155' },
     membersHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
     membersTitle: { fontSize: 16, fontWeight: '900', color: '#fff' },
