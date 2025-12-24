@@ -292,7 +292,7 @@ export default function GroupChatScreen() {
                 );
             }
 
-            Keyboard.dismiss();
+            // Don't dismiss keyboard - keep it open for continuous messaging
         } catch (error: any) {
             console.error('[Chat] Send message error:', error);
             showError(error.message || 'Mesaj gönderilemedi');
@@ -430,8 +430,8 @@ export default function GroupChatScreen() {
 
             <KeyboardAvoidingView
                 style={styles.keyboardView}
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
             >
                 {loading && messages.length === 0 ? (
                     <View style={styles.loadingContainer}>
