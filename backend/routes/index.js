@@ -785,9 +785,7 @@ router.post('/vehicles/speed-violation', requireAuth, asyncHandler(locationContr
 router.get('/vehicles/sessions', requireAuth, asyncHandler(locationController.getVehicleSessions.bind(locationController)));
 router.get('/groups/:groupId/vehicles', requireAuth, validateGroupId, asyncHandler(locationController.getGroupVehicles.bind(locationController)));
 
-// Messaging Routes (using GroupController for consistency)
-router.get('/groups/:groupId/messages', requireAuth, validateGroupId, asyncHandler(groupController.getMessages.bind(groupController)));
-router.post('/groups/:groupId/messages', requireAuth, validateGroupId, asyncHandler(groupController.sendMessage.bind(groupController)));
+
 
 // Messaging Controller (Legacy/Direct Messages)
 const messagingController = require('../controllers/messagingController');
