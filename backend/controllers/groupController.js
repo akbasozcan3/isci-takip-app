@@ -730,6 +730,8 @@ class GroupController {
       // Get messages from database
       const allMessages = db.data.messages?.[groupId] || [];
 
+      console.log(`[GroupController] getMessages for ${groupId}. Total: ${allMessages.length}, Limit: ${limit}, Sort: ${req.query.sort}`);
+
       // Filter out deleted messages (soft delete)
       const activeMessages = allMessages.filter(msg => !msg.deleted);
 
@@ -743,6 +745,8 @@ class GroupController {
       const start = parseInt(offset);
       const end = start + parseInt(limit);
       const messages = sortedMessages.slice(start, end);
+
+      console.log(`[GroupController] Returning ${messages.length} messages.`);
 
       return res.success({
         messages,

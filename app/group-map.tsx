@@ -891,255 +891,239 @@ export default function GroupMapScreen() {
                     showsMyLocationButton={false} // Custom button later if needed
                     showsCompass={false}
                     onMapReady={() => setMapLoading(false)}
-                    customMapStyle={[
-                        {
-                            "elementType": "geometry",
-                            "stylers": [
-                                {
-                                    "color": "#242f3e"
-                                }
-                            ]
                         },
-                        {
-                            "elementType": "labels.text.fill",
-                            "stylers": [
-                                {
-                                    "color": "#746855"
+                {
+                    "elementType": "labels.text.stroke",
+                "stylers": [
+                {
+                    "color": "#242f3e"
                                 }
-                            ]
+                ]
                         },
-                        {
-                            "elementType": "labels.text.stroke",
-                            "stylers": [
-                                {
-                                    "color": "#242f3e"
+                {
+                    "featureType": "administrative.locality",
+                "elementType": "labels.text.fill",
+                "stylers": [
+                {
+                    "color": "#d59563"
                                 }
-                            ]
+                ]
                         },
-                        {
-                            "featureType": "administrative.locality",
-                            "elementType": "labels.text.fill",
-                            "stylers": [
-                                {
-                                    "color": "#d59563"
+                {
+                    "featureType": "poi",
+                "elementType": "labels.text.fill",
+                "stylers": [
+                {
+                    "color": "#d59563"
                                 }
-                            ]
+                ]
                         },
-                        {
-                            "featureType": "poi",
-                            "elementType": "labels.text.fill",
-                            "stylers": [
-                                {
-                                    "color": "#d59563"
+                {
+                    "featureType": "poi.park",
+                "elementType": "geometry",
+                "stylers": [
+                {
+                    "color": "#263c3f"
                                 }
-                            ]
+                ]
                         },
-                        {
-                            "featureType": "poi.park",
-                            "elementType": "geometry",
-                            "stylers": [
-                                {
-                                    "color": "#263c3f"
+                {
+                    "featureType": "poi.park",
+                "elementType": "labels.text.fill",
+                "stylers": [
+                {
+                    "color": "#6b9a76"
                                 }
-                            ]
+                ]
                         },
-                        {
-                            "featureType": "poi.park",
-                            "elementType": "labels.text.fill",
-                            "stylers": [
-                                {
-                                    "color": "#6b9a76"
+                {
+                    "featureType": "road",
+                "elementType": "geometry",
+                "stylers": [
+                {
+                    "color": "#38414e"
                                 }
-                            ]
+                ]
                         },
-                        {
-                            "featureType": "road",
-                            "elementType": "geometry",
-                            "stylers": [
-                                {
-                                    "color": "#38414e"
+                {
+                    "featureType": "road",
+                "elementType": "geometry.stroke",
+                "stylers": [
+                {
+                    "color": "#212a37"
                                 }
-                            ]
+                ]
                         },
-                        {
-                            "featureType": "road",
-                            "elementType": "geometry.stroke",
-                            "stylers": [
-                                {
-                                    "color": "#212a37"
+                {
+                    "featureType": "road",
+                "elementType": "labels.text.fill",
+                "stylers": [
+                {
+                    "color": "#9ca5b3"
                                 }
-                            ]
+                ]
                         },
-                        {
-                            "featureType": "road",
-                            "elementType": "labels.text.fill",
-                            "stylers": [
-                                {
-                                    "color": "#9ca5b3"
+                {
+                    "featureType": "road.highway",
+                "elementType": "geometry",
+                "stylers": [
+                {
+                    "color": "#746855"
                                 }
-                            ]
+                ]
                         },
-                        {
-                            "featureType": "road.highway",
-                            "elementType": "geometry",
-                            "stylers": [
-                                {
-                                    "color": "#746855"
+                {
+                    "featureType": "road.highway",
+                "elementType": "geometry.stroke",
+                "stylers": [
+                {
+                    "color": "#1f2835"
                                 }
-                            ]
+                ]
                         },
-                        {
-                            "featureType": "road.highway",
-                            "elementType": "geometry.stroke",
-                            "stylers": [
-                                {
-                                    "color": "#1f2835"
+                {
+                    "featureType": "road.highway",
+                "elementType": "labels.text.fill",
+                "stylers": [
+                {
+                    "color": "#f3d19c"
                                 }
-                            ]
+                ]
                         },
-                        {
-                            "featureType": "road.highway",
-                            "elementType": "labels.text.fill",
-                            "stylers": [
-                                {
-                                    "color": "#f3d19c"
+                {
+                    "featureType": "transit",
+                "elementType": "geometry",
+                "stylers": [
+                {
+                    "color": "#2f3948"
                                 }
-                            ]
+                ]
                         },
-                        {
-                            "featureType": "transit",
-                            "elementType": "geometry",
-                            "stylers": [
-                                {
-                                    "color": "#2f3948"
+                {
+                    "featureType": "transit.station",
+                "elementType": "labels.text.fill",
+                "stylers": [
+                {
+                    "color": "#d59563"
                                 }
-                            ]
+                ]
                         },
-                        {
-                            "featureType": "transit.station",
-                            "elementType": "labels.text.fill",
-                            "stylers": [
-                                {
-                                    "color": "#d59563"
+                {
+                    "featureType": "water",
+                "elementType": "geometry",
+                "stylers": [
+                {
+                    "color": "#17263c"
                                 }
-                            ]
+                ]
                         },
-                        {
-                            "featureType": "water",
-                            "elementType": "geometry",
-                            "stylers": [
-                                {
-                                    "color": "#17263c"
+                {
+                    "featureType": "water",
+                "elementType": "labels.text.fill",
+                "stylers": [
+                {
+                    "color": "#515c6d"
                                 }
-                            ]
+                ]
                         },
-                        {
-                            "featureType": "water",
-                            "elementType": "labels.text.fill",
-                            "stylers": [
-                                {
-                                    "color": "#515c6d"
+                {
+                    "featureType": "water",
+                "elementType": "labels.text.stroke",
+                "stylers": [
+                {
+                    "color": "#17263c"
                                 }
-                            ]
-                        },
-                        {
-                            "featureType": "water",
-                            "elementType": "labels.text.stroke",
-                            "stylers": [
-                                {
-                                    "color": "#17263c"
-                                }
-                            ]
+                ]
                         }
                     ]}
                 >
-                    {membersWithLocations.map(m => {
-                        if (!m.location?.lat || !m.location?.lng) return null;
-                        return (
-                            <Marker
-                                key={m.userId}
-                                coordinate={{
-                                    latitude: m.location.lat,
-                                    longitude: m.location.lng
-                                }}
-                                title={m.displayName}
-                                description={m.isOnline ? 'Çevrimiçi' : `Son görülme: ${new Date(m.lastSeen || Date.now()).toLocaleTimeString()}`}
-                                onPress={() => focusOnMember(m)}
-                            >
-                                <View style={[styles.customMarker, m.isOnline ? styles.markerOnline : styles.markerOffline]}>
-                                    <Text style={styles.markerText}>
-                                        {m.displayName ? m.displayName.charAt(0).toUpperCase() : '?'}
-                                    </Text>
-                                </View>
-                                <View style={styles.markerArrow} />
-                            </Marker>
-                        );
-                    })}
-                </MapView>
-
-                {/* Bottom Sheet / Controls */}
-                <View style={styles.bottomControls}>
-                    <LinearGradient
-                        colors={['transparent', 'rgba(15, 23, 42, 0.8)', '#0f172a']}
-                        style={StyleSheet.absoluteFill}
-                    />
-
-                    <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={styles.memberList}
-                    >
-                        {membersWithLocations.map(member => (
-                            <Pressable
-                                key={member.userId}
-                                onPress={() => focusOnMember(member)}
-                                style={[
-                                    styles.memberCard,
-                                    selectedMember?.userId === member.userId && styles.selectedMember
-                                ]}
-                            >
-                                <View style={[styles.statusDot, { backgroundColor: member.isOnline ? '#22c55e' : '#64748b' }]} />
-                                <View style={styles.avatarPlaceholder}>
-                                    <Text style={styles.avatarInitial}>{member.displayName?.charAt(0).toUpperCase() || '?'}</Text>
-                                </View>
-                                <Text style={styles.memberName} numberOfLines={1}>{member.displayName}</Text>
-                                <Text style={styles.memberStatus}>
-                                    {member.isOnline ? 'Çevrimiçi' : 'Çevrimdışı'}
+                {membersWithLocations.map(m => {
+                    if (!m.location?.lat || !m.location?.lng) return null;
+                    return (
+                        <Marker
+                            key={m.userId}
+                            coordinate={{
+                                latitude: m.location.lat,
+                                longitude: m.location.lng
+                            }}
+                            title={m.displayName}
+                            description={m.isOnline ? 'Çevrimiçi' : `Son görülme: ${new Date(m.lastSeen || Date.now()).toLocaleTimeString()}`}
+                            onPress={() => focusOnMember(m)}
+                        >
+                            <View style={[styles.customMarker, m.isOnline ? styles.markerOnline : styles.markerOffline]}>
+                                <Text style={styles.markerText}>
+                                    {m.displayName ? m.displayName.charAt(0).toUpperCase() : '?'}
                                 </Text>
-                            </Pressable>
-                        ))}
-                    </ScrollView>
+                            </View>
+                            <View style={styles.markerArrow} />
+                        </Marker>
+                    );
+                })}
+            </MapView>
 
-                    <Pressable
-                        onPress={toggleLocationSharing}
-                        style={[styles.shareButton, isSharing && styles.sharingActive]}
-                    >
-                        <LinearGradient
-                            colors={isSharing ? ['#ef4444', '#dc2626'] : ['#22c55e', '#16a34a']}
-                            style={StyleSheet.absoluteFill}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                        />
-                        <Ionicons name={isSharing ? "stop-circle" : "navigate"} size={24} color="#fff" />
-                        <Text style={styles.shareButtonText}>
-                            {isSharing ? 'Konum Paylaşımını Durdur' : 'Konum Paylaşımını Başlat'}
-                        </Text>
-                        {sharingLoading && <ActivityIndicator color="#fff" style={{ marginLeft: 10 }} />}
-                    </Pressable>
-                </View>
+            {/* Bottom Sheet / Controls */}
+            <View style={styles.bottomControls}>
+                <LinearGradient
+                    colors={['transparent', 'rgba(15, 23, 42, 0.8)', '#0f172a']}
+                    style={StyleSheet.absoluteFill}
+                />
+
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.memberList}
+                >
+                    {membersWithLocations.map(member => (
+                        <Pressable
+                            key={member.userId}
+                            onPress={() => focusOnMember(member)}
+                            style={[
+                                styles.memberCard,
+                                selectedMember?.userId === member.userId && styles.selectedMember
+                            ]}
+                        >
+                            <View style={[styles.statusDot, { backgroundColor: member.isOnline ? '#22c55e' : '#64748b' }]} />
+                            <View style={styles.avatarPlaceholder}>
+                                <Text style={styles.avatarInitial}>{member.displayName?.charAt(0).toUpperCase() || '?'}</Text>
+                            </View>
+                            <Text style={styles.memberName} numberOfLines={1}>{member.displayName}</Text>
+                            <Text style={styles.memberStatus}>
+                                {member.isOnline ? 'Çevrimiçi' : 'Çevrimdışı'}
+                            </Text>
+                        </Pressable>
+                    ))}
+                </ScrollView>
+
+                <Pressable
+                    onPress={toggleLocationSharing}
+                    style={[styles.shareButton, isSharing && styles.sharingActive]}
+                >
+                    <LinearGradient
+                        colors={isSharing ? ['#ef4444', '#dc2626'] : ['#22c55e', '#16a34a']}
+                        style={StyleSheet.absoluteFill}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                    />
+                    <Ionicons name={isSharing ? "stop-circle" : "navigate"} size={24} color="#fff" />
+                    <Text style={styles.shareButtonText}>
+                        {isSharing ? 'Konum Paylaşımını Durdur' : 'Konum Paylaşımını Başlat'}
+                    </Text>
+                    {sharingLoading && <ActivityIndicator color="#fff" style={{ marginLeft: 10 }} />}
+                </Pressable>
             </View>
+        </View>
 
-            {/* Member Detail Modal */}
-            <MemberDetailModal
-                visible={showMemberModal}
-                member={selectedMember}
-                onClose={() => setShowMemberModal(false)}
-                onShowOnMap={() => {
-                    if (selectedMember) focusOnMember(selectedMember);
-                }}
-                onOpenChat={handleOpenChat}
-            />
-        </SafeAreaView>
+            {/* Member Detail Modal */ }
+    <MemberDetailModal
+        visible={showMemberModal}
+        member={selectedMember}
+        onClose={() => setShowMemberModal(false)}
+        onShowOnMap={() => {
+            if (selectedMember) focusOnMember(selectedMember);
+        }}
+        onOpenChat={handleOpenChat}
+    />
+        </SafeAreaView >
     );
 }
 
