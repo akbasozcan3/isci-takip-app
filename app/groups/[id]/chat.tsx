@@ -447,7 +447,7 @@ export default function GroupChatScreen() {
                         <Text style={styles.loadingText}>Mesajlar yükleniyor...</Text>
                     </View>
                 ) : (
-                    <>
+                    <View style={{ flex: 1 }}>
                         <FlatList
                             ref={flatListRef}
                             data={messages}
@@ -477,7 +477,7 @@ export default function GroupChatScreen() {
                                 }
                             }}
                         />
-                    </>
+                    </View>
                 )}
 
                 {/* Input - Sticky at bottom */}
