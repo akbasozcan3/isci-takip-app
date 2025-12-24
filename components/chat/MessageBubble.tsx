@@ -16,42 +16,99 @@ interface MessageBubbleProps {
         deleted?: boolean;
         read?: boolean;
         readBy?: string[];
+        status?: 'pending' | 'sent' | 'delivered' | 'read';
     };
-    onDelete?: (messageId: string) => void;
+    onDelete?: (messageId: string, deleteForEveryone: boolean) => void;
     totalMembers?: number;
 }
 
 export function MessageBubble({ message, onDelete, totalMembers = 0 }: MessageBubbleProps) {
     const isOwn = message.isOwn;
     const translateX = useRef(new Animated.Value(0)).current;
+    const [showDeleteMenu, setShowDeleteMenu] = React.useState(false);
+
+    const handleLongPress = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+        Alert.alert(
+            'Mesajı Sil',
+            'Bu mesajı nasıl silmek istersiniz?',
+            [
+                {
+                    text: 'İptal',
+                    style: 'cancel'
+                },
+                {
+                    text: 'Benden Sil',
+                    onPress: () => {
+                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        onDelete?.(message.id, false);
+                    }
+                },
+                ...(isOwn ? [{
+                    text: 'Herkesten Sil',
+                    style: 'destructive' as const,
+                    onPress: () => {
+                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                        onDelete?.(message.id, true);
+                    }
+                }] : [])
+            ],
+            { cancelable: true }
+        );
+    };
 
     const timestamp = new Date(message.createdAt).toLocaleTimeString('tr-TR', {
         hour: '2-digit',
         minute: '2-digit',
     });
 
-    // Determine read receipt icon and color
+    // Determine read receipt icon and color based on status
     const getReadReceiptIcon = () => {
         if (!isOwn) return null;
 
+        // Use status field if available
+        if (message.status) {
+            switch (message.status) {
+                case 'pending':
+                    return {
+                        name: 'time-outline' as const,
+                        color: 'rgba(255,255,255,0.5)',
+                    };
+                case 'sent':
+                    return {
+                        name: 'checkmark' as const,
+                        color: 'rgba(255,255,255,0.6)',
+                    };
+                case 'delivered':
+                    return {
+                        name: 'checkmark-done' as const,
+                        color: 'rgba(255,255,255,0.6)',
+                    };
+                case 'read':
+                    return {
+                        name: 'checkmark-done' as const,
+                        color: '#0EA5E9', // Blue for read
+                    };
+            }
+        }
+
+        // Fallback to old logic for backward compatibility
         const readByCount = message.readBy?.length || 0;
         const isRead = message.read || readByCount > 0;
-        const isReadByAll = totalMembers > 0 && readByCount >= totalMembers - 1; // -1 for sender
+        const isReadByAll = totalMembers > 0 && readByCount >= totalMembers - 1;
 
         if (isReadByAll || isRead) {
-            // Read by all or marked as read - blue double check
             return {
                 name: 'checkmark-done' as const,
-                color: '#0EA5E9', // Blue
+                color: '#0EA5E9',
             };
         } else if (readByCount > 0) {
-            // Read by some - gray double check
             return {
                 name: 'checkmark-done' as const,
                 color: 'rgba(255,255,255,0.6)',
             };
         } else {
-            // Sent but not read - single check
             return {
                 name: 'checkmark' as const,
                 color: 'rgba(255,255,255,0.6)',
@@ -124,60 +181,64 @@ export function MessageBubble({ message, onDelete, totalMembers = 0 }: MessageBu
 
     return (
         <View style={[styles.container, isOwn ? styles.ownContainer : styles.otherContainer]}>
-            <Animated.View
-                style={[
-                    styles.bubbleWrapper,
-                    isOwn && { transform: [{ translateX }] },
-                ]}
-                {...(isOwn ? panResponder.panHandlers : {})}
-            >
-                {isOwn ? (
-                    <LinearGradient
-                        colors={['#6366f1', '#8b5cf6']}
-                        style={styles.ownBubble}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                    >
-                        <Text style={styles.ownMessageText}>{message.messageText}</Text>
-                        <View style={styles.ownTimestampRow}>
-                            <Text style={styles.ownTimestamp}>{timestamp}</Text>
-                            {readReceipt && (
-                                <Ionicons
-                                    name={readReceipt.name}
-                                    size={14}
-                                    color={readReceipt.color}
-                                    style={{ marginLeft: 4 }}
-                                />
-                            )}
-                        </View>
-                    </LinearGradient>
-                ) : (
-                    <View style={styles.otherBubble}>
-                        <Text style={styles.senderName}>{message.senderName}</Text>
-                        <Text style={styles.otherMessageText}>{message.messageText}</Text>
-                        <Text style={styles.otherTimestamp}>{timestamp}</Text>
-                    </View>
-                )}
-            </Animated.View>
-
-            {/* Delete button (shown when swiping) */}
-            {isOwn && (
+            <Pressable onLongPress={handleLongPress} delayLongPress={500}>
                 <Animated.View
                     style={[
-                        styles.deleteButton,
-                        {
-                            opacity: translateX.interpolate({
-                                inputRange: [-80, -40, 0],
-                                outputRange: [1, 0.5, 0],
-                                extrapolate: 'clamp',
-                            }),
-                        },
+                        styles.bubbleWrapper,
+                        isOwn && { transform: [{ translateX }] },
                     ]}
+                    {...(isOwn ? panResponder.panHandlers : {})}
                 >
-                    <Ionicons name="trash" size={20} color="#ef4444" />
+                    {isOwn ? (
+                        <LinearGradient
+                            colors={['#6366f1', '#8b5cf6']}
+                            style={styles.ownBubble}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                        >
+                            <Text style={styles.ownMessageText}>{message.messageText}</Text>
+                            <View style={styles.ownTimestampRow}>
+                                <Text style={styles.ownTimestamp}>{timestamp}</Text>
+                                {readReceipt && (
+                                    <Ionicons
+                                        name={readReceipt.name}
+                                        size={14}
+                                        color={readReceipt.color}
+                                        style={{ marginLeft: 4 }}
+                                    />
+                                )}
+                            </View>
+                        </LinearGradient>
+                    ) : (
+                        <View style={styles.otherBubble}>
+                            <Text style={styles.senderName}>{message.senderName}</Text>
+                            <Text style={styles.otherMessageText}>{message.messageText}</Text>
+                            <Text style={styles.otherTimestamp}>{timestamp}</Text>
+                        </View>
+                    )}
                 </Animated.View>
-            )}
-        </View>
+            </Pressable>
+
+            {/* Delete button (shown when swiping) */}
+            {
+                isOwn && (
+                    <Animated.View
+                        style={[
+                            styles.deleteButton,
+                            {
+                                opacity: translateX.interpolate({
+                                    inputRange: [-80, -40, 0],
+                                    outputRange: [1, 0.5, 0],
+                                    extrapolate: 'clamp',
+                                }),
+                            },
+                        ]}
+                    >
+                        <Ionicons name="trash" size={20} color="#ef4444" />
+                    </Animated.View>
+                )
+            }
+        </View >
     );
 }
 

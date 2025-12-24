@@ -597,25 +597,44 @@ export default function LocationFeaturesScreen() {
   }, [userId, loadActiveGroups]);
 
   // Reload group from AsyncStorage when screen is focused
+  // Reload group from AsyncStorage and refresh active groups when screen is focused
   useFocusEffect(
     React.useCallback(() => {
+      // 1. Refresh global data to ensure we have latest groups
+      if (userId) {
+        loadActiveGroups();
+      }
+
+      // 2. Sync selection from storage
       const reloadGroup = async () => {
         try {
           const savedGroupJson = await AsyncStorage.getItem('selectedGroup');
-          if (savedGroupJson && activeGroups.length > 0) {
+          if (savedGroupJson) {
             const savedGroup = JSON.parse(savedGroupJson);
-            const groupExists = activeGroups.find((g: ActiveGroup) => g.id === savedGroup.id);
-            if (groupExists && (!selectedGroup || selectedGroup.id !== savedGroup.id)) {
-              console.log('[LocationFeatures] 🔄 Syncing group from storage:', groupExists.name);
-              setSelectedGroup(groupExists);
+
+            // If we have active groups, check immediately
+            if (activeGroups.length > 0) {
+              const groupExists = activeGroups.find((g: ActiveGroup) => g.id === savedGroup.id);
+              if (groupExists && (!selectedGroup || selectedGroup.id !== savedGroup.id)) {
+                console.log('[LocationFeatures] 🔄 Syncing group from storage:', groupExists.name);
+                setSelectedGroup(groupExists);
+              }
+            } else {
+              // If active groups are still loading, simple trust the storage first (optimistic)
+              // The loadActiveGroups() above will validate it shortly after
+              if (!selectedGroup || selectedGroup.id !== savedGroup.id) {
+                console.log('[LocationFeatures] 🔄 Optimistically syncing group from storage');
+                setSelectedGroup(savedGroup);
+              }
             }
           }
         } catch (error) {
           console.warn('[LocationFeatures] Failed to sync group:', error);
         }
       };
+
       reloadGroup();
-    }, [activeGroups, selectedGroup])
+    }, [userId, activeGroups, selectedGroup, loadActiveGroups])
   );
 
   React.useEffect(() => {

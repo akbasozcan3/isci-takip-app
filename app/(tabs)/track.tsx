@@ -448,7 +448,7 @@ export default function TrackScreen(): React.JSX.Element {
         setActiveGroups(groupsArray);
 
         if (groupsArray.length > 0) {
-          showSuccess(`${groupsArray.length} grup yüklendi`);
+          console.log(`[Track] ✅ ${groupsArray.length} grup yüklendi`);
 
           try {
             const savedGroupJson = await AsyncStorage.getItem('selectedGroup');
@@ -495,7 +495,7 @@ export default function TrackScreen(): React.JSX.Element {
       setLoadingGroups(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workerId, showSuccess, showInfo, showWarning, showError]);
+  }, [workerId, showSuccess, showInfo, showWarning, showError, selectedGroup]);
 
   // Grup üyelerini yükle
   const checkActivityStatus = React.useCallback(async () => {
@@ -2436,11 +2436,124 @@ export default function TrackScreen(): React.JSX.Element {
                   )}
                 </View>
               )}
-              <View style={styles.metricsRow}>
-                <View style={styles.metricItem}><Text style={styles.metricLabel}>Lat</Text><Text style={styles.metricVal}>{coords?.latitude != null ? coords.latitude.toFixed(6) : '-'}</Text></View>
-                <View style={styles.metricItem}><Text style={styles.metricLabel}>Lng</Text><Text style={styles.metricVal}>{coords?.longitude != null ? coords.longitude.toFixed(6) : '-'}</Text></View>
-                <View style={styles.metricItem}><Text style={styles.metricLabel}>Hız</Text><Text style={styles.metricVal}>{formatSpeed(speedKmh)}</Text></View>
+              {/* Premium Live Location Card */}
+              <View style={styles.liveLocationCard}>
+                <View style={styles.liveLocationHeader}>
+                  <View style={styles.liveIndicator}>
+                    <View style={styles.livePulse} />
+                    <Ionicons name="radio" size={16} color="#10b981" />
+                  </View>
+                  <Text style={styles.liveLocationTitle}>Canlı Konum</Text>
+                </View>
+
+                <View style={styles.locationMetrics}>
+                  <View style={styles.metricCard}>
+                    <Ionicons name="location" size={20} color="#0EA5E9" style={{ marginBottom: 6 }} />
+                    <Text style={styles.metricValue}>
+                      {coords?.latitude != null ? coords.latitude.toFixed(4) : '--'}
+                    </Text>
+                    <Text style={styles.metricLabel}>Enlem</Text>
+                  </View>
+
+                  <View style={styles.metricCard}>
+                    <Ionicons name="navigate" size={20} color="#8b5cf6" style={{ marginBottom: 6 }} />
+                    <Text style={styles.metricValue}>
+                      {coords?.longitude != null ? coords.longitude.toFixed(4) : '--'}
+                    </Text>
+                    <Text style={styles.metricLabel}>Boylam</Text>
+                  </View>
+
+                  <View style={styles.metricCard}>
+                    <Ionicons name="speedometer" size={20} color="#f59e0b" style={{ marginBottom: 6 }} />
+                    <Text style={styles.metricValue}>
+                      {speedKmh != null && speedKmh > 0 ? speedKmh.toFixed(1) : '0.0'}
+                    </Text>
+                    <Text style={styles.metricLabel}>km/s</Text>
+                  </View>
+                </View>
               </View>
+
+              {/* Premium Active Members Section */}
+              {selectedGroup && groupMembers.length > 0 && (
+                <View style={styles.activeMembersSection}>
+                  <View style={styles.activeMembersHeader}>
+                    <View style={styles.memberHeaderLeft}>
+                      <Ionicons name="people" size={20} color="#8b5cf6" />
+                      <Text style={styles.activeMembersTitle}>Aktif Üyeler</Text>
+                      <View style={styles.memberCountBadge}>
+                        <Text style={styles.memberCountText}>
+                          {groupMembers.filter(m => m.isOnline).length}/{groupMembers.length}
+                        </Text>
+                      </View>
+                    </View>
+                    <Pressable
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        // Show all members modal
+                      }}
+                      style={({ pressed }) => [
+                        styles.viewAllBtn,
+                        pressed && { opacity: 0.7 }
+                      ]}
+                    >
+                      <Text style={styles.viewAllText}>Tümü</Text>
+                      <Ionicons name="chevron-forward" size={16} color="#8b5cf6" />
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.membersList}>
+                    {groupMembers.slice(0, 3).map((member) => (
+                      <Pressable
+                        key={member.userId}
+                        onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                          if (member.location) {
+                            setCoords({ latitude: member.location.lat, longitude: member.location.lng });
+                            setFollow(false);
+                          }
+                        }}
+                        style={({ pressed }) => [
+                          styles.memberCard,
+                          pressed && { transform: [{ scale: 0.98 }], opacity: 0.9 }
+                        ]}
+                      >
+                        <LinearGradient
+                          colors={member.isOnline ? ['#8b5cf6', '#7c3aed'] : ['#475569', '#334155']}
+                          style={styles.memberCardGradient}
+                        >
+                          <View style={styles.memberCardLeft}>
+                            <View style={styles.memberAvatar}>
+                              <Text style={styles.memberAvatarText}>
+                                {(member.displayName || member.userId).substring(0, 2).toUpperCase()}
+                              </Text>
+                              {member.isOnline && <View style={styles.onlineDot} />}
+                            </View>
+                            <View style={styles.memberInfo}>
+                              <Text style={styles.memberName} numberOfLines={1}>
+                                {member.displayName || member.userId}
+                              </Text>
+                              <View style={styles.memberMeta}>
+                                {member.activity?.type && (
+                                  <View style={styles.activityBadge}>
+                                    <Text style={styles.activityIcon}>{member.activity.icon}</Text>
+                                    <Text style={styles.activityText}>{member.activity.type}</Text>
+                                  </View>
+                                )}
+                                {!member.activity?.type && member.location && (
+                                  <Text style={styles.memberLocation} numberOfLines={1}>
+                                    📍 {member.location.lat.toFixed(4)}, {member.location.lng.toFixed(4)}
+                                  </Text>
+                                )}
+                              </View>
+                            </View>
+                          </View>
+                          <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.6)" />
+                        </LinearGradient>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              )}
             </ScrollView>
           </View>
 
@@ -3465,22 +3578,23 @@ const styles = StyleSheet.create({
 
 
   controlPanel: {
+    flex: 1,
     marginHorizontal: 16,
     marginBottom: Platform.OS === 'ios' ? 32 : 44,
     marginTop: 8,
-    maxHeight: '50%', // Limit height to 50% of screen
   },
   controlPanelScroll: {
     flex: 1,
   },
   controlPanelContent: {
-    paddingBottom: 20,
+    paddingBottom: 100,
   },
   searchSection: {
     backgroundColor: 'rgba(30, 41, 59, 0.97)',
     borderRadius: 22,
     padding: 20,
-    gap: 14,
+    gap: 20,
+    marginBottom: 24,
     borderWidth: 1.5,
     borderColor: 'rgba(99, 102, 241, 0.25)',
     shadowColor: '#000',
@@ -3518,18 +3632,20 @@ const styles = StyleSheet.create({
   },
   searchCard: {
     backgroundColor: 'rgba(15, 23, 42, 0.6)',
-    borderRadius: 16,
-    padding: 12,
-    gap: 8,
+    borderRadius: 18,
+    padding: 18,
+    gap: 14,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: 'rgba(99, 102, 241, 0.15)',
   },
   searchLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontFamily: 'Poppins-SemiBold',
-    marginBottom: 4,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#e2e8f0',
+    fontFamily: 'Poppins-Bold',
+    marginBottom: 2,
+    letterSpacing: 0.3,
   },
   searchBtnGradient: {
     width: 48,
@@ -3546,7 +3662,8 @@ const styles = StyleSheet.create({
   quickActionBtn: {
     borderRadius: 14,
     overflow: 'hidden',
-    marginTop: 4,
+    marginTop: 16,
+    marginBottom: 20,
   },
   quickActionGradient: {
     flexDirection: 'row',
@@ -3567,15 +3684,15 @@ const styles = StyleSheet.create({
   inputRow: { flexDirection: 'row', alignItems: 'center' },
   input: {
     flex: 1,
-    height: 48,
-    borderRadius: 12,
+    height: 52,
+    borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
-    paddingHorizontal: 14,
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    borderColor: 'rgba(99, 102, 241, 0.25)',
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
     color: '#fff',
-    fontSize: 14,
-    fontFamily: 'Poppins-Regular',
+    fontSize: 15,
+    fontFamily: 'Poppins-Medium',
   },
   searchBtn: {
     marginLeft: 10,
@@ -3583,19 +3700,253 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   callBtn: { width: 46, height: 46, marginLeft: 8, borderRadius: 12, backgroundColor: '#16a34a', alignItems: 'center', justifyContent: 'center' },
-  row: { flexDirection: 'row', gap: 12 },
+  row: {
+    flexDirection: 'row',
+    gap: 14,
+    marginTop: 24,
+    marginBottom: 8,
+  },
   button: { flex: 1, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   buttonStart: { backgroundColor: '#0EA5E9' },
   buttonStop: { backgroundColor: '#ef4444' },
   buttonText: { color: '#fff', fontSize: 15, fontWeight: '700', fontFamily: 'Poppins-Bold' },
-  secondaryButton: { flex: 1, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1e293b', borderWidth: 1, borderColor: '#334155' },
+  secondaryButton: {
+    flex: 1,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(30, 41, 59, 0.8)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(139, 92, 246, 0.3)',
+    shadowColor: '#8b5cf6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 3,
+  },
   secondaryText: { color: '#fff', fontSize: 14, fontWeight: '700', fontFamily: 'Poppins-Bold' },
   secondaryMeta: { color: '#64748b', fontSize: 12, fontFamily: 'Poppins-Regular' },
 
-  metricsRow: { marginTop: 12, backgroundColor: '#1e293b', borderRadius: 14, padding: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', borderWidth: 1, borderColor: '#334155' },
-  metricItem: { width: (width - 56) / 3, marginBottom: 6 },
-  metricLabel: { fontSize: 11, color: '#94a3b8', fontFamily: 'Poppins-Regular' },
-  metricVal: { fontSize: 13, color: '#fff', fontWeight: '800', fontFamily: 'Poppins-ExtraBold' },
+  // Premium Live Location Card
+  liveLocationCard: {
+    marginTop: 20,
+    backgroundColor: 'rgba(30, 41, 59, 0.95)',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  liveLocationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  liveIndicator: {
+    position: 'relative',
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  livePulse: {
+    position: 'absolute',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    borderWidth: 2,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+  },
+  liveLocationTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#fff',
+    fontFamily: 'Poppins-Bold',
+    letterSpacing: 0.3,
+  },
+  locationMetrics: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  metricCard: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    borderRadius: 16,
+    padding: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.15)',
+  },
+  metricValue: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#fff',
+    fontFamily: 'Poppins-ExtraBold',
+    marginBottom: 4,
+  },
+  metricLabel: {
+    fontSize: 11,
+    color: '#94a3b8',
+    fontFamily: 'Poppins-Medium',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+
+  // Premium Active Members Section
+  activeMembersSection: {
+    marginTop: 28,
+    marginBottom: 20,
+  },
+  activeMembersHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  memberHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  activeMembersTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#fff',
+    fontFamily: 'Poppins-Bold',
+    letterSpacing: 0.3,
+  },
+  memberCountBadge: {
+    backgroundColor: 'rgba(139, 92, 246, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.3)',
+  },
+  memberCountText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#8b5cf6',
+    fontFamily: 'Poppins-Bold',
+  },
+  viewAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+  },
+  viewAllText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8b5cf6',
+    fontFamily: 'Poppins-SemiBold',
+  },
+  membersList: {
+    gap: 12,
+  },
+  memberCard: {
+    borderRadius: 18,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  memberCardGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    minHeight: 80,
+  },
+  memberCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 14,
+  },
+  memberAvatar: {
+    position: 'relative',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  memberAvatarText: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#fff',
+    fontFamily: 'Poppins-ExtraBold',
+  },
+  onlineDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#10b981',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  memberInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  memberName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+    fontFamily: 'Poppins-Bold',
+  },
+  memberMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  activityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  activityIcon: {
+    fontSize: 12,
+  },
+  activityText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#fff',
+    fontFamily: 'Poppins-SemiBold',
+  },
+  memberLocation: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontFamily: 'Poppins-Regular',
+  },
+
   modalContainer: { flex: 1, backgroundColor: '#0f172a' },
   modalHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', padding: 25, borderBottomWidth: 1, borderColor: '#eceff1', paddingTop: 79 },
   modalTitle: { fontSize: 20, fontWeight: '900', color: '#fff', fontFamily: 'Poppins-Bold' },

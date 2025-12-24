@@ -772,6 +772,14 @@ router.put('/location/delivery/:deliveryId/status', requireAuth, validateDeliver
 router.post('/location/route/save', requireAuth, locationController.saveRoute.bind(locationController));
 router.get('/location/routes', requireAuth, locationController.listRoutes.bind(locationController));
 router.post('/location/validate-input', requireAuth, locationController.validateInput.bind(locationController));
+
+// Vehicle Tracking Routes
+router.post('/vehicles/session/start', requireAuth, asyncHandler(locationController.startVehicleSession.bind(locationController)));
+router.post('/vehicles/session/:sessionId/end', requireAuth, asyncHandler(locationController.endVehicleSession.bind(locationController)));
+router.post('/vehicles/speed-violation', requireAuth, asyncHandler(locationController.recordSpeedViolation.bind(locationController)));
+router.get('/vehicles/sessions', requireAuth, asyncHandler(locationController.getVehicleSessions.bind(locationController)));
+router.get('/groups/:groupId/vehicles', requireAuth, validateGroupId, asyncHandler(locationController.getGroupVehicles.bind(locationController)));
+
 // Messaging Controller
 const messagingController = require('../controllers/messagingController');
 router.post('/messages/send',

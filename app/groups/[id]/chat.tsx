@@ -36,6 +36,10 @@ interface Message {
     createdAt: string;
     isOwn: boolean;
     deleted?: boolean;
+    status?: 'pending' | 'sent' | 'delivered' | 'read';
+    audioUri?: string;
+    audioDuration?: number;
+    messageType?: 'text' | 'voice';
 }
 
 interface ChatScreenParams {
@@ -63,6 +67,7 @@ export default function GroupChatScreen() {
     const [isTyping, setIsTyping] = useState(false);
     const [typingUsers, setTypingUsers] = useState<string[]>([]);
     const [socketConnected, setSocketConnected] = useState(false);
+    const [lastSendTime, setLastSendTime] = useState(0);
     const networkState = useNetworkStatus();
 
     // Combined connection status
@@ -89,26 +94,31 @@ export default function GroupChatScreen() {
 
                     // Listen for new messages
                     socket.on('new_message', (data: any) => {
-                        console.log('[Chat] New message received:', data);
+                        console.log('[Chat] New message received via socket:', data);
                         if (data.groupId === groupId) {
                             const newMessage: Message = {
-                                id: data.id,
-                                senderId: data.senderId,
+                                id: data.id || data._id || `msg-${Date.now()}`,
+                                senderId: data.senderId || data.sender?.id || data.sender,
                                 senderName: data.sender?.name || data.senderName || 'Unknown',
-                                senderAvatar: data.senderAvatar,
-                                messageText: data.message || data.messageText,
-                                createdAt: new Date(data.createdAt).toISOString(),
-                                isOwn: data.senderId === userId,
+                                senderAvatar: data.senderAvatar || data.sender?.avatar,
+                                messageText: data.message || data.messageText || data.text || '',
+                                createdAt: data.createdAt || data.timestamp || new Date().toISOString(),
+                                isOwn: (data.senderId || data.sender?.id || data.sender) === userId,
                                 deleted: data.deleted || false,
+                                status: 'delivered',
                             };
+
+                            console.log('[Chat] Processed new message:', newMessage);
 
                             setMessages((prev) => {
                                 // Remove temp message if exists
                                 const filtered = prev.filter(m => !m.id.startsWith('temp-'));
                                 // Check if message already exists
                                 if (filtered.some(m => m.id === newMessage.id)) {
+                                    console.log('[Chat] Message already exists, skipping');
                                     return prev;
                                 }
+                                console.log('[Chat] Adding new message to state');
                                 return [...filtered, newMessage];
                             });
 
@@ -146,6 +156,19 @@ export default function GroupChatScreen() {
                         setSocketConnected(false);
                         showInfo('Bağlantı kesildi');
                     });
+
+                    // Listen for message status updates
+                    socket.on('message_status', (data: any) => {
+                        if (data.groupId === groupId) {
+                            setMessages((prev) =>
+                                prev.map((msg) =>
+                                    msg.id === data.messageId
+                                        ? { ...msg, status: data.status }
+                                        : msg
+                                )
+                            );
+                        }
+                    });
                 }
             } catch (error) {
                 console.error('[Chat] Socket setup error:', error);
@@ -162,6 +185,7 @@ export default function GroupChatScreen() {
                 socket.off('user_typing');
                 socket.off('connect');
                 socket.off('disconnect');
+                socket.off('message_status');
             }
         };
     }, [userId, groupId]);
@@ -203,25 +227,47 @@ export default function GroupChatScreen() {
         try {
             if (!silent) setLoading(true);
 
+            console.log('[Chat] Loading messages for group:', groupId);
             const response = await authFetch(`/groups/${groupId}/messages?limit=50`);
 
+            console.log('[Chat] Messages response status:', response.status);
+
             if (!response.ok) {
-                if (response.status === 404) {
-                    console.log('[Chat] Messages endpoint not yet implemented');
-                    if (!silent) setLoading(false);
-                    return;
-                }
-                throw new Error('Failed to load messages');
+                const errorText = await response.text();
+                console.error('[Chat] Failed to load messages:', response.status, errorText);
+                throw new Error(`Mesaj geçmişi yüklenemedi (${response.status})`);
             }
 
             const data = await response.json();
-            const messagesData = data.data?.messages || data.messages || [];
+            console.log('[Chat] Raw messages data:', JSON.stringify(data).substring(0, 200));
+
+            // Handle different response formats
+            let messagesData = [];
+            if (Array.isArray(data)) {
+                messagesData = data;
+            } else if (data.data?.messages) {
+                messagesData = data.data.messages;
+            } else if (data.messages) {
+                messagesData = data.messages;
+            } else if (data.data && Array.isArray(data.data)) {
+                messagesData = data.data;
+            }
+
+            console.log('[Chat] Parsed messages count:', messagesData.length);
 
             const messagesWithOwn = messagesData.map((msg: any) => ({
-                ...msg,
-                isOwn: msg.senderId === userId,
+                id: msg.id || msg._id,
+                senderId: msg.senderId || msg.sender?.id || msg.sender,
+                senderName: msg.senderName || msg.sender?.name || 'Unknown',
+                senderAvatar: msg.senderAvatar || msg.sender?.avatar,
+                messageText: msg.messageText || msg.message || msg.text || '',
+                createdAt: msg.createdAt || msg.timestamp || new Date().toISOString(),
+                isOwn: (msg.senderId || msg.sender?.id || msg.sender) === userId,
+                deleted: msg.deleted || false,
+                status: msg.status || 'sent',
             }));
 
+            console.log('[Chat] Processed messages:', messagesWithOwn.length);
             setMessages(messagesWithOwn);
             setHasMore(data.data?.pagination?.hasMore || data.pagination?.hasMore || false);
 
@@ -233,7 +279,7 @@ export default function GroupChatScreen() {
         } catch (error: any) {
             console.error('[Chat] Load messages error:', error);
 
-            if (!error.message?.includes('404') && !silent) {
+            if (!silent) {
                 showError(error.message || 'Mesajlar yüklenemedi');
             }
         } finally {
@@ -245,8 +291,23 @@ export default function GroupChatScreen() {
     const sendMessage = async (messageText: string) => {
         if (!groupId || !userId) return;
 
+        // Spam prevention: minimum 500ms between messages
+        const now = Date.now();
+        if (now - lastSendTime < 500) {
+            showError('Lütfen daha yavaş mesaj gönderin');
+            return;
+        }
+
+        // Prevent empty messages
+        const trimmed = messageText.trim();
+        if (!trimmed) {
+            showError('Boş mesaj gönderilemez');
+            return;
+        }
+
         try {
             setSending(true);
+            setLastSendTime(now);
 
             // Stop typing indicator
             if (typingTimeoutRef.current) {
@@ -255,14 +316,15 @@ export default function GroupChatScreen() {
             }
             sendTypingIndicator(groupId, false);
 
-            // Optimistic UI update
+            // Optimistic UI update with pending status
             const optimisticMessage: Message = {
                 id: `temp-${Date.now()}`,
                 senderId: userId,
                 senderName: 'Sen',
-                messageText,
+                messageText: trimmed,
                 createdAt: new Date().toISOString(),
                 isOwn: true,
+                status: 'pending',
             };
 
             setMessages((prev) => [...prev, optimisticMessage]);
@@ -277,7 +339,7 @@ export default function GroupChatScreen() {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ messageText }),
+                body: JSON.stringify({ message: trimmed, messageText: trimmed }), // Send both for compatibility
             });
 
             if (!response.ok) {
@@ -288,11 +350,11 @@ export default function GroupChatScreen() {
             const sentMessage = data.data?.message || data.message;
 
             if (sentMessage) {
-                // Replace optimistic message with real one
+                // Replace optimistic message with real one and mark as sent
                 setMessages((prev) =>
                     prev.map((msg) =>
                         msg.id === optimisticMessage.id
-                            ? { ...sentMessage, isOwn: true }
+                            ? { ...sentMessage, isOwn: true, status: 'sent' }
                             : msg
                     )
                 );
@@ -306,6 +368,109 @@ export default function GroupChatScreen() {
             setMessages((prev) => prev.filter((msg) => !msg.id.startsWith('temp-')));
         } finally {
             setSending(false);
+        }
+    };
+
+    const sendVoiceMessage = async (audioUri: string, duration: number) => {
+        if (!groupId || !userId) return;
+
+        try {
+            console.log('[Chat] Sending voice message:', audioUri, duration);
+            setSending(true);
+
+            // Create FormData for file upload
+            const formData = new FormData();
+            const filename = audioUri.split('/').pop() || 'voice.m4a';
+
+            formData.append('audio', {
+                uri: audioUri,
+                type: 'audio/m4a',
+                name: filename,
+            } as any);
+            formData.append('duration', duration.toString());
+            formData.append('messageType', 'voice');
+
+            // Optimistic UI update
+            const optimisticMessage: Message = {
+                id: `temp-${Date.now()}`,
+                senderId: userId,
+                senderName: 'Sen',
+                messageText: `🎤 Ses mesajı (${duration}s)`,
+                createdAt: new Date().toISOString(),
+                isOwn: true,
+                status: 'pending',
+                audioUri,
+                audioDuration: duration,
+                messageType: 'voice',
+            };
+
+            setMessages((prev) => [...prev, optimisticMessage]);
+
+            setTimeout(() => {
+                flatListRef.current?.scrollToEnd({ animated: true });
+            }, 50);
+
+            // Send to backend
+            const response = await authFetch(`/groups/${groupId}/messages`, {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!response.ok) {
+                throw new Error('Ses mesajı gönderilemedi');
+            }
+
+            const data = await response.json();
+            const sentMessage = data.data?.message || data.message;
+
+            if (sentMessage) {
+                setMessages((prev) =>
+                    prev.map((msg) =>
+                        msg.id === optimisticMessage.id
+                            ? { ...sentMessage, isOwn: true, status: 'sent' }
+                            : msg
+                    )
+                );
+            }
+
+            console.log('[Chat] Voice message sent successfully');
+        } catch (error: any) {
+            console.error('[Chat] Send voice message error:', error);
+            showError(error.message || 'Ses mesajı gönderilemedi');
+            setMessages((prev) => prev.filter((msg) => !msg.id.startsWith('temp-')));
+        } finally {
+            setSending(false);
+        }
+    };
+
+    const handleDeleteMessage = async (messageId: string, deleteForEveryone: boolean) => {
+        try {
+            if (deleteForEveryone) {
+                // Delete for everyone - call backend
+                const response = await authFetch(`/groups/${groupId}/messages/${messageId}`, {
+                    method: 'DELETE',
+                });
+
+                if (!response.ok) {
+                    throw new Error('Mesaj silinemedi');
+                }
+
+                // Update local state - mark as deleted
+                setMessages((prev) =>
+                    prev.map((msg) =>
+                        msg.id === messageId ? { ...msg, deleted: true, messageText: 'Mesaj silindi' } : msg
+                    )
+                );
+
+                console.log('[Chat] Message deleted for everyone:', messageId);
+            } else {
+                // Delete for me only - just remove from local state
+                setMessages((prev) => prev.filter((msg) => msg.id !== messageId));
+                console.log('[Chat] Message deleted for me:', messageId);
+            }
+        } catch (error: any) {
+            console.error('[Chat] Delete message error:', error);
+            showError(error.message || 'Mesaj silinemedi');
         }
     };
 
@@ -338,44 +503,16 @@ export default function GroupChatScreen() {
         loadMessages();
     }, []);
 
-    const handleDeleteMessage = async (messageId: string) => {
-        try {
-            // Optimistic UI update
-            setMessages(prev => prev.map(msg =>
-                msg.id === messageId ? { ...msg, deleted: true } : msg
-            ));
-
-            // Send delete request to backend
-            const response = await authFetch(`/groups/${groupId}/messages/${messageId}`, {
-                method: 'DELETE',
-            });
-
-            if (!response.ok) {
-                // Revert on error
-                setMessages(prev => prev.map(msg =>
-                    msg.id === messageId ? { ...msg, deleted: false } : msg
-                ));
-                showError('Mesaj silinemedi');
-            }
-        } catch (error) {
-            console.error('[Chat] Delete message error:', error);
-            // Revert on error
-            setMessages(prev => prev.map(msg =>
-                msg.id === messageId ? { ...msg, deleted: false } : msg
-            ));
-            showError('Mesaj silinemedi');
-        }
-    };
 
     const renderMessage = ({ item }: { item: Message }) => (
-        <MessageBubble message={item} onDelete={handleDeleteMessage} />
+        <MessageBubble message={item} onDelete={handleDeleteMessage} totalMembers={memberCount} />
     );
 
     const renderHeader = () => (
         <View style={{ marginBottom: 10 }}>
             <UnifiedHeader
                 title={groupName || 'Grup Sohbet'}
-                subtitle={`${onlineCount} aktif üye`}
+                subtitle={`${memberCount} aktif üye`}
                 brandLabel="SOHBET"
                 gradientColors={['#8b5cf6', '#7c3aed']}
                 onBackPress={() => router.back()}
@@ -408,8 +545,19 @@ export default function GroupChatScreen() {
     };
 
     return (
-        <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.container}>
             <StatusBar barStyle="light-content" />
+
+            <UnifiedHeader
+                title={groupName || 'Grup Sohbet'}
+                subtitle={`${memberCount} aktif üye`}
+                brandLabel="SOHBET"
+                gradientColors={['#8b5cf6', '#7c3aed']}
+                onBackPress={() => router.back()}
+                showBack={true}
+                showProfile={false}
+                showNetwork={true}
+            />
 
             <KeyboardAvoidingView
                 style={styles.keyboardView}
@@ -422,42 +570,45 @@ export default function GroupChatScreen() {
                         <Text style={styles.loadingText}>Mesajlar yükleniyor...</Text>
                     </View>
                 ) : (
-                    <View style={{ flex: 1 }}>
-                        <FlatList
-                            ref={flatListRef}
-                            data={messages}
-                            renderItem={renderMessage}
-                            keyExtractor={(item) => item.id}
-                            contentContainerStyle={styles.messageList}
-                            showsVerticalScrollIndicator={false}
-                            ListHeaderComponent={renderHeader}
-                            ListEmptyComponent={<EmptyChat />}
-                            ListFooterComponent={renderTypingIndicator}
-                            refreshControl={
-                                <RefreshControl
-                                    refreshing={refreshing}
-                                    onRefresh={onRefresh}
-                                    tintColor="#8b5cf6"
-                                    colors={['#8b5cf6']}
-                                />
-                            }
-                            scrollEventThrottle={16}
-                            onContentSizeChange={() => {
-                                if (messages.length > 0 && !loading) {
-                                    flatListRef.current?.scrollToEnd({ animated: false });
+                    <View style={styles.listContainer}>
+                        {messages.length === 0 && !loading && <EmptyChat />}
+                        {messages.length > 0 && (
+                            <FlatList
+                                ref={flatListRef}
+                                data={messages}
+                                renderItem={renderMessage}
+                                keyExtractor={(item) => item.id}
+                                contentContainerStyle={styles.messageList}
+                                showsVerticalScrollIndicator={false}
+                                ListFooterComponent={renderTypingIndicator}
+                                refreshControl={
+                                    <RefreshControl
+                                        refreshing={refreshing}
+                                        onRefresh={onRefresh}
+                                        tintColor="#8b5cf6"
+                                        colors={['#8b5cf6']}
+                                    />
                                 }
-                            }}
-                        />
+                                scrollEventThrottle={16}
+                                onContentSizeChange={() => {
+                                    if (messages.length > 0 && !loading) {
+                                        flatListRef.current?.scrollToEnd({ animated: false });
+                                    }
+                                }}
+                                keyboardDismissMode="interactive"
+                                keyboardShouldPersistTaps="handled"
+                            />
+                        )}
                     </View>
                 )}
 
-                {/* Input - Sticky at bottom */}
                 <ChatInput
                     onSend={sendMessage}
                     onTyping={handleTyping}
+                    onVoiceSend={sendVoiceMessage}
                 />
             </KeyboardAvoidingView>
-        </SafeAreaView>
+        </View>
     );
 }
 
@@ -467,6 +618,9 @@ const styles = StyleSheet.create({
         backgroundColor: '#0f172a',
     },
     keyboardView: {
+        flex: 1,
+    },
+    listContainer: {
         flex: 1,
     },
     loadingContainer: {
@@ -482,69 +636,8 @@ const styles = StyleSheet.create({
     },
     messageList: {
         flexGrow: 1,
-        paddingBottom: 12,
-    },
-    headerInList: {
-        marginBottom: 16,
-    },
-    headerGradient: {
-        borderRadius: 24,
-        marginHorizontal: 12,
-        marginTop: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 8,
-    },
-    headerTop: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 16,
-        gap: 12,
-    },
-    backButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.2)',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    headerCenter: {
-        flex: 1,
-    },
-    groupName: {
-        fontSize: 18,
-        fontWeight: '900',
-        color: '#fff',
-        fontFamily: 'Poppins-Bold',
-        letterSpacing: 0.3,
-    },
-    statusRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 4,
-        gap: 6,
-    },
-    onlineIndicator: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: '#10b981',
-    },
-    participantCount: {
-        fontSize: 12,
-        color: 'rgba(255,255,255,0.9)',
-        fontFamily: 'Poppins-Medium',
-    },
-    infoButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.2)',
-        alignItems: 'center',
-        justifyContent: 'center',
+        paddingBottom: 20,
+        paddingTop: 10,
     },
     typingContainer: {
         paddingHorizontal: 16,

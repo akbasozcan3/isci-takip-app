@@ -71,7 +71,7 @@ function getPlanBasedLocationLimits(planId) {
 
 function applyPerformanceOptimization(req, res, planLimits, data) {
   const startTime = Date.now();
-  
+
   if (planLimits.responseOptimization && data) {
     if (Array.isArray(data)) {
       data = data.map(item => {
@@ -98,7 +98,7 @@ function applyPerformanceOptimization(req, res, planLimits, data) {
   }
 
   const processingTime = Date.now() - startTime;
-  
+
   if (planLimits.performanceBoost > 1.0) {
     res.setHeader('X-Performance-Boost', planLimits.performanceBoost.toFixed(1));
     res.setHeader('X-Processing-Time', `${processingTime}ms`);
@@ -113,7 +113,7 @@ async function processWithPlanOptimization(req, res, planLimits, processor, endp
   const startTime = Date.now();
   const planId = req.user?.subscription?.planId || 'free';
   let success = false;
-  
+
   if (planLimits.priorityProcessing) {
     res.setHeader('X-Priority', 'high');
     res.setHeader('X-Plan-Level', planId);
@@ -122,13 +122,13 @@ async function processWithPlanOptimization(req, res, planLimits, processor, endp
   try {
     let result = await processor();
     success = true;
-    
+
     if (planLimits.responseOptimization) {
       result = applyPerformanceOptimization(req, res, planLimits, result);
     }
 
     const processingTime = Date.now() - startTime;
-    
+
     if (planLimits.performanceBoost > 1.0 && result && typeof result === 'object') {
       if (Array.isArray(result)) {
         result = result.map(item => {
@@ -173,22 +173,22 @@ function validateCoordinates(lat, lng, fieldName = 'coordinates') {
   if (lat === undefined || lng === undefined) {
     throw createError(`${fieldName} gereklidir`, 400, 'MISSING_COORDINATES');
   }
-  
+
   const latNum = parseFloat(lat);
   const lngNum = parseFloat(lng);
-  
+
   if (!isFinite(latNum) || !isFinite(lngNum)) {
     throw createError(`Geçersiz ${fieldName} formatı`, 400, 'INVALID_COORDINATES', { lat, lng });
   }
-  
+
   if (latNum < -90 || latNum > 90) {
     throw createError(`Enlem -90 ile 90 arasında olmalıdır`, 400, 'INVALID_LATITUDE', { lat: latNum });
   }
-  
+
   if (lngNum < -180 || lngNum > 180) {
     throw createError(`Boylam -180 ile 180 arasında olmalıdır`, 400, 'INVALID_LONGITUDE', { lng: lngNum });
   }
-  
+
   return { lat: latNum, lng: lngNum };
 }
 
@@ -196,17 +196,17 @@ function validatePhoneNumber(phone, fieldName = 'phone') {
   if (!phone || !phone.trim()) {
     throw createError(`${fieldName} gereklidir`, 400, 'MISSING_PHONE');
   }
-  
+
   const cleanPhone = phone.replace(/\s/g, '');
   const phoneRegex = /^(\+90|0)?[5][0-9]{9}$/;
-  
+
   if (!phoneRegex.test(cleanPhone)) {
-    throw createError(`Geçersiz telefon numarası formatı. Türkiye telefon numarası olmalıdır (5XXXXXXXXX)`, 400, 'INVALID_PHONE_FORMAT', { 
+    throw createError(`Geçersiz telefon numarası formatı. Türkiye telefon numarası olmalıdır (5XXXXXXXXX)`, 400, 'INVALID_PHONE_FORMAT', {
       phone: cleanPhone,
       example: '5551234567'
     });
   }
-  
+
   return cleanPhone;
 }
 
@@ -214,23 +214,23 @@ function validateName(name, fieldName = 'name', minLength = 2, maxLength = 50) {
   if (!name || !name.trim()) {
     throw createError(`${fieldName} gereklidir`, 400, 'MISSING_NAME');
   }
-  
+
   const trimmed = name.trim();
-  
+
   if (trimmed.length < minLength) {
-    throw createError(`${fieldName} en az ${minLength} karakter olmalıdır`, 400, 'NAME_TOO_SHORT', { 
-      minLength, 
-      current: trimmed.length 
+    throw createError(`${fieldName} en az ${minLength} karakter olmalıdır`, 400, 'NAME_TOO_SHORT', {
+      minLength,
+      current: trimmed.length
     });
   }
-  
+
   if (trimmed.length > maxLength) {
-    throw createError(`${fieldName} en fazla ${maxLength} karakter olabilir`, 400, 'NAME_TOO_LONG', { 
-      maxLength, 
-      current: trimmed.length 
+    throw createError(`${fieldName} en fazla ${maxLength} karakter olabilir`, 400, 'NAME_TOO_LONG', {
+      maxLength,
+      current: trimmed.length
     });
   }
-  
+
   return trimmed;
 }
 
@@ -239,12 +239,12 @@ function getUserIdFromToken(req) {
   if (!token) {
     throw createError('Token gereklidir', 401, 'MISSING_TOKEN');
   }
-  
+
   const tokenData = db.getToken(token);
   if (!tokenData) {
     throw createError('Geçersiz token', 401, 'INVALID_TOKEN');
   }
-  
+
   return tokenData.userId;
 }
 
@@ -258,33 +258,33 @@ function getUserPlan(userId) {
       planLimits: SubscriptionModel.getPlanLimits('free')
     };
   }
-  
+
   const subscription = db.getUserSubscription(user.id);
   const planId = subscription?.planId || 'free';
   const planLimits = SubscriptionModel.getPlanLimits(planId);
-  
+
   return { user, subscription, planId, planLimits };
 }
 
 function checkGroupAccess(userId, groupId, requireAdmin = false) {
   if (!groupId) return null;
-  
+
   const group = db.getGroupById(groupId);
   if (!group) {
     throw createError('Grup bulunamadı', 404, 'GROUP_NOT_FOUND', { groupId });
   }
-  
+
   const members = db.getMembers(groupId) || [];
   const member = members.find(m => m.userId === userId);
-  
+
   if (!member) {
     throw createError('Bu grup için yetkiniz yok', 403, 'GROUP_ACCESS_DENIED', { groupId });
   }
-  
+
   if (requireAdmin && member.role !== 'admin') {
     throw createError('Bu işlem için grup yöneticisi olmanız gerekiyor', 403, 'GROUP_ADMIN_REQUIRED', { groupId });
   }
-  
+
   return { group, member };
 }
 
@@ -294,9 +294,9 @@ class LocationController {
     const startTime = Date.now();
     try {
       const { deviceId, coords, timestamp, workerId, name, phone } = req.body || {};
-      
+
       const finalDeviceId = deviceId || workerId;
-      
+
       const validation = validationService.validateLocationData({
         deviceId: finalDeviceId,
         coords,
@@ -313,17 +313,17 @@ class LocationController {
 
       const lat = parseFloat(coords.latitude);
       const lng = parseFloat(coords.longitude);
-      
+
       if (!isFinite(lat) || !isFinite(lng)) {
         return res.status(400).json(ResponseFormatter.error('Geçersiz koordinat formatı', 'INVALID_COORDINATES'));
       }
-      
+
       if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
         return res.status(400).json(ResponseFormatter.error('Koordinatlar geçerli aralıkta değil', 'COORDINATES_OUT_OF_RANGE'));
       }
 
       const locationActivityService = require('../services/locationActivityService');
-      
+
       const locationData = {
         timestamp: timestamp || Date.now(),
         coords: {
@@ -352,15 +352,15 @@ class LocationController {
       }
 
       const locationWithActivity = locationActivityService.updateLocationWithActivity(finalDeviceId, locationData);
-      
+
       if (locationData.geocode) {
         locationWithActivity.geocode = locationData.geocode;
       }
-      
+
       locationBatchService.addToBatch(finalDeviceId, locationWithActivity);
 
       const { planId, planLimits: locationLimits } = getUserPlan(finalDeviceId);
-      
+
       try {
         const userGroups = db.getUserGroups(finalDeviceId);
         if (userGroups && userGroups.length > 0) {
@@ -377,14 +377,14 @@ class LocationController {
       } catch (notifError) {
         logger.debug('Location update notification error (non-critical):', notifError.message);
       }
-      
+
       const existingLocations = db.getStore(finalDeviceId);
       if (existingLocations.length > locationLimits.maxLocationsPerDevice) {
         const toKeep = existingLocations.slice(-locationLimits.maxLocationsPerDevice + 100);
         db.data.store[finalDeviceId] = toKeep;
         db.scheduleSave();
       }
-      
+
       if (locationLimits.cacheEnabled) {
         cacheService.delete(`location:${finalDeviceId}:latest`);
         cacheService.delete(`location:${finalDeviceId}:history`);
@@ -395,7 +395,7 @@ class LocationController {
       try {
         const groupDistanceService = require('../services/groupDistanceService');
         const userGroups = db.getUserGroups(finalDeviceId);
-        
+
         // Kullanıcının tüm gruplarında mesafe kontrolü yap
         for (const group of userGroups) {
           groupDistanceService.checkMemberDistance(group.id, finalDeviceId, lat, lng)
@@ -409,9 +409,9 @@ class LocationController {
 
       const quality = locationAnalytics.getLocationQuality(finalDeviceId);
       const processingTime = Date.now() - startTime;
-      
+
       trackRequest('storeLocation', planId, processingTime, true);
-      
+
       const activityLogService = require('../services/activityLogService');
       activityLogService.logActivity(finalDeviceId, 'location', 'store_location', {
         deviceId: finalDeviceId,
@@ -421,13 +421,13 @@ class LocationController {
         planId,
         path: req.path
       });
-      logger.info('Location stored successfully', { 
-        deviceId: finalDeviceId, 
-        planId, 
+      logger.info('Location stored successfully', {
+        deviceId: finalDeviceId,
+        planId,
         processingTime,
         queueSize: locationBatchService.getQueueSize(finalDeviceId)
       });
-      
+
       return res.json(ResponseFormatter.success({
         timestamp: locationData.timestamp,
         queueSize: locationBatchService.getQueueSize(finalDeviceId),
@@ -442,20 +442,20 @@ class LocationController {
       const processingTime = Date.now() - startTime;
       trackRequest('storeLocation', 'unknown', processingTime, false);
       trackError('storeLocation', 'unknown', error.code || 'UNKNOWN_ERROR');
-      
+
       if (error.isOperational) {
         logger.warn('Store location validation error', { error: error.message, code: error.code });
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
-      logger.error('Store location error', error, { 
+
+      logger.error('Store location error', error, {
         processingTime,
         stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       });
-      
+
       const { createError } = require('../core/utils/errorHandler');
-      throw createError('Konum kaydedilemedi', 500, 'STORAGE_ERROR', { 
-        processingTime: `${processingTime}ms` 
+      throw createError('Konum kaydedilemedi', 500, 'STORAGE_ERROR', {
+        processingTime: `${processingTime}ms`
       });
     }
   }
@@ -465,9 +465,9 @@ class LocationController {
     try {
       const userId = getUserIdFromToken(req);
       const { planId, planLimits } = getUserPlan(userId);
-      
+
       const cacheKey = `metrics:${userId}`;
-      
+
       if (planLimits.smartCaching || planLimits.cacheEnabled) {
         const cached = cacheService.get(cacheKey, userId);
         if (cached) {
@@ -490,7 +490,7 @@ class LocationController {
           size: cacheService.size(),
           hits: cacheService.stats?.hits || 0,
           misses: cacheService.stats?.misses || 0,
-          hitRate: cacheService.stats?.hits && cacheService.stats?.misses 
+          hitRate: cacheService.stats?.hits && cacheService.stats?.misses
             ? (cacheService.stats.hits / (cacheService.stats.hits + cacheService.stats.misses) * 100).toFixed(2) + '%'
             : '0%'
         },
@@ -532,11 +532,11 @@ class LocationController {
     } catch (error) {
       const processingTime = Date.now() - startTime;
       trackRequest('getMetrics', 'unknown', processingTime, false);
-      
+
       if (error.isOperational) {
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Get metrics error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Metrikler alınamadı', 'METRICS_ERROR'));
     }
@@ -546,7 +546,7 @@ class LocationController {
     try {
       const userId = getUserIdFromToken(req);
       const { planId, planLimits } = getUserPlan(userId);
-      
+
       const health = {
         status: 'healthy',
         timestamp: new Date().toISOString(),
@@ -589,7 +589,7 @@ class LocationController {
     try {
       const userId = getUserIdFromToken(req);
       const { planId, planLimits } = getUserPlan(userId);
-      
+
       const stats = {
         planId,
         performanceBoost: planLimits.performanceBoost,
@@ -628,7 +628,7 @@ class LocationController {
     try {
       const { deviceId } = req.params;
       const { limit: reqLimit, offset = 0 } = req.query;
-      
+
       if (!deviceId || typeof deviceId !== 'string' || deviceId.trim().length === 0) {
         return res.status(400).json(ResponseFormatter.error('Device ID gereklidir', 'MISSING_DEVICE_ID'));
       }
@@ -637,12 +637,12 @@ class LocationController {
       const subscription = user ? db.getUserSubscription(user.id) : null;
       const planId = subscription?.planId || 'free';
       const locationLimits = getPlanBasedLocationLimits(planId);
-      
+
       const maxLimit = locationLimits.maxHistoryLimit;
       const limit = Math.min(maxLimit, parseInt(reqLimit || maxLimit));
-      
+
       const cacheKey = `location:${deviceId}:history:${limit}:${offset}`;
-      
+
       if (locationLimits.cacheEnabled) {
         const cached = cacheService.get(cacheKey);
         if (cached) {
@@ -656,7 +656,7 @@ class LocationController {
 
       const locations = db.getStore(deviceId);
       const total = locations.length;
-      
+
       // Apply pagination
       const startIndex = parseInt(offset);
       const endIndex = startIndex + limit;
@@ -699,11 +699,11 @@ class LocationController {
         deviceId: req.params.deviceId,
         stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       });
-      
+
       if (error.isOperational) {
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       const { createError } = require('../core/utils/errorHandler');
       throw createError('Konum geçmişi alınamadı', 500, 'LOCATION_HISTORY_ERROR');
     }
@@ -727,7 +727,7 @@ class LocationController {
 
       const startIndex = Math.max(0, locations.length - limit);
       const recent = locations.slice(startIndex);
-      
+
       const userId = getUserIdFromToken(req);
       if (userId) {
         activityLogService.logActivity(userId, 'location', 'view_recent_locations', {
@@ -737,7 +737,7 @@ class LocationController {
           path: req.path
         });
       }
-      
+
       return res.json(recent);
     } catch (error) {
       console.error('Get recent locations error:', error);
@@ -751,7 +751,7 @@ class LocationController {
   async getLatestLocation(req, res) {
     try {
       const { deviceId } = req.params;
-      
+
       if (!deviceId || typeof deviceId !== 'string' || deviceId.trim().length === 0) {
         return res.status(400).json(ResponseFormatter.error('Device ID gereklidir', 'MISSING_DEVICE_ID'));
       }
@@ -764,7 +764,7 @@ class LocationController {
       const locationActivityService = require('../services/locationActivityService');
       const latestLocation = locations[locations.length - 1];
       const activity = locationActivityService.getActivityForLocation(deviceId, latestLocation);
-      
+
       const userId = getUserIdFromToken(req);
       if (userId) {
         activityLogService.logActivity(userId, 'location', 'view_latest_location', {
@@ -772,7 +772,7 @@ class LocationController {
           path: req.path
         });
       }
-      
+
       return res.json(ResponseFormatter.success({
         ...latestLocation,
         activity: activity
@@ -782,11 +782,11 @@ class LocationController {
         deviceId: req.params.deviceId,
         stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       });
-      
+
       if (error.isOperational) {
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       const { createError } = require('../core/utils/errorHandler');
       throw createError('Son konum alınamadı', 500, 'LATEST_LOCATION_ERROR');
     }
@@ -797,7 +797,7 @@ class LocationController {
     try {
       const devices = [];
       const store = db.data.store;
-      
+
       for (const deviceId in store) {
         const locations = store[deviceId];
         if (locations.length > 0) {
@@ -858,7 +858,7 @@ class LocationController {
   async deleteLocationData(req, res) {
     try {
       const { deviceId } = req.params;
-      
+
       if (!deviceId) {
         return res.status(400).json(
           ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID')
@@ -876,9 +876,9 @@ class LocationController {
         });
       }
 
-      return res.json({ 
-        success: true, 
-        message: 'Location data deleted successfully' 
+      return res.json({
+        success: true,
+        message: 'Location data deleted successfully'
       });
     } catch (error) {
       console.error('Delete location data error:', error);
@@ -955,7 +955,7 @@ class LocationController {
   async getLocationStats(req, res) {
     try {
       const { deviceId } = req.params;
-      
+
       if (!deviceId) {
         return res.status(400).json(
           ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID')
@@ -971,7 +971,7 @@ class LocationController {
       const speedZones = locationAnalytics.calculateSpeedZones(deviceId);
       const quality = locationAnalytics.getLocationQuality(deviceId);
       const prediction = locationAnalytics.predictNextLocation(deviceId);
-      
+
       const userId = getUserIdFromToken(req);
       if (userId) {
         activityLogService.logActivity(userId, 'location', 'view_location_stats', {
@@ -1001,7 +1001,7 @@ class LocationController {
     try {
       const { deviceId } = req.params;
       const { minDistance = 5 } = req.query;
-      
+
       if (!deviceId) {
         return res.status(400).json(
           ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID')
@@ -1010,7 +1010,7 @@ class LocationController {
 
       const locations = db.getStore(deviceId);
       const optimized = locationService.optimizeRoute(locations, Number(minDistance));
-      
+
       const userId = getUserIdFromToken(req);
       if (userId) {
         activityLogService.logActivity(userId, 'location', 'view_route_optimized', {
@@ -1037,7 +1037,7 @@ class LocationController {
     try {
       const { deviceId } = req.params;
       const { centerLat, centerLng, radiusMeters } = req.query;
-      
+
       if (!deviceId || !centerLat || !centerLng || !radiusMeters) {
         return res.status(400).json(
           ResponseFormatter.error('Missing required parameters', 'MISSING_PARAMS')
@@ -1079,7 +1079,7 @@ class LocationController {
   async getTrackingRecommendations(req, res) {
     try {
       const { deviceId } = req.params;
-      
+
       if (!deviceId) {
         return res.status(400).json(
           ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID')
@@ -1089,9 +1089,9 @@ class LocationController {
       const user = db.findUserById(deviceId);
       const subscription = user ? db.getUserSubscription(user.id) : null;
       const planId = subscription?.planId || 'free';
-      
+
       const recommendations = smartTrackingService.getTrackingRecommendations(deviceId, planId);
-      
+
       const requestUserId = getUserIdFromToken(req);
       if (requestUserId) {
         activityLogService.logActivity(requestUserId, 'location', 'view_tracking_recommendations', {
@@ -1100,7 +1100,7 @@ class LocationController {
           path: req.path
         });
       }
-      
+
       return res.json(ResponseFormatter.success({
         deviceId,
         planId,
@@ -1159,7 +1159,7 @@ class LocationController {
     try {
       const { deviceId } = req.params;
       const { startTime, endTime } = req.query;
-      
+
       if (!deviceId) {
         return res.status(400).json(
           ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID')
@@ -1232,7 +1232,7 @@ class LocationController {
     try {
       const { deviceId } = req.params;
       const { lookbackMinutes = 5 } = req.query;
-      
+
       if (!deviceId) {
         return res.status(400).json(
           ResponseFormatter.error('Device ID required', 'MISSING_DEVICE_ID')
@@ -1284,9 +1284,9 @@ class LocationController {
         userId = getUserIdFromToken(req);
       } catch (e) {
       }
-      
+
       const deviceIdToUse = deviceId || userId;
-      
+
       const emptyResponse = {
         summary: {
           totalLocations: 0,
@@ -1324,7 +1324,7 @@ class LocationController {
           planId: 'free'
         }
       };
-      
+
       if (!deviceIdToUse) {
         return res.json(ResponseFormatter.success(emptyResponse));
       }
@@ -1337,7 +1337,7 @@ class LocationController {
       const cacheService = require('../core/services/advancedCache.service');
       const cacheKey = `analytics:${deviceIdToUse}:${dateRange}:${includeTimeSeries}:${includePatterns}:${includePredictions}:${includeHeader}`;
       const cached = cacheService.get(cacheKey, userId);
-      
+
       if (cached) {
         const processingTime = Date.now() - startTime;
         trackRequest('getAdvancedAnalytics', planId, processingTime, true);
@@ -1402,13 +1402,13 @@ class LocationController {
         if (!loc || !loc.coords) return false;
         const lat = parseFloat(loc.coords.latitude);
         const lng = parseFloat(loc.coords.longitude);
-        return isFinite(lat) && isFinite(lng) && 
-               lat >= -90 && lat <= 90 && 
-               lng >= -180 && lng <= 180 &&
-               loc.timestamp && typeof loc.timestamp === 'number' && loc.timestamp > 0;
+        return isFinite(lat) && isFinite(lng) &&
+          lat >= -90 && lat <= 90 &&
+          lng >= -180 && lng <= 180 &&
+          loc.timestamp && typeof loc.timestamp === 'number' && loc.timestamp > 0;
       });
 
-      const filteredLocations = startTimeFilter 
+      const filteredLocations = startTimeFilter
         ? validLocations.filter(loc => loc.timestamp >= startTimeFilter)
         : validLocations;
 
@@ -1456,9 +1456,9 @@ class LocationController {
         if (!loc || !loc.coords) return false;
         const lat = parseFloat(loc.coords.latitude);
         const lng = parseFloat(loc.coords.longitude);
-        return isFinite(lat) && isFinite(lng) && 
-               lat >= -90 && lat <= 90 && 
-               lng >= -180 && lng <= 180;
+        return isFinite(lat) && isFinite(lng) &&
+          lat >= -90 && lat <= 90 &&
+          lng >= -180 && lng <= 180;
       });
 
       const totalDistance = routeMetrics.totalDistance || 0;
@@ -1491,7 +1491,7 @@ class LocationController {
       const topSpeedZone = speedEntries.length > 0 ? speedEntries.reduce((a, b) => speedZones[a[0]] > speedZones[b[0]] ? a : b)[0] : 'parked';
 
       const validCount = validFilteredLocations.length;
-      
+
       const summary = {
         totalLocations: validCount,
         totalDistance,
@@ -1679,12 +1679,12 @@ class LocationController {
     } catch (error) {
       const processingTime = Date.now() - startTime;
       trackRequest('getAdvancedAnalytics', 'unknown', processingTime, false);
-      
+
       if (error.isOperational) {
         logger.warn('Get advanced analytics validation error', { error: error.message, code: error.code });
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Get advanced analytics error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Gelişmiş analitik alınamadı', 'ANALYTICS_ERROR'));
     }
@@ -1694,14 +1694,14 @@ class LocationController {
     try {
       const { lat, lng, name, address } = req.body;
       const token = req.headers.authorization?.replace('Bearer ', '');
-      
+
       const latNum = parseFloat(lat);
       const lngNum = parseFloat(lng);
-      
+
       if (!isFinite(latNum) || !isFinite(lngNum)) {
         return res.status(400).json(ResponseFormatter.error('Geçersiz koordinatlar', 'INVALID_COORDINATES'));
       }
-      
+
       if (latNum < -90 || latNum > 90 || lngNum < -180 || lngNum > 180) {
         return res.status(400).json(ResponseFormatter.error('Koordinatlar geçerli aralıkta değil', 'COORDINATES_OUT_OF_RANGE'));
       }
@@ -1713,9 +1713,9 @@ class LocationController {
       if (!db.data.locationShares) {
         db.data.locationShares = {};
       }
-      
+
       const tokenData = token ? db.getToken(token) : null;
-      
+
       db.data.locationShares[shareToken] = {
         lat: latNum,
         lng: lngNum,
@@ -1771,7 +1771,7 @@ class LocationController {
         expiresAt,
         message: 'Konum paylaşım linki oluşturuldu'
       });
-      
+
       return res.json(response);
     } catch (error) {
       logger.error('Create share link error', error);
@@ -1783,13 +1783,13 @@ class LocationController {
   async getSharedLocation(req, res) {
     try {
       const { shareToken } = req.params;
-      
+
       if (!db.data.locationShares || !db.data.locationShares[shareToken]) {
         return res.status(404).json({ error: 'Paylaşım linki bulunamadı veya süresi dolmuş' });
       }
 
       const share = db.data.locationShares[shareToken];
-      
+
       // Süre kontrolü
       if (Date.now() > share.expiresAt) {
         delete db.data.locationShares[shareToken];
@@ -1816,7 +1816,7 @@ class LocationController {
       const { phone, groupId } = req.query;
       const token = req.headers.authorization?.replace('Bearer ', '');
       const tokenData = db.getToken(token || '');
-      
+
       if (!tokenData) {
         return res.status(401).json({ error: 'Token gereklidir' });
       }
@@ -1826,13 +1826,13 @@ class LocationController {
       const subscription = user ? db.getUserSubscription(user.id) : null;
       const planId = subscription?.planId || 'free';
       const locationLimits = getPlanBasedLocationLimits(planId);
-      
+
       if (!phone) {
         return res.status(400).json({ error: 'Telefon numarası gereklidir' });
       }
 
       const cacheKey = `phone:${phone}:${groupId || 'all'}`;
-      
+
       if (locationLimits.smartCaching || locationLimits.cacheEnabled) {
         const cached = cacheService.get(cacheKey, userId);
         if (cached) {
@@ -1883,10 +1883,10 @@ class LocationController {
         : searchUsers.find(u => u.phone && u.phone.replace(/\s/g, '') === cleanPhone);
 
       if (!foundUser) {
-        return res.status(404).json({ 
-          error: groupId 
-            ? 'Bu telefon numarasına sahip grup üyesi bulunamadı' 
-            : 'Bu telefon numarasına kayıtlı kullanıcı bulunamadı' 
+        return res.status(404).json({
+          error: groupId
+            ? 'Bu telefon numarasına sahip grup üyesi bulunamadı'
+            : 'Bu telefon numarasına kayıtlı kullanıcı bulunamadı'
         });
       }
 
@@ -1946,7 +1946,7 @@ class LocationController {
       const { duration, recipients } = req.body; // duration: dakika, recipients: userId array
       const token = req.headers.authorization?.replace('Bearer ', '');
       const tokenData = db.getToken(token || '');
-      
+
       if (!tokenData) {
         return res.status(401).json({ error: 'Token gereklidir' });
       }
@@ -1971,7 +1971,7 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('startLiveLocation', planId, processingTime, true);
-      
+
       activityLogService.logActivity(userId, 'location', 'start_live_location', {
         deviceId,
         groupId,
@@ -1994,12 +1994,12 @@ class LocationController {
       const processingTime = Date.now() - startTime;
       trackRequest('startLiveLocation', 'unknown', processingTime, false);
       trackError('startLiveLocation', 'unknown', error.code || 'UNKNOWN_ERROR');
-      
+
       if (error.isOperational) {
         logger.warn('Start live location validation error', { error: error.message, code: error.code });
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Start live location error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Canlı konum başlatılamadı', 'LIVE_LOCATION_ERROR'));
     }
@@ -2010,7 +2010,7 @@ class LocationController {
       const { userId: targetUserId, name: targetName, displayName, relation, groupId } = req.body;
       const token = req.headers.authorization?.replace('Bearer ', '');
       const tokenData = db.getToken(token || '');
-      
+
       if (!tokenData) {
         return res.status(401).json({ error: 'Token gereklidir' });
       }
@@ -2022,7 +2022,7 @@ class LocationController {
       const planLimits = SubscriptionModel.getPlanLimits(planId);
 
       if (!targetUserId && !targetName) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'Kullanıcı ID veya isim gereklidir',
           validation: {
             userId: { required: false, format: 'string', minLength: 3 },
@@ -2032,7 +2032,7 @@ class LocationController {
       }
 
       if (targetName && (targetName.trim().length < 2 || targetName.trim().length > 50)) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'İsim 2-50 karakter arasında olmalıdır',
           validation: {
             name: { minLength: 2, maxLength: 50, current: targetName.trim().length }
@@ -2041,7 +2041,7 @@ class LocationController {
       }
 
       if (targetUserId && (targetUserId.trim().length < 3 || !/^[a-zA-Z0-9_-]+$/.test(targetUserId))) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'Kullanıcı ID en az 3 karakter olmalı ve sadece harf, rakam, tire ve alt çizgi içermelidir',
           validation: {
             userId: { minLength: 3, format: 'alphanumeric_with_dash_underscore' }
@@ -2069,13 +2069,13 @@ class LocationController {
         db.data.familyMembers[userId] = [];
       }
 
-      const currentFamilyCount = db.data.familyMembers[userId].filter(m => 
+      const currentFamilyCount = db.data.familyMembers[userId].filter(m =>
         !groupId || m.groupId === groupId
       ).length;
       const maxFamilyMembers = planLimits.maxFamilyMembers || planLimits.maxMembers || 5;
-      
+
       if (maxFamilyMembers > 0 && currentFamilyCount >= maxFamilyMembers) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: `Plan limiti aşıldı. Maksimum ${maxFamilyMembers} aile üyesi ekleyebilirsiniz. Planınızı yükseltmek için lütfen abonelik sayfasını ziyaret edin.`,
           limit: maxFamilyMembers,
           current: currentFamilyCount,
@@ -2092,7 +2092,7 @@ class LocationController {
           familyUser = db.findUserById(targetUserId);
         }
       } else if (targetName) {
-        familyUser = users.find(u => 
+        familyUser = users.find(u =>
           (u.name && u.name.toLowerCase().includes(targetName.toLowerCase())) ||
           (u.displayName && u.displayName.toLowerCase().includes(targetName.toLowerCase())) ||
           (u.email && u.email.toLowerCase().includes(targetName.toLowerCase()))
@@ -2100,10 +2100,10 @@ class LocationController {
       }
 
       if (!familyUser) {
-        return res.status(404).json({ 
-          error: targetUserId 
-            ? 'Bu ID\'ye sahip kullanıcı bulunamadı' 
-            : 'Bu isme sahip kullanıcı bulunamadı' 
+        return res.status(404).json({
+          error: targetUserId
+            ? 'Bu ID\'ye sahip kullanıcı bulunamadı'
+            : 'Bu isme sahip kullanıcı bulunamadı'
         });
       }
 
@@ -2114,7 +2114,7 @@ class LocationController {
       }
 
       const finalName = displayName || familyUser.name || familyUser.displayName || targetName || 'İsimsiz Kullanıcı';
-      
+
       db.data.familyMembers[userId].push({
         userId: familyUser.id,
         phone: familyUser.phone || null,
@@ -2128,10 +2128,10 @@ class LocationController {
       // OneSignal bildirimi gönder - hem ekleyene hem eklenene
       try {
         const notificationService = require('../services/notificationService');
-        
+
         const adderName = db.findUserById(userId)?.name || db.findUserById(userId)?.displayName || 'Bir kullanıcı';
         const memberName = finalName;
-        
+
         await notificationService.send(userId, {
           title: '👨‍👩‍👧‍👦 Aile Üyesi Eklendi',
           message: `${memberName} aile listenize eklendi.`,
@@ -2159,19 +2159,19 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('addFamilyMember', planId, processingTime, true);
-      
+
       activityLogService.logActivity(userId, 'location', 'add_family_member', {
         memberId: familyUser.id,
         memberName: finalName,
         planId,
         path: req.path
       });
-      
-      logger.info('Family member added successfully', { 
-        userId, 
-        memberId: familyUser.id, 
-        planId, 
-        processingTime 
+
+      logger.info('Family member added successfully', {
+        userId,
+        memberId: familyUser.id,
+        planId,
+        processingTime
       });
 
       return res.json(ResponseFormatter.success({
@@ -2193,12 +2193,12 @@ class LocationController {
       const processingTime = Date.now() - startTime;
       trackRequest('addFamilyMember', 'unknown', processingTime, false);
       trackError('addFamilyMember', 'unknown', error.code || 'UNKNOWN_ERROR');
-      
+
       if (error.isOperational) {
         logger.warn('Add family member validation error', { error: error.message, code: error.code });
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Add family member error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Aile üyesi eklenemedi', 'FAMILY_MEMBER_ERROR'));
     }
@@ -2209,7 +2209,7 @@ class LocationController {
       const { groupId } = req.query;
       const token = req.headers.authorization?.replace('Bearer ', '');
       const tokenData = db.getToken(token || '');
-      
+
       if (!tokenData) {
         return res.status(401).json({ error: 'Token gereklidir' });
       }
@@ -2219,9 +2219,9 @@ class LocationController {
       const subscription = user ? db.getUserSubscription(user.id) : null;
       const planId = subscription?.planId || 'free';
       const locationLimits = getPlanBasedLocationLimits(planId);
-      
+
       const cacheKey = `family:${userId}:${groupId || 'all'}`;
-      
+
       if (locationLimits.smartCaching || locationLimits.cacheEnabled) {
         const cached = cacheService.get(cacheKey, userId);
         if (cached) {
@@ -2248,14 +2248,14 @@ class LocationController {
       }
 
       const locations = [];
-      
+
       if (locationLimits.parallelProcessing && familyMembers.length > 5) {
         const chunkSize = Math.ceil(familyMembers.length / locationLimits.maxConcurrentRequests);
         const chunks = [];
         for (let i = 0; i < familyMembers.length; i += chunkSize) {
           chunks.push(familyMembers.slice(i, i + chunkSize));
         }
-        
+
         const locationPromises = chunks.map(chunk => {
           return chunk.map(member => {
             const memberLocations = db.getStore(member.userId);
@@ -2279,7 +2279,7 @@ class LocationController {
             return null;
           });
         });
-        
+
         const results = locationPromises.flat();
         locations.push(...results.filter(Boolean));
       } else {
@@ -2342,23 +2342,23 @@ class LocationController {
     const startTime = Date.now();
     try {
       const { lat, lng } = req.query;
-      
+
       if (!lat || !lng) {
         return res.status(400).json(ResponseFormatter.error('lat ve lng parametreleri gereklidir', 'MISSING_COORDINATES'));
       }
 
       const latNum = parseFloat(lat);
       const lngNum = parseFloat(lng);
-      
+
       if (!isFinite(latNum) || !isFinite(lngNum)) {
         return res.status(400).json(ResponseFormatter.error('Geçersiz koordinatlar', 'INVALID_COORDINATES'));
       }
 
       const userId = getUserIdFromToken(req);
       const geocode = await geocodingService.getCityProvince(latNum, lngNum);
-      
+
       const processingTime = Date.now() - startTime;
-      
+
       if (userId) {
         activityLogService.logActivity(userId, 'location', 'reverse_geocode', {
           lat: latNum,
@@ -2366,7 +2366,7 @@ class LocationController {
           path: req.path
         });
       }
-      
+
       return res.json(ResponseFormatter.success({
         geocode,
         processingTime: `${processingTime}ms`
@@ -2382,7 +2382,7 @@ class LocationController {
     const startTime = Date.now();
     try {
       const { address } = req.body;
-      
+
       if (!address || !address.trim()) {
         throw createError('Adres gereklidir', 400, 'MISSING_ADDRESS');
       }
@@ -2392,10 +2392,10 @@ class LocationController {
 
       const fetch = require('node-fetch');
       const encodedAddress = encodeURIComponent(address.trim());
-      
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
-      
+
       try {
         const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=1&countrycodes=tr`, {
           headers: {
@@ -2411,9 +2411,9 @@ class LocationController {
 
         const data = await response.json();
 
-      if (!data || data.length === 0) {
-        throw createError('Adres bulunamadı. Lütfen daha detaylı bir adres girin.', 404, 'ADDRESS_NOT_FOUND');
-      }
+        if (!data || data.length === 0) {
+          throw createError('Adres bulunamadı. Lütfen daha detaylı bir adres girin.', 404, 'ADDRESS_NOT_FOUND');
+        }
 
         const result = data[0];
         const lat = parseFloat(result.lat);
@@ -2460,15 +2460,15 @@ class LocationController {
     } catch (error) {
       const processingTime = Date.now() - startTime;
       trackRequest('geocodeAddress', 'unknown', processingTime, false);
-      
+
       if (error.isOperational) {
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
         return res.status(408).json(ResponseFormatter.error('Adres servisi zaman aşımına uğradı. Lütfen tekrar deneyin.', 'GEOCODE_TIMEOUT'));
       }
-      
+
       logger.error('Geocode address error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Adres işlenemedi', 'GEOCODE_ERROR'));
     }
@@ -2478,7 +2478,7 @@ class LocationController {
     const startTime = Date.now();
     try {
       const { recipientName, recipientPhone, destinationLat, destinationLng, destinationAddress, notes, groupId } = req.body;
-      
+
       const userId = getUserIdFromToken(req);
       const { planId, planLimits } = getUserPlan(userId);
 
@@ -2494,15 +2494,15 @@ class LocationController {
       const validatedPhone = validatePhoneNumber(recipientPhone.trim(), 'Alıcı telefonu');
 
       let latNum, lngNum;
-      
+
       if (destinationAddress && destinationAddress.trim()) {
         try {
           const fetch = require('node-fetch');
           const encodedAddress = encodeURIComponent(destinationAddress.trim());
-          
+
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 5000);
-          
+
           try {
             const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=1&countrycodes=tr`, {
               headers: {
@@ -2560,7 +2560,7 @@ class LocationController {
       const userDeliveries = Object.values(db.data.deliveries || {}).filter(
         d => d.courierId === userId && d.status !== 'delivered' && d.status !== 'cancelled' && (!groupId || d.groupId === groupId)
       );
-      
+
       const maxDeliveries = planLimits.maxDeliveries || (planId === 'business' ? -1 : (planId === 'plus' ? 50 : 10));
       if (maxDeliveries > 0 && userDeliveries.length >= maxDeliveries) {
         throw createError(
@@ -2612,11 +2612,11 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('createDelivery', planId, processingTime, true);
-      logger.info('Delivery created successfully', { 
-        courierId, 
-        deliveryId, 
-        planId, 
-        processingTime 
+      logger.info('Delivery created successfully', {
+        courierId,
+        deliveryId,
+        planId,
+        processingTime
       });
 
       return res.json(ResponseFormatter.success({
@@ -2643,12 +2643,12 @@ class LocationController {
       const processingTime = Date.now() - startTime;
       trackRequest('createDelivery', 'unknown', processingTime, false);
       trackError('createDelivery', 'unknown', error.code || 'UNKNOWN_ERROR');
-      
+
       if (error.isOperational) {
         logger.warn('Create delivery validation error', { error: error.message, code: error.code });
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Create delivery error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Teslimat oluşturulamadı', 'DELIVERY_CREATION_ERROR'));
     }
@@ -2660,7 +2660,7 @@ class LocationController {
       const { groupId } = req.query;
       const token = req.headers.authorization?.replace('Bearer ', '');
       const tokenData = db.getToken(token || '');
-      
+
       if (!tokenData) {
         return res.status(401).json({ error: 'Token gereklidir' });
       }
@@ -2680,9 +2680,9 @@ class LocationController {
       const subscription = user ? db.getUserSubscription(user.id) : null;
       const planId = subscription?.planId || 'free';
       const locationLimits = getPlanBasedLocationLimits(planId);
-      
+
       const cacheKey = `deliveries:${courierId}:${groupId || 'all'}`;
-      
+
       if (locationLimits.smartCaching || locationLimits.cacheEnabled) {
         const cached = cacheService.get(cacheKey, courierId);
         if (cached) {
@@ -2745,7 +2745,7 @@ class LocationController {
       const { status, currentLat, currentLng, groupId } = req.body;
       const token = req.headers.authorization?.replace('Bearer ', '');
       const tokenData = db.getToken(token || '');
-      
+
       if (!tokenData) {
         return res.status(401).json({ error: 'Token gereklidir' });
       }
@@ -2766,7 +2766,7 @@ class LocationController {
       const previousStatus = delivery.status;
       delivery.status = status;
       delivery.updatedAt = Date.now();
-      
+
       if (currentLat && currentLng) {
         const { lat, lng } = validateCoordinates(currentLat, currentLng, 'Mevcut konum');
         delivery.currentLocation = {
@@ -2787,7 +2787,7 @@ class LocationController {
           'delivered': '✅ Teslimat tamamlandı',
           'cancelled': '❌ Teslimat iptal edildi'
         };
-        
+
         await notificationService.send(courierId, {
           title: statusMessages[status] || '📦 Teslimat Güncellendi',
           message: `${delivery.recipientName} için teslimat durumu: ${status}`,
@@ -2806,7 +2806,7 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('updateDeliveryStatus', planId, processingTime, true);
-      
+
       activityLogService.logActivity(courierId, 'location', 'update_delivery_status', {
         deliveryId,
         previousStatus,
@@ -2814,14 +2814,14 @@ class LocationController {
         planId,
         path: req.path
       });
-      
-      logger.info('Delivery status updated', { 
-        courierId, 
-        deliveryId, 
-        previousStatus, 
-        newStatus: status, 
-        planId, 
-        processingTime 
+
+      logger.info('Delivery status updated', {
+        courierId,
+        deliveryId,
+        previousStatus,
+        newStatus: status,
+        planId,
+        processingTime
       });
 
       return res.json(ResponseFormatter.success({
@@ -2842,12 +2842,12 @@ class LocationController {
       const processingTime = Date.now() - startTime;
       trackRequest('updateDeliveryStatus', 'unknown', processingTime, false);
       trackError('updateDeliveryStatus', 'unknown', error.code || 'UNKNOWN_ERROR');
-      
+
       if (error.isOperational) {
         logger.warn('Update delivery status validation error', { error: error.message, code: error.code });
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Update delivery status error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Teslimat durumu güncellenemedi', 'DELIVERY_UPDATE_ERROR'));
     }
@@ -2858,7 +2858,7 @@ class LocationController {
       const { name, waypoints, startLocation, endLocation, groupId } = req.body;
       const token = req.headers.authorization?.replace('Bearer ', '');
       const tokenData = db.getToken(token || '');
-      
+
       if (!tokenData) {
         return res.status(401).json({ error: 'Token gereklidir' });
       }
@@ -2876,10 +2876,10 @@ class LocationController {
       const userRoutes = Object.values(db.data.routes || {}).filter(
         r => r.userId === userId
       );
-      
+
       const maxRoutes = planLimits.maxRoutes || (planId === 'business' ? -1 : (planId === 'plus' ? 100 : 20));
       if (maxRoutes > 0 && userRoutes.length >= maxRoutes) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: `Plan limiti aşıldı. Maksimum ${maxRoutes} rota kaydedebilirsiniz. Planınızı yükseltmek için lütfen abonelik sayfasını ziyaret edin.`,
           limit: maxRoutes,
           current: userRoutes.length,
@@ -2929,7 +2929,7 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('saveRoute', planId, processingTime, true);
-      
+
       activityLogService.logActivity(userId, 'location', 'save_route', {
         routeId,
         routeName: (name || 'Yeni Rota').trim(),
@@ -2937,7 +2937,7 @@ class LocationController {
         planId,
         path: req.path
       });
-      
+
       logger.info('Route saved successfully', { userId, routeId, planId, processingTime });
 
       return res.json(ResponseFormatter.success({
@@ -2967,12 +2967,12 @@ class LocationController {
       const processingTime = Date.now() - startTime;
       trackRequest('saveRoute', 'unknown', processingTime, false);
       trackError('saveRoute', 'unknown', error.code || 'UNKNOWN_ERROR');
-      
+
       if (error.isOperational) {
         logger.warn('Save route validation error', { error: error.message, code: error.code });
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Save route error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Rota kaydedilemedi', 'ROUTE_SAVE_ERROR'));
     }
@@ -2984,7 +2984,7 @@ class LocationController {
       const { groupId } = req.query;
       const token = req.headers.authorization?.replace('Bearer ', '');
       const tokenData = db.getToken(token || '');
-      
+
       if (!tokenData) {
         return res.status(401).json({ error: 'Token gereklidir' });
       }
@@ -2994,9 +2994,9 @@ class LocationController {
       const subscription = user ? db.getUserSubscription(user.id) : null;
       const planId = subscription?.planId || 'free';
       const locationLimits = getPlanBasedLocationLimits(planId);
-      
+
       const cacheKey = `routes:${userId}:${groupId || 'all'}`;
-      
+
       if (locationLimits.smartCaching || locationLimits.cacheEnabled) {
         const cached = cacheService.get(cacheKey, userId);
         if (cached) {
@@ -3066,7 +3066,7 @@ class LocationController {
     const startTime = Date.now();
     try {
       const { type, value, groupId } = req.body;
-      
+
       const userId = getUserIdFromToken(req);
       const { planId, planLimits } = getUserPlan(userId);
 
@@ -3149,11 +3149,11 @@ class LocationController {
     } catch (error) {
       const processingTime = Date.now() - startTime;
       trackRequest('validateInput', 'unknown', processingTime, false);
-      
+
       if (error.isOperational) {
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Validate input error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Validasyon yapılamadı', 'VALIDATION_ERROR'));
     }
@@ -3163,7 +3163,7 @@ class LocationController {
     const startTime = Date.now();
     try {
       const { recipientId, recipientPhone, message, type, groupId } = req.body;
-      
+
       const userId = getUserIdFromToken(req);
       const { planId, planLimits } = getUserPlan(userId);
 
@@ -3198,8 +3198,8 @@ class LocationController {
         db.data.messages[userId] = [];
       }
 
-      const userMessages = db.data.messages[userId].filter(m => 
-        planLimits.messageRetentionDays > 0 
+      const userMessages = db.data.messages[userId].filter(m =>
+        planLimits.messageRetentionDays > 0
           ? Date.now() - m.createdAt < (planLimits.messageRetentionDays * 24 * 60 * 60 * 1000)
           : true
       );
@@ -3295,7 +3295,7 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('sendMessage', planId, processingTime, true);
-      
+
       activityLogService.logActivity(userId, 'location', 'send_message', {
         messageId,
         recipientId,
@@ -3305,7 +3305,7 @@ class LocationController {
         planId,
         path: req.path
       });
-      
+
       logger.info('Message sent successfully', { userId, messageId, planId, processingTime, type });
 
       return res.json(ResponseFormatter.success({
@@ -3322,12 +3322,12 @@ class LocationController {
       const processingTime = Date.now() - startTime;
       trackRequest('sendMessage', 'unknown', processingTime, false);
       trackError('sendMessage', 'unknown', error.code || 'UNKNOWN_ERROR');
-      
+
       if (error.isOperational) {
         logger.warn('Send message validation error', { error: error.message, code: error.code });
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Send message error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Mesaj gönderilemedi', 'MESSAGE_SEND_ERROR'));
     }
@@ -3337,12 +3337,12 @@ class LocationController {
     const startTime = Date.now();
     try {
       const { groupId, limit = 50, offset = 0 } = req.query;
-      
+
       const userId = getUserIdFromToken(req);
       const { planId, planLimits } = getUserPlan(userId);
-      
+
       const cacheKey = `messages:${userId}:${groupId || 'all'}:${limit}:${offset}`;
-      
+
       if (planLimits.smartCaching || planLimits.cacheEnabled) {
         const cached = cacheService.get(cacheKey, userId);
         if (cached) {
@@ -3422,12 +3422,12 @@ class LocationController {
     } catch (error) {
       const processingTime = Date.now() - startTime;
       trackRequest('getMessages', 'unknown', processingTime, false);
-      
+
       if (error.isOperational) {
         logger.warn('Get messages validation error', { error: error.message, code: error.code });
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Get messages error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Mesajlar alınamadı', 'MESSAGES_FETCH_ERROR'));
     }
@@ -3437,7 +3437,7 @@ class LocationController {
     const startTime = Date.now();
     try {
       const { recipientId, recipientPhone, lat, lng, name, address, message, groupId } = req.body;
-      
+
       const userId = getUserIdFromToken(req);
       const { planId, planLimits } = getUserPlan(userId);
 
@@ -3452,7 +3452,7 @@ class LocationController {
       }
 
       const messageId = `loc_msg_${userId}_${Date.now()}`;
-      
+
       if (!db.data.messages) {
         db.data.messages = {};
       }
@@ -3513,7 +3513,7 @@ class LocationController {
               groupId: groupId || null
             }
           }, ['database', 'onesignal']);
-          
+
           if (groupId) {
             try {
               await autoNotificationService.notifyGroupActivity(groupId, 'location_shared', userId, {
@@ -3533,7 +3533,7 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('sendLocationMessage', planId, processingTime, true);
-      
+
       activityLogService.logActivity(userId, 'location', 'send_location_message', {
         messageId,
         recipientId,
@@ -3544,7 +3544,7 @@ class LocationController {
         planId,
         path: req.path
       });
-      
+
       logger.info('Location message sent successfully', { userId, messageId, planId, processingTime });
 
       return res.json(ResponseFormatter.success({
@@ -3568,12 +3568,12 @@ class LocationController {
       const processingTime = Date.now() - startTime;
       trackRequest('sendLocationMessage', 'unknown', processingTime, false);
       trackError('sendLocationMessage', 'unknown', error.code || 'UNKNOWN_ERROR');
-      
+
       if (error.isOperational) {
         logger.warn('Send location message validation error', { error: error.message, code: error.code });
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Send location message error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Konum mesajı gönderilemedi', 'LOCATION_MESSAGE_ERROR'));
     }
@@ -3598,10 +3598,10 @@ class LocationController {
       const Δφ = (lat2 - lat1) * Math.PI / 180;
       const Δλ = (lng2 - lng1) * Math.PI / 180;
 
-      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                Math.cos(φ1) * Math.cos(φ2) *
-                Math.sin(Δλ/2) * Math.sin(Δλ/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+        Math.cos(φ1) * Math.cos(φ2) *
+        Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
       return R * c;
     };
@@ -3609,7 +3609,7 @@ class LocationController {
     for (let i = 1; i < recentLocations.length; i++) {
       const prev = recentLocations[i - 1];
       const curr = recentLocations[i];
-      
+
       if (!prev.coords || !curr.coords) continue;
 
       const timeDiff = (curr.timestamp - prev.timestamp) / 1000;
@@ -3688,9 +3688,9 @@ class LocationController {
 
   detectActivityType(locations) {
     if (!locations || locations.length < 2) {
-      return { 
-        activity: 'stationary', 
-        confidence: 0, 
+      return {
+        activity: 'stationary',
+        confidence: 0,
         speed: 0,
         reason: 'Yetersiz veri',
         icon: '📍',
@@ -3715,17 +3715,17 @@ class LocationController {
       const φ2 = lat2 * Math.PI / 180;
       const Δφ = (lat2 - lat1) * Math.PI / 180;
       const Δλ = (lng2 - lng1) * Math.PI / 180;
-      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                Math.cos(φ1) * Math.cos(φ2) *
-                Math.sin(Δλ/2) * Math.sin(Δλ/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+        Math.cos(φ1) * Math.cos(φ2) *
+        Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       return R * c;
     };
 
     for (let i = 1; i < recentLocations.length; i++) {
       const prev = recentLocations[i - 1];
       const curr = recentLocations[i];
-      
+
       if (!prev.coords || !curr.coords) continue;
 
       const timeDiff = (curr.timestamp - prev.timestamp) / 1000;
@@ -3851,7 +3851,7 @@ class LocationController {
     const startTime = Date.now();
     try {
       const { deviceId, groupId } = req.query;
-      
+
       if (!deviceId) {
         throw createError('Device ID gereklidir', 400, 'MISSING_DEVICE_ID');
       }
@@ -3944,7 +3944,7 @@ class LocationController {
 
       const processingTime = Date.now() - startTime;
       trackRequest('trackVehicle', planId, processingTime, true);
-      
+
       activityLogService.logActivity(userId, 'location', 'track_vehicle', {
         deviceId,
         isInVehicle: detection.isInVehicle,
@@ -3952,7 +3952,7 @@ class LocationController {
         planId,
         path: req.path
       });
-      
+
       logger.info('Vehicle tracking completed', { deviceId, isInVehicle: detection.isInVehicle, confidence: detection.confidence, planId, processingTime });
 
       return res.json(ResponseFormatter.success({
@@ -3967,12 +3967,12 @@ class LocationController {
       const processingTime = Date.now() - startTime;
       trackRequest('trackVehicle', 'unknown', processingTime, false);
       trackError('trackVehicle', 'unknown', error.code || 'UNKNOWN_ERROR');
-      
+
       if (error.isOperational) {
         logger.warn('Track vehicle validation error', { error: error.message, code: error.code });
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Track vehicle error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Araç takibi yapılamadı', 'VEHICLE_TRACKING_ERROR'));
     }
@@ -3982,7 +3982,7 @@ class LocationController {
     const startTime = Date.now();
     try {
       const { deviceId, groupId } = req.query;
-      
+
       const userId = getUserIdFromToken(req);
       const { planId, planLimits } = getUserPlan(userId);
 
@@ -4067,11 +4067,11 @@ class LocationController {
     } catch (error) {
       const processingTime = Date.now() - startTime;
       trackRequest('getVehicleStatus', 'unknown', processingTime, false);
-      
+
       if (error.isOperational) {
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Get vehicle status error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Araç durumu alınamadı', 'VEHICLE_STATUS_ERROR'));
     }
@@ -4081,7 +4081,7 @@ class LocationController {
     const startTime = Date.now();
     try {
       const { deviceId, groupId } = req.query;
-      
+
       const userId = getUserIdFromToken(req);
       const { planId, planLimits } = getUserPlan(userId);
 
@@ -4117,7 +4117,7 @@ class LocationController {
       const latestLocation = locations[locations.length - 1];
       const previousLocation = locations.length > 1 ? locations[locations.length - 2] : null;
       const activity = locationActivityService.detectActivityType(latestLocation, previousLocation);
-      
+
       const speedKmh = latestLocation.coords?.speed ? latestLocation.coords.speed * 3.6 : 0;
       const colorMap = {
         'home': '#8b5cf6',
@@ -4160,11 +4160,11 @@ class LocationController {
     } catch (error) {
       const processingTime = Date.now() - startTime;
       trackRequest('getActivityStatus', 'unknown', processingTime, false);
-      
+
       if (error.isOperational) {
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Get activity status error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Aktivite durumu alınamadı', 'ACTIVITY_STATUS_ERROR'));
     }
@@ -4174,7 +4174,7 @@ class LocationController {
     const startTime = Date.now();
     try {
       const { deviceId, groupId, limit = 50, offset = 0 } = req.query;
-      
+
       const userId = getUserIdFromToken(req);
       const { planId, planLimits } = getUserPlan(userId);
 
@@ -4191,7 +4191,7 @@ class LocationController {
       }
 
       const cacheKey = `vehicle_history:${deviceId}:${groupId || 'all'}:${limit}:${offset}`;
-      
+
       if (planLimits.smartCaching || planLimits.cacheEnabled) {
         const cached = cacheService.get(cacheKey, userId);
         if (cached) {
@@ -4254,11 +4254,11 @@ class LocationController {
     } catch (error) {
       const processingTime = Date.now() - startTime;
       trackRequest('getVehicleHistory', 'unknown', processingTime, false);
-      
+
       if (error.isOperational) {
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Get vehicle history error', error, { processingTime });
       return res.status(500).json(ResponseFormatter.error('Araç geçmişi alınamadı', 'VEHICLE_HISTORY_ERROR'));
     }
@@ -4268,7 +4268,7 @@ class LocationController {
     const startTime = Date.now();
     try {
       const { groupId } = req.query;
-      
+
       if (!groupId) {
         throw createError('Grup ID gereklidir', 400, 'MISSING_GROUP_ID');
       }
@@ -4279,7 +4279,7 @@ class LocationController {
       const { planId, planLimits } = getUserPlan(userId);
 
       const cacheKey = `group_vehicles:${groupId}`;
-      
+
       if (planLimits.smartCaching || planLimits.cacheEnabled) {
         const cached = cacheService.get(cacheKey, userId);
         if (cached) {
@@ -4355,13 +4355,248 @@ class LocationController {
     } catch (error) {
       const processingTime = Date.now() - startTime;
       trackRequest('getGroupVehicles', 'unknown', processingTime, false);
-      
+
       if (error.isOperational) {
         return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
       }
-      
+
       logger.error('Get group vehicles error', error, { processingTime });
-      return res.status(500).json(ResponseFormatter.error('Grup araçları alınamadı', 'GROUP_VEHICLES_ERROR'));
+    }
+  }
+
+  // Start vehicle session
+  async startVehicleSession(req, res) {
+    const startTime = Date.now();
+    try {
+      const userId = getUserIdFromToken(req);
+      const { planId, planLimits } = getUserPlan(userId);
+      const { groupId, vehicleType = 'car' } = req.body;
+
+      if (!groupId) {
+        return res.status(400).json(ResponseFormatter.error('groupId gereklidir', 'MISSING_GROUP_ID'));
+      }
+
+      // Check group access
+      checkGroupAccess(userId, groupId);
+
+      // Initialize vehicle sessions if not exists
+      if (!db.data.vehicleSessions) {
+        db.data.vehicleSessions = {};
+      }
+
+      const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const session = {
+        id: sessionId,
+        userId,
+        groupId,
+        vehicleType,
+        startTime: Date.now(),
+        endTime: null,
+        status: 'active',
+        maxSpeed: 0,
+        avgSpeed: 0,
+        distance: 0,
+        violations: []
+      };
+
+      db.data.vehicleSessions[sessionId] = session;
+      db.scheduleSave();
+
+      const processingTime = Date.now() - startTime;
+      trackRequest('startVehicleSession', planId, processingTime, true);
+
+      activityLogService.logActivity(userId, 'vehicle', 'start_session', {
+        sessionId,
+        groupId,
+        vehicleType,
+        path: req.path
+      });
+
+      return res.json(ResponseFormatter.success({ session }, 'Araç oturumu başlatıldı', 201));
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+      trackRequest('startVehicleSession', 'unknown', processingTime, false);
+
+      if (error.isOperational) {
+        return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
+      }
+
+      logger.error('Start vehicle session error', error, { processingTime });
+      return res.status(500).json(ResponseFormatter.error('Araç oturumu başlatılamadı', 'VEHICLE_SESSION_START_ERROR'));
+    }
+  }
+
+  // End vehicle session
+  async endVehicleSession(req, res) {
+    const startTime = Date.now();
+    try {
+      const userId = getUserIdFromToken(req);
+      const { planId } = getUserPlan(userId);
+      const { sessionId } = req.params;
+
+      if (!sessionId) {
+        return res.status(400).json(ResponseFormatter.error('sessionId gereklidir', 'MISSING_SESSION_ID'));
+      }
+
+      const session = db.data.vehicleSessions?.[sessionId];
+      if (!session) {
+        return res.status(404).json(ResponseFormatter.error('Oturum bulunamadı', 'SESSION_NOT_FOUND'));
+      }
+
+      if (session.userId !== userId) {
+        return res.status(403).json(ResponseFormatter.error('Bu oturuma erişim yetkiniz yok', 'SESSION_ACCESS_DENIED'));
+      }
+
+      session.endTime = Date.now();
+      session.status = 'completed';
+      session.duration = session.endTime - session.startTime;
+
+      db.scheduleSave();
+
+      const processingTime = Date.now() - startTime;
+      trackRequest('endVehicleSession', planId, processingTime, true);
+
+      activityLogService.logActivity(userId, 'vehicle', 'end_session', {
+        sessionId,
+        duration: session.duration,
+        path: req.path
+      });
+
+      return res.json(ResponseFormatter.success({ session }, 'Araç oturumu sonlandırıldı'));
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+      trackRequest('endVehicleSession', 'unknown', processingTime, false);
+
+      if (error.isOperational) {
+        return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
+      }
+
+      logger.error('End vehicle session error', error, { processingTime });
+      return res.status(500).json(ResponseFormatter.error('Araç oturumu sonlandırılamadı', 'VEHICLE_SESSION_END_ERROR'));
+    }
+  }
+
+  // Record speed violation
+  async recordSpeedViolation(req, res) {
+    const startTime = Date.now();
+    try {
+      const userId = getUserIdFromToken(req);
+      const { planId } = getUserPlan(userId);
+      const { sessionId, speed, speedLimit, location } = req.body;
+
+      if (!sessionId || !speed || !speedLimit) {
+        return res.status(400).json(ResponseFormatter.error('sessionId, speed ve speedLimit gereklidir', 'MISSING_FIELDS'));
+      }
+
+      const session = db.data.vehicleSessions?.[sessionId];
+      if (!session) {
+        return res.status(404).json(ResponseFormatter.error('Oturum bulunamadı', 'SESSION_NOT_FOUND'));
+      }
+
+      if (session.userId !== userId) {
+        return res.status(403).json(ResponseFormatter.error('Bu oturuma erişim yetkiniz yok', 'SESSION_ACCESS_DENIED'));
+      }
+
+      const violation = {
+        id: `violation_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        timestamp: Date.now(),
+        speed,
+        speedLimit,
+        excess: speed - speedLimit,
+        location: location || null
+      };
+
+      if (!session.violations) {
+        session.violations = [];
+      }
+      session.violations.push(violation);
+
+      db.scheduleSave();
+
+      // Send notification
+      try {
+        await notificationService.send(userId, {
+          title: '⚠️ Hız Limiti Aşıldı',
+          message: `${speed} km/h hızla ${speedLimit} km/h limitini aştınız!`,
+          type: 'warning',
+          data: { sessionId, violationId: violation.id, type: 'speed_violation' }
+        }, ['database', 'onesignal']);
+      } catch (notifError) {
+        logger.warn('Speed violation notification error', { error: notifError.message });
+      }
+
+      const processingTime = Date.now() - startTime;
+      trackRequest('recordSpeedViolation', planId, processingTime, true);
+
+      activityLogService.logActivity(userId, 'vehicle', 'speed_violation', {
+        sessionId,
+        speed,
+        speedLimit,
+        excess: violation.excess,
+        path: req.path
+      });
+
+      return res.json(ResponseFormatter.success({ violation }, 'Hız ihlali kaydedildi', 201));
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+      trackRequest('recordSpeedViolation', 'unknown', processingTime, false);
+
+      if (error.isOperational) {
+        return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
+      }
+
+      logger.error('Record speed violation error', error, { processingTime });
+      return res.status(500).json(ResponseFormatter.error('Hız ihlali kaydedilemedi', 'SPEED_VIOLATION_ERROR'));
+    }
+  }
+
+  // Get vehicle sessions
+  async getVehicleSessions(req, res) {
+    const startTime = Date.now();
+    try {
+      const userId = getUserIdFromToken(req);
+      const { planId } = getUserPlan(userId);
+      const { groupId, status } = req.query;
+
+      let sessions = Object.values(db.data.vehicleSessions || {});
+
+      // Filter by user
+      sessions = sessions.filter(s => s.userId === userId);
+
+      // Filter by group if specified
+      if (groupId) {
+        sessions = sessions.filter(s => s.groupId === groupId);
+      }
+
+      // Filter by status if specified
+      if (status) {
+        sessions = sessions.filter(s => s.status === status);
+      }
+
+      // Sort by start time (newest first)
+      sessions.sort((a, b) => b.startTime - a.startTime);
+
+      const processingTime = Date.now() - startTime;
+      trackRequest('getVehicleSessions', planId, processingTime, true);
+
+      activityLogService.logActivity(userId, 'vehicle', 'view_sessions', {
+        count: sessions.length,
+        groupId,
+        status,
+        path: req.path
+      });
+
+      return res.json(ResponseFormatter.success({ sessions, count: sessions.length }));
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+      trackRequest('getVehicleSessions', 'unknown', processingTime, false);
+
+      if (error.isOperational) {
+        return res.status(error.statusCode).json(ResponseFormatter.error(error.message, error.code, error.details));
+      }
+
+      logger.error('Get vehicle sessions error', error, { processingTime });
+      return res.status(500).json(ResponseFormatter.error('Araç oturumları alınamadı', 'VEHICLE_SESSIONS_ERROR'));
     }
   }
 }

@@ -406,7 +406,7 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(30, 41, 59, 0.6)',
         borderRadius: 20,
         padding: 16,
-        marginBottom: 12,
+        marginBottom: 16,
         borderWidth: 1,
         borderColor: 'rgba(139, 92, 246, 0.2)',
         shadowColor: '#000',

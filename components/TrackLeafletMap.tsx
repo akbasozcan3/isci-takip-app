@@ -300,7 +300,7 @@ export default function TrackLeafletMap({
       } else if (data.type === 'regionChange' && onRegionChange) {
         onRegionChange({ lat: data.lat, lng: data.lng, zoom: data.zoom });
       }
-    } catch {}
+    } catch { }
   }, [onMapReady, onRegionChange]);
 
   return (
@@ -312,8 +312,9 @@ export default function TrackLeafletMap({
         javaScriptEnabled
         domStorageEnabled
         setSupportMultipleWindows={false}
+        androidLayerType="hardware"
         scalesPageToFit
-        style={{ backgroundColor: '#0f172a' }}
+        style={{ backgroundColor: '#0f172a', opacity: 0.99 }}
       />
     </View>
   );

@@ -26,6 +26,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { io, Socket } from 'socket.io-client';
 import { AnalyticsCard } from '../../components/AnalyticsCard';
 import { NetworkStatusIcon } from '../../components/NetworkStatusIcon';
+import { UnifiedHeader } from '../../components/UnifiedHeader';
 import { OnboardingModal } from '../../components/OnboardingModal';
 import { Toast, useToast } from '../../components/Toast';
 import { LoadingState } from '../../components/ui/LoadingState';
@@ -179,6 +180,7 @@ export default function HomeScreen(): React.JSX.Element {
   const socketRef = React.useRef<Socket | null>(null);
 
   // Animations
+  const scrollY = React.useRef(new Animated.Value(0)).current;
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const slideX = React.useRef(new Animated.Value(0)).current;
   const cardScale = React.useRef(new Animated.Value(1)).current;
@@ -789,85 +791,37 @@ export default function HomeScreen(): React.JSX.Element {
   }
 
   // --- Authenticated UI ---
+  // --- Authenticated UI ---
+  // Note: UnifiedHeader is being used which handles safe area internally or by parent.
+  // We switch to View container to control layout better.
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <Animated.View style={{ transform: [{ scale: headerScale }] }}>
-        <LinearGradient colors={['#0369a1', '#0c4a6e']} style={styles.header}>
-          <View style={styles.headerTop}>
-            <View style={styles.headerLeft}>
-              <View style={styles.headerAvatarContainer}>
-                {avatarUrl ? (
-                  <Image source={{ uri: avatarUrl }} style={styles.headerAvatar} />
-                ) : (
-                  <View style={styles.headerAvatarPlaceholder}>
-                    <Ionicons name="person" size={24} color="#fff" />
-                  </View>
-                )}
-              </View>
-              <View style={styles.headerTextBlock}>
-                <Text style={styles.brandLabel}>BAVAXE PLATFORMU</Text>
-                <Text style={styles.headerTitle}>Ana Sayfa</Text>
-                <Text style={styles.headerSubtitle}>Hoş Geldin, {userName}</Text>
-              </View>
-            </View>
 
-            <View style={styles.headerActions}>
-              <NetworkStatusIcon size={20} />
-              <Pressable
-                onPress={() => router.push('/blog')}
-                style={({ pressed }) => [
-                  styles.headerIconButton,
-                  pressed && styles.headerIconButtonPressed
-                ]}
-              >
-                <Ionicons name="book-outline" size={20} color="#fff" />
-              </Pressable>
-              <Pressable
-                onPress={async () => {
-                  try {
-                    if (!hasLocationPermission) {
-                      const { status } = await Location.requestForegroundPermissionsAsync();
-                      if (status !== 'granted') {
-                        showError('Konum izni gerekli');
-                        return;
-                      }
-                      setHasLocationPermission(true);
-                    }
+      <UnifiedHeader
+        title="BAVAXE"
+        subtitle={`Hoş Geldin, ${userName}`}
+        brandLabel="DASHBOARD"
+        gradientColors={['#0369a1', '#0c4a6e']}
+        showProfile={true}
+        showNetwork={true}
+        showBack={false}
+        profileName={userName}
+        avatarUrl={avatarUrl}
+        onProfilePress={() => router.push('/(tabs)/profile')}
+        actions={
+          <Pressable
+            onPress={() => router.push('/blog')}
+            style={({ pressed }) => [
+              styles.headerIconButton,
+              pressed && styles.headerIconButtonPressed
+            ]}
+          >
+            <Ionicons name="book-outline" size={20} color="#fff" />
+          </Pressable>
+        }
+      />
 
-                    showInfo('Konum alınıyor...');
-                    const location = await Location.getCurrentPositionAsync({
-                      accuracy: Location.Accuracy.High
-                    });
-
-                    await shareCurrentLocation(
-                      async () => ({ latitude: location.coords.latitude, longitude: location.coords.longitude }),
-                      userName || 'Konumum',
-                      () => showSuccess('Konum başarıyla paylaşıldı!'),
-                      (error: string) => showError(error)
-                    );
-                  } catch (e: any) {
-                    console.error('[Home] Share location error:', e);
-                    if (e.code === 'E_LOCATION_UNAVAILABLE') {
-                      showError('Konum servisleri kapalı. Lütfen ayarlardan açın.');
-                    } else if (e.code === 'E_LOCATION_TIMEOUT') {
-                      showError('Konum alınamadı. Lütfen tekrar deneyin.');
-                    } else {
-                      showError('Konum alınamadı: ' + (e.message || 'Bilinmeyen hata'));
-                    }
-                  }
-                }}
-                style={({ pressed }) => [
-                  styles.headerIconButton,
-                  pressed && styles.headerIconButtonPressed
-                ]}
-              >
-                <Ionicons name="share-social-outline" size={20} color="#fff" />
-              </Pressable>
-            </View>
-          </View>
-        </LinearGradient>
-      </Animated.View>
 
       <Animated.ScrollView
         ref={scrollViewRef}
@@ -1519,75 +1473,77 @@ export default function HomeScreen(): React.JSX.Element {
       />
 
       {/* Scroll to Top Button with Liquid Wave Effect */}
-      {showScrollTop && (
-        <Animated.View
-          style={[
-            styles.scrollToTopButton,
-            {
-              opacity: scrollTopAnim,
-              transform: [
-                { scale: scrollTopAnim },
-                { translateY: scrollTopAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }
-              ],
-            },
-          ]}
-        >
-          <Pressable
-            onPress={scrollToTop}
-            style={styles.scrollToTopPressable}
-            android_ripple={{ color: 'rgba(6, 182, 212, 0.3)', radius: 30 }}
+      {
+        showScrollTop && (
+          <Animated.View
+            style={[
+              styles.scrollToTopButton,
+              {
+                opacity: scrollTopAnim,
+                transform: [
+                  { scale: scrollTopAnim },
+                  { translateY: scrollTopAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }
+                ],
+              },
+            ]}
           >
-            {/* Liquid Wave Animation - Double Layer */}
-            <View style={styles.liquidContainer}>
-              {/* Back Wave (Slower, Reverse) */}
-              <Animated.View
-                style={[
-                  styles.liquidWave,
-                  styles.liquidWaveBack,
-                  {
-                    transform: [{
-                      rotate: waveAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ['360deg', '0deg'] // Reverse rotation
-                      })
-                    }]
-                  }
-                ]}
-              />
-
-              {/* Front Wave (Normal) */}
-              <Animated.View
-                style={[
-                  styles.liquidWave,
-                  {
-                    transform: [{
-                      rotate: waveAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ['0deg', '360deg']
-                      })
-                    }]
-                  }
-                ]}
-              >
-                <LinearGradient
-                  colors={['rgba(6,182,212,0.8)', 'rgba(59,130,246,0.9)']} // Slightly transparent for glass effect
-                  style={{ flex: 1 }}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
+            <Pressable
+              onPress={scrollToTop}
+              style={styles.scrollToTopPressable}
+              android_ripple={{ color: 'rgba(6, 182, 212, 0.3)', radius: 30 }}
+            >
+              {/* Liquid Wave Animation - Double Layer */}
+              <View style={styles.liquidContainer}>
+                {/* Back Wave (Slower, Reverse) */}
+                <Animated.View
+                  style={[
+                    styles.liquidWave,
+                    styles.liquidWaveBack,
+                    {
+                      transform: [{
+                        rotate: waveAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ['360deg', '0deg'] // Reverse rotation
+                        })
+                      }]
+                    }
+                  ]}
                 />
-              </Animated.View>
-            </View>
 
-            {/* Icon Layer */}
-            <View style={styles.liquidIconContainer}>
-              <Ionicons name="arrow-up" size={26} color="#fff" />
-            </View>
-          </Pressable>
-        </Animated.View>
-      )}
+                {/* Front Wave (Normal) */}
+                <Animated.View
+                  style={[
+                    styles.liquidWave,
+                    {
+                      transform: [{
+                        rotate: waveAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ['0deg', '360deg']
+                        })
+                      }]
+                    }
+                  ]}
+                >
+                  <LinearGradient
+                    colors={['rgba(6,182,212,0.8)', 'rgba(59,130,246,0.9)']} // Slightly transparent for glass effect
+                    style={{ flex: 1 }}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  />
+                </Animated.View>
+              </View>
+
+              {/* Icon Layer */}
+              <View style={styles.liquidIconContainer}>
+                <Ionicons name="arrow-up" size={26} color="#fff" />
+              </View>
+            </Pressable>
+          </Animated.View>
+        )
+      }
 
       <OnboardingModal visible={showOnboarding} onClose={handleOnboardingClose} />
-    </SafeAreaView>
+    </View>
   );
 }
 
