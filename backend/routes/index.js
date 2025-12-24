@@ -823,9 +823,7 @@ router.post('/steps/start-tracking', requireAuth, asyncHandler(stepController.st
 router.post('/steps/stop-tracking', requireAuth, asyncHandler(stepController.stopTracking.bind(stepController)));
 
 
-// Profile Stats Route
-const profileStatsController = require('../controllers/profileStatsController');
-router.get('/api/profile/stats', requireAuth, asyncHandler(profileStatsController.getStats.bind(profileStatsController)));
+
 
 // Billing Routes
 const billingController = require('../controllers/billingController');
