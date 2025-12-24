@@ -889,7 +889,7 @@ router.post('/notifications/push', notificationsController.sendPush.bind(notific
 router.post('/notifications/test-onesignal', requireAuth, notificationsController.testOneSignal.bind(notificationsController));
 router.get('/notifications/onesignal-status', requireAuth, notificationsController.getOneSignalStatus.bind(notificationsController));
 
-const billingController = require('../controllers/billingController');
+
 router.get('/plans', billingController.getPlans.bind(billingController)); // Public endpoint
 router.get('/billing/plans', billingController.getPlans.bind(billingController)); // Public endpoint
 router.get('/me/subscription', requireAuth, billingController.getMySubscription.bind(billingController));
