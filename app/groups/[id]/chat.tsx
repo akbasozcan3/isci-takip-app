@@ -24,6 +24,7 @@ import { MessageBubble } from '../../../components/chat/MessageBubble';
 import { useToast } from '../../../components/Toast';
 import { authFetch } from '../../../utils/auth';
 import { initializeSocket, getSocket, joinGroupRoom, leaveGroupRoom, sendTypingIndicator } from '../../../utils/socketService';
+import { UnifiedHeader } from '../../../components/UnifiedHeader';
 import { useNetworkStatus } from '../../../utils/networkStatus';
 
 interface Message {
@@ -371,223 +372,208 @@ export default function GroupChatScreen() {
     );
 
     const renderHeader = () => (
-        <View style={styles.headerInList}>
-            <LinearGradient colors={['#6366f1', '#8b5cf6']} style={styles.headerGradient}>
-                <View style={styles.headerTop}>
-                    <Pressable
-                        onPress={() => router.back()}
-                        style={({ pressed }) => [
-                            styles.backButton,
-                            pressed && { opacity: 0.7 },
-                        ]}
-                    >
-                        <Ionicons name="arrow-back" size={24} color="#fff" />
-                    </Pressable>
-
-                    <View style={styles.headerCenter}>
-                        <Text style={styles.groupName}>{groupName}</Text>
-                        <UnifiedHeader
-                            title={groupName || 'Grup Sohbet'}
-                            subtitle={`${onlineCount} aktif üye`}
-                            gradientColors={['#8b5cf6', '#7c3aed']}
-                            brandLabel="SOHBET"
-                            onBackPress={() => router.back()}
-                            showBackButton={true}
-                            showProfile={false}
-                            showNetwork={true}
-                        />
-                    </LinearGradient>
-                </View>
-                );
+        <View style={{ marginBottom: 10 }}>
+            <UnifiedHeader
+                title={groupName || 'Grup Sohbet'}
+                subtitle={`${onlineCount} aktif üye`}
+                brandLabel="SOHBET"
+                gradientColors={['#8b5cf6', '#7c3aed']}
+                onBackPress={() => router.back()}
+                showBackButton={true}
+                showProfile={false}
+                showNetwork={true}
+            />
+        </View>
+    );
 
     const renderTypingIndicator = () => {
         if (typingUsers.length === 0) return null;
 
-                return (
-                <View style={styles.typingContainer}>
-                    <View style={styles.typingBubble}>
-                        <Text style={styles.typingText}>
-                            {typingUsers.length === 1
-                                ? `${typingUsers[0]} yazıyor...`
-                                : `${typingUsers.length} kişi yazıyor...`}
-                        </Text>
-                        <View style={styles.typingDots}>
-                            <View style={[styles.typingDot, { animationDelay: '0s' }]} />
-                            <View style={[styles.typingDot, { animationDelay: '0.2s' }]} />
-                            <View style={[styles.typingDot, { animationDelay: '0.4s' }]} />
-                        </View>
+        return (
+            <View style={styles.typingContainer}>
+                <View style={styles.typingBubble}>
+                    <Text style={styles.typingText}>
+                        {typingUsers.length === 1
+                            ? `${typingUsers[0]} yazıyor...`
+                            : `${typingUsers.length} kişi yazıyor...`}
+                    </Text>
+                    <View style={styles.typingDots}>
+                        <View style={[styles.typingDot, { animationDelay: '0s' }]} />
+                        <View style={[styles.typingDot, { animationDelay: '0.2s' }]} />
+                        <View style={[styles.typingDot, { animationDelay: '0.4s' }]} />
                     </View>
                 </View>
-                );
+            </View>
+        );
     };
 
-                return (
-                <SafeAreaView style={styles.container} edges={['top']}>
-                    <StatusBar barStyle="light-content" />
+    return (
+        <SafeAreaView style={styles.container} edges={['top']}>
+            <StatusBar barStyle="light-content" />
 
-                    <KeyboardAvoidingView
-                        style={styles.keyboardView}
-                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-                    >
-                        {loading && messages.length === 0 ? (
-                            <View style={styles.loadingContainer}>
-                                <ActivityIndicator size="large" color="#6366f1" />
-                                <Text style={styles.loadingText}>Mesajlar yükleniyor...</Text>
-                            </View>
-                        ) : (
-                            <View style={{ flex: 1 }}>
-                                <FlatList
-                                    ref={flatListRef}
-                                    data={messages}
-                                    renderItem={renderMessage}
-                                    keyExtractor={(item) => item.id}
-                                    contentContainerStyle={styles.messageList}
-                                    showsVerticalScrollIndicator={false}
-                                    ListHeaderComponent={renderHeader}
-                                    ListEmptyComponent={<EmptyChat />}
-                                    ListFooterComponent={renderTypingIndicator}
-                                    refreshControl={
-                                        <RefreshControl
-                                            refreshing={refreshing}
-                                            onRefresh={onRefresh}
-                                            tintColor="#8b5cf6"
-                                            colors={['#8b5cf6']}
-                                        />
-                                    }
-                                    scrollEventThrottle={16}
-                                    onContentSizeChange={() => {
-                                        if (messages.length > 0 && !loading) {
-                                            flatListRef.current?.scrollToEnd({ animated: false });
-                                        }
-                                    }}
+            <KeyboardAvoidingView
+                style={styles.keyboardView}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+            >
+                {loading && messages.length === 0 ? (
+                    <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color="#6366f1" />
+                        <Text style={styles.loadingText}>Mesajlar yükleniyor...</Text>
+                    </View>
+                ) : (
+                    <View style={{ flex: 1 }}>
+                        <FlatList
+                            ref={flatListRef}
+                            data={messages}
+                            renderItem={renderMessage}
+                            keyExtractor={(item) => item.id}
+                            contentContainerStyle={styles.messageList}
+                            showsVerticalScrollIndicator={false}
+                            ListHeaderComponent={renderHeader}
+                            ListEmptyComponent={<EmptyChat />}
+                            ListFooterComponent={renderTypingIndicator}
+                            refreshControl={
+                                <RefreshControl
+                                    refreshing={refreshing}
+                                    onRefresh={onRefresh}
+                                    tintColor="#8b5cf6"
+                                    colors={['#8b5cf6']}
                                 />
-                            </View>
-                        )}
-
-                        {/* Input - Sticky at bottom */}
-                        <ChatInput
-                            onSend={sendMessage}
-                            onTyping={handleTyping}
+                            }
+                            scrollEventThrottle={16}
+                            onContentSizeChange={() => {
+                                if (messages.length > 0 && !loading) {
+                                    flatListRef.current?.scrollToEnd({ animated: false });
+                                }
+                            }}
                         />
-                    </KeyboardAvoidingView>
-                </SafeAreaView>
-                );
+                    </View>
+                )}
+
+                {/* Input - Sticky at bottom */}
+                <ChatInput
+                    onSend={sendMessage}
+                    onTyping={handleTyping}
+                />
+            </KeyboardAvoidingView>
+        </SafeAreaView>
+    );
 }
 
-                const styles = StyleSheet.create({
-                    container: {
-                    flex: 1,
-                backgroundColor: '#0f172a',
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#0f172a',
     },
-                keyboardView: {
-                    flex: 1,
+    keyboardView: {
+        flex: 1,
     },
-                loadingContainer: {
-                    flex: 1,
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 16,
+    loadingContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 16,
     },
-                loadingText: {
-                    color: '#94a3b8',
-                fontSize: 14,
-                fontFamily: 'Poppins-Regular',
+    loadingText: {
+        color: '#94a3b8',
+        fontSize: 14,
+        fontFamily: 'Poppins-Regular',
     },
-                messageList: {
-                    flexGrow: 1,
-                paddingBottom: 12,
+    messageList: {
+        flexGrow: 1,
+        paddingBottom: 12,
     },
-                headerInList: {
-                    marginBottom: 16,
+    headerInList: {
+        marginBottom: 16,
     },
-                headerGradient: {
-                    borderRadius: 24,
-                marginHorizontal: 12,
-                marginTop: 12,
-                shadowColor: '#000',
-                shadowOffset: {width: 0, height: 4 },
-                shadowOpacity: 0.3,
-                shadowRadius: 8,
-                elevation: 8,
+    headerGradient: {
+        borderRadius: 24,
+        marginHorizontal: 12,
+        marginTop: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 8,
     },
-                headerTop: {
-                    flexDirection: 'row',
-                alignItems: 'center',
-                padding: 16,
-                gap: 12,
+    headerTop: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        gap: 12,
     },
-                backButton: {
-                    width: 40,
-                height: 40,
-                borderRadius: 20,
-                backgroundColor: 'rgba(255,255,255,0.2)',
-                alignItems: 'center',
-                justifyContent: 'center',
+    backButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-                headerCenter: {
-                    flex: 1,
+    headerCenter: {
+        flex: 1,
     },
-                groupName: {
-                    fontSize: 18,
-                fontWeight: '900',
-                color: '#fff',
-                fontFamily: 'Poppins-Bold',
-                letterSpacing: 0.3,
+    groupName: {
+        fontSize: 18,
+        fontWeight: '900',
+        color: '#fff',
+        fontFamily: 'Poppins-Bold',
+        letterSpacing: 0.3,
     },
-                statusRow: {
-                    flexDirection: 'row',
-                alignItems: 'center',
-                marginTop: 4,
-                gap: 6,
+    statusRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 4,
+        gap: 6,
     },
-                onlineIndicator: {
-                    width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: '#10b981',
+    onlineIndicator: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: '#10b981',
     },
-                participantCount: {
-                    fontSize: 12,
-                color: 'rgba(255,255,255,0.9)',
-                fontFamily: 'Poppins-Medium',
+    participantCount: {
+        fontSize: 12,
+        color: 'rgba(255,255,255,0.9)',
+        fontFamily: 'Poppins-Medium',
     },
-                infoButton: {
-                    width: 40,
-                height: 40,
-                borderRadius: 20,
-                backgroundColor: 'rgba(255,255,255,0.2)',
-                alignItems: 'center',
-                justifyContent: 'center',
+    infoButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-                typingContainer: {
-                    paddingHorizontal: 16,
-                paddingVertical: 8,
+    typingContainer: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
     },
-                typingBubble: {
-                    flexDirection: 'row',
-                alignItems: 'center',
-                backgroundColor: 'rgba(30, 41, 59, 0.6)',
-                borderRadius: 16,
-                paddingHorizontal: 14,
-                paddingVertical: 8,
-                alignSelf: 'flex-start',
-                gap: 8,
+    typingBubble: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(30, 41, 59, 0.6)',
+        borderRadius: 16,
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        alignSelf: 'flex-start',
+        gap: 8,
     },
-                typingText: {
-                    fontSize: 13,
-                color: '#94a3b8',
-                fontFamily: 'Poppins-Medium',
-                fontStyle: 'italic',
+    typingText: {
+        fontSize: 13,
+        color: '#94a3b8',
+        fontFamily: 'Poppins-Medium',
+        fontStyle: 'italic',
     },
-                typingDots: {
-                    flexDirection: 'row',
-                gap: 4,
+    typingDots: {
+        flexDirection: 'row',
+        gap: 4,
     },
-                typingDot: {
-                    width: 6,
-                height: 6,
-                borderRadius: 3,
-                backgroundColor: '#6366f1',
+    typingDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: '#6366f1',
     },
 });
