@@ -99,21 +99,23 @@ export async function checkApiConnection(): Promise<string> {
   if (current === PROD_URL) return current;
 
   try {
-    // Try to reach the backend with a short timeout
+    // Try to reach the backend with a longer timeout for reliability
     const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 2000); // 2s timeout
+    const id = setTimeout(() => controller.abort(), 5000); // 5s timeout (increased from 2s)
     const res = await fetch(`${current}/api/health`, { method: 'HEAD', signal: controller.signal });
     clearTimeout(id);
 
     if (res.ok || res.status === 404) { // 404 means server is up but route missing, which is fine for connectivity check
-      console.log('[API] Local backend is reachable:', current);
+      console.log('[API] ✅ Local backend is reachable:', current);
       return current;
     }
   } catch (e) {
-    console.warn(`[API] Local backend (${current}) unreachable, switching to Production fallback.`);
+    console.warn(`[API] ⚠️ Local backend (${current}) unreachable, switching to Production fallback.`);
+    console.warn('[API] Error:', e instanceof Error ? e.message : 'Unknown error');
   }
 
   // Fallback to prod
+  console.log('[API] 🌐 Using production backend:', PROD_URL);
   resolvedBase = PROD_URL;
   return PROD_URL;
 }
