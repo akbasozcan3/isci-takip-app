@@ -25,7 +25,7 @@ export default function LeafletMap({ centerLat, centerLng, onSelect, height = 20
   const TURKEY_CENTER = { lat: 39.0, lng: 35.2433 };
   const defaultLat = centerLat || TURKEY_CENTER.lat;
   const defaultLng = centerLng || TURKEY_CENTER.lng;
-  
+
   const html = React.useMemo(() => `
   <!DOCTYPE html>
   <html>
@@ -107,30 +107,23 @@ export default function LeafletMap({ centerLat, centerLng, onSelect, height = 20
         // Türkiye merkezli harita - Profesyonel GPS takip
         const map = L.map('map').setView([${defaultLat}, ${defaultLng}], ${defaultLat === TURKEY_CENTER.lat && defaultLng === TURKEY_CENTER.lng ? '6' : '16'});
         const baseLayers = {
-          'OpenStreetMap': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          'OpenStreetMap': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             minZoom: 4,
-            subdomains: ['a', 'b', 'c'],
-            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-            tileSize: 256,
-            zoomOffset: 0
+            attribution: '© OpenStreetMap contributors',
+            className: 'map-tiles'
           }),
-          'Koyu Tema': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+          'Koyu Tema': L.tileLayer('https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
             maxZoom: 19,
             minZoom: 4,
-            subdomains: 'abcd',
-            attribution: '© OpenStreetMap contributors | © CARTO'
+            attribution: '© OpenStreetMap | © CARTO',
+            className: 'map-tiles'
           }),
           'Uydu': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             maxZoom: 19,
             minZoom: 4,
-            attribution: '© Esri'
-          }),
-          'Topografik': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-            maxZoom: 17,
-            minZoom: 4,
-            subdomains: ['a', 'b', 'c'],
-            attribution: '© <a href="https://opentopomap.org">OpenTopoMap</a> contributors'
+            attribution: '© Esri',
+            className: 'map-tiles'
           })
         };
         
@@ -249,9 +242,9 @@ export default function LeafletMap({ centerLat, centerLng, onSelect, height = 20
         onSelect(Number(data.lat), Number(data.lng));
       }
       if (data.type === 'ready') {
-        try { onReady && onReady(); } catch(e){}
+        try { onReady && onReady(); } catch (e) { }
       }
-    } catch {}
+    } catch { }
   }, [onSelect, onReady]);
 
   // send markers to webview whenever they change
@@ -266,7 +259,7 @@ export default function LeafletMap({ centerLat, centerLng, onSelect, height = 20
   }, [markers]);
 
   return (
-    <View style={[styles.container, { height }]}> 
+    <View style={[styles.container, { height }]}>
       <WebView
         originWhitelist={["*"]}
         source={{ html }}

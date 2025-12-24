@@ -733,10 +733,16 @@ class GroupController {
       // Filter out deleted messages (soft delete)
       const activeMessages = allMessages.filter(msg => !msg.deleted);
 
+      // Sorting
+      let sortedMessages = activeMessages;
+      if (req.query.sort === 'desc') {
+        sortedMessages = [...activeMessages].reverse();
+      }
+
       // Pagination
       const start = parseInt(offset);
       const end = start + parseInt(limit);
-      const messages = activeMessages.slice(start, end);
+      const messages = sortedMessages.slice(start, end);
 
       return res.success({
         messages,

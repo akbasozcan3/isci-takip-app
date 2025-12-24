@@ -62,6 +62,10 @@ export default function RootLayout(): React.JSX.Element {
 
 
       try {
+        // Check API connection and fallback if needed
+        const { checkApiConnection } = await import('../utils/api');
+        await checkApiConnection();
+
         await initializeOneSignal();
         await registerBackgroundStepTask();
 

@@ -104,8 +104,8 @@ export default function MessagesScreen() {
             // For each group, fetch last message and unread count
             const conversationPromises = groups.map(async (group) => {
                 try {
-                    // Fetch last message
-                    const messagesRes = await authFetch(`/groups/${group.id}/messages?limit=1`);
+                    // Fetch last message (sort=desc to get newest)
+                    const messagesRes = await authFetch(`/groups/${group.id}/messages?limit=1&sort=desc`);
                     let lastMessage = undefined;
 
                     if (messagesRes.ok) {

@@ -90,9 +90,36 @@ function resolveBaseUrl(): string {
   return resolvedBase;
 }
 
+// Helper to verify connectivity
+export async function checkApiConnection(): Promise<string> {
+  const current = resolveBaseUrl();
+  const PROD_URL = 'https://isci-takip-app.onrender.com';
+
+  // If already prod, no need to check
+  if (current === PROD_URL) return current;
+
+  try {
+    // Try to reach the backend with a short timeout
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 2000); // 2s timeout
+    const res = await fetch(`${current}/api/health`, { method: 'HEAD', signal: controller.signal });
+    clearTimeout(id);
+
+    if (res.ok || res.status === 404) { // 404 means server is up but route missing, which is fine for connectivity check
+      console.log('[API] Local backend is reachable:', current);
+      return current;
+    }
+  } catch (e) {
+    console.warn(`[API] Local backend (${current}) unreachable, switching to Production fallback.`);
+  }
+
+  // Fallback to prod
+  resolvedBase = PROD_URL;
+  return PROD_URL;
+}
+
 export function getApiBase(): string {
   return resolveBaseUrl();
 }
 
-// Base URL for PHP API (legacy removed intentionally)
 

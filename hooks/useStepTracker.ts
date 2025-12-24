@@ -88,20 +88,31 @@ export function useStepTracker(isTracking: boolean, config: StepTrackerConfig = 
     // --- EMULATOR SIMULATION LOGIC ---
     useEffect(() => {
         let timer: NodeJS.Timeout;
-        // If tracking is ON but Sensor is NOT AVAILABLE (Emulator) -> Start Simulation
-        if (isTracking && isAvailable === false) {
-            console.log('[StepTracker] Starting Simulation Mode (Ghost Walker)');
-            // Init with random steps if starting from 0 to look realistic
-            if (currentSteps === 0) setCurrentSteps(1240);
+
+        // Check if we need simulation: Tracking ON + Sensor Unavailable
+        const needsSimulation = isTracking && isAvailable === false;
+
+        if (needsSimulation) {
+            console.log('[StepTracker] 👻 Simulation Mode (Ghost Walker) ACTIVATED');
+
+            // Initial bump if zero to show it's working
+            if (currentSteps === 0) {
+                const initial = 15;
+                setCurrentSteps(initial);
+                if (onStepDetected) onStepDetected(initial);
+            }
 
             timer = setInterval(() => {
                 setCurrentSteps(prev => {
-                    const next = prev + Math.floor(Math.random() * 3) + 1; // 1-3 steps random increment
+                    const increment = Math.floor(Math.random() * 5) + 2; // Random 2-6 steps
+                    const next = prev + increment;
+                    console.log(`[StepTracker] 👻 Simulating steps: ${prev} -> ${next}`);
                     if (onStepDetected) onStepDetected(next);
                     return next;
                 });
-            }, 2000); // Every 2 seconds
+            }, 3000); // Update every 3 seconds
         }
+
         return () => {
             if (timer) clearInterval(timer);
         };

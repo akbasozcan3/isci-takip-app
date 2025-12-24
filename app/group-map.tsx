@@ -8,6 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import * as TaskManager from 'expo-task-manager';
 import React from 'react';
+import MemberDetailModal from '../components/MemberDetailModal';
 import {
     ActivityIndicator,
     Animated,
@@ -23,11 +24,10 @@ import {
     Dimensions
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import { io, Socket } from 'socket.io-client';
 import { Toast, useToast } from '../components/Toast';
 import { getApiBase } from '../utils/api';
-import { getMapFeatures, getMapLayers, type MapFeatures } from '../utils/mapFeatures';
-import LeafletMap from '../components/leaflet-map';
 
 const API_BASE = getApiBase();
 const BACKGROUND_LOCATION_TASK = 'GROUP_BACKGROUND_LOCATION_TASK';
@@ -154,7 +154,7 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
 });
 
 export default function GroupMapScreen() {
-    console.log('[GroupMap] Component rendering');
+    console.log('[GroupMap] Component rendering - VERSION CONTROL: ' + new Date().toISOString());
     const router = useRouter();
     const { toast, showError, showSuccess, showWarning, showInfo, hideToast } = useToast();
     const params = useLocalSearchParams();
@@ -170,14 +170,13 @@ export default function GroupMapScreen() {
     const [refreshing, setRefreshing] = React.useState(false);
     const [myLocation, setMyLocation] = React.useState<Location.LocationObject | null>(null);
     const [mapLoading, setMapLoading] = React.useState<boolean>(true);
+    const [region, setRegion] = React.useState<Region | null>(null);
 
     const [isSharing, setIsSharing] = React.useState(false);
     const [sharingLoading, setSharingLoading] = React.useState(false);
     const [persistShare, setPersistShare] = React.useState(false);
 
     const [userId, setUserId] = React.useState('');
-    const [mapFeatures, setMapFeatures] = React.useState<MapFeatures | null>(null);
-    const [availableLayers, setAvailableLayers] = React.useState<Record<string, any>>({});
 
     // Animasyonlar
     const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -189,6 +188,7 @@ export default function GroupMapScreen() {
     const subscriptionRef = React.useRef<Location.LocationSubscription | null>(null);
     const resendIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
     const lastPayloadRef = React.useRef<any | null>(null);
+    const mapRef = React.useRef<MapView | null>(null);
 
     // Türkiye merkez koordinatları - Profesyonel GPS takip için
     const TURKEY_CENTER = { latitude: 39.0, longitude: 35.2433 };
@@ -198,34 +198,6 @@ export default function GroupMapScreen() {
         latitudeDelta: 13.0,
         longitudeDelta: 20.0
     };
-
-    // Responsive map height calculation (professional defaults)
-    const windowHeight = Dimensions.get('window').height;
-    const MAP_MIN_HEIGHT = 160; // small devices
-    const MAP_MAX_HEIGHT = Math.round(windowHeight * 0.55); // allow up to 55% of screen
-    // estimated chrome (header + paddings) and footer (members panel)
-    const EST_HEADER = (StatusBar.currentHeight ?? 24) + 120; // header area
-    const EST_FOOTER = 160; // members panel and margins
-    const initialMapHeight = Math.max(MAP_MIN_HEIGHT, Math.min(MAP_MAX_HEIGHT, windowHeight - EST_HEADER - EST_FOOTER));
-    const [mapHeight, setMapHeight] = React.useState<number>(initialMapHeight);
-
-    React.useEffect(() => {
-        const handle = ({ window }: { window: { height: number; width: number } }) => {
-            const wh = window.height;
-            const maxH = Math.round(wh * 0.55);
-            const est = Math.max(MAP_MIN_HEIGHT, Math.min(maxH, wh - EST_HEADER - EST_FOOTER));
-            setMapHeight(est);
-        };
-        // Dimensions API differences across RN versions
-        const sub: any = Dimensions.addEventListener ? Dimensions.addEventListener('change', handle) : null;
-        if (!sub) {
-            // fallback for older RN: keep no-op (listener not critical)
-        }
-        return () => {
-            try { if (sub && sub.remove) sub.remove(); } catch { }
-        };
-    }, []);
-
 
     // --- initial load: workerId + persisted preference ---
     React.useEffect(() => {
@@ -527,17 +499,6 @@ export default function GroupMapScreen() {
         loadMembersWithLocations();
         loadLocations();
 
-        (async () => {
-            try {
-                const features = await getMapFeatures();
-                const layers = await getMapLayers();
-                setMapFeatures(features);
-                setAvailableLayers(layers);
-            } catch (e) {
-                console.warn('[GroupMap] Map features load error:', e);
-            }
-        })();
-
         // Giriş animasyonu
         Animated.parallel([
             Animated.timing(fadeAnim, {
@@ -587,63 +548,73 @@ export default function GroupMapScreen() {
         setRefreshing(false);
     }, [loadGroupInfo, loadMembersWithLocations, loadLocations]);
 
-    // Tüm konumları göster (benim + çalışanlar)
-    const fitAllLocations = React.useCallback(() => {
-        const allCoords: Array<{ latitude: number; longitude: number }> = [];
-
-        // Benim konumum
-        if (myLocation) {
-            allCoords.push({
-                latitude: myLocation.coords.latitude,
-                longitude: myLocation.coords.longitude
-            });
-        }
-
-        // Tüm çalışanlar
-        Object.values(locations).forEach(loc => {
-            allCoords.push({ latitude: loc.lat, longitude: loc.lng });
-        });
-
-        // Grup merkezi
-        if (groupInfo?.lat && groupInfo?.lng) {
-            allCoords.push({ latitude: groupInfo.lat, longitude: groupInfo.lng });
-        }
-
-        if (allCoords.length === 0) return;
-    }, [myLocation, locations, groupInfo]);
-
-    React.useEffect(() => {
-        const timer = setTimeout(() => {
-            fitAllLocations();
-        }, 500);
-        return () => clearTimeout(timer);
-    }, [fitAllLocations, locations, myLocation, groupInfo?.lat, groupInfo?.lng]);
-
     // Üyeye odaklan
     const focusOnMember = React.useCallback((member: MemberWithLocation) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         if (member.location) {
+            const newRegion: Region = {
+                latitude: member.location.lat,
+                longitude: member.location.lng,
+                latitudeDelta: 0.005,
+                longitudeDelta: 0.005
+            };
+            mapRef.current?.animateToRegion(newRegion, 1000);
         }
         setSelectedMember(member);
         setShowMemberModal(true);
     }, []);
 
+    const handleOpenChat = React.useCallback(() => {
+        if (!selectedMember || !groupId) return;
+        router.push({
+            pathname: '/groups/[id]/chat',
+            params: { id: groupId, name: groupInfo?.name }
+        } as any);
+    }, [selectedMember, groupId, groupInfo]);
+
     // Online üye sayısı
     const onlineCount = membersWithLocations.filter(m => m.isOnline).length;
     const adminCount = membersWithLocations.filter(m => m.role === 'admin').length;
 
-    // --- permission request once ---
+    // --- permission request and initial region ---
     React.useEffect(() => {
         let mounted = true;
         (async () => {
             try {
                 const { status } = await Location.requestForegroundPermissionsAsync();
                 if (!mounted) return;
+
+                let initialRegion = TURKEY_REGION;
+
                 if (status === 'granted') {
                     const last = await Location.getLastKnownPositionAsync();
-                    if (last) setMyLocation(last);
+                    if (last) {
+                        setMyLocation(last);
+                        initialRegion = {
+                            latitude: last.coords.latitude,
+                            longitude: last.coords.longitude,
+                            latitudeDelta: 0.01,
+                            longitudeDelta: 0.01
+                        };
+                    } else {
+                        // try current position if last known is null
+                        const curr = await Location.getCurrentPositionAsync({});
+                        if (curr) {
+                            setMyLocation(curr);
+                            initialRegion = {
+                                latitude: curr.coords.latitude,
+                                longitude: curr.coords.longitude,
+                                latitudeDelta: 0.01,
+                                longitudeDelta: 0.01
+                            };
+                        }
+                    }
                 }
-            } catch (e) { console.warn('perm error', e); }
+                setRegion(initialRegion);
+            } catch (e) {
+                console.warn('perm/location error', e);
+                setRegion(TURKEY_REGION);
+            }
         })();
         return () => { mounted = false; };
     }, []);
@@ -815,421 +786,358 @@ export default function GroupMapScreen() {
         );
     }, [myLocation, groupInfo]);
 
+    // Tüm konumları göster (benim + çalışanlar)
+    const fitAllLocations = React.useCallback(() => {
+        if (!mapRef.current) return;
+
+        const allCoords: Array<{ latitude: number; longitude: number }> = [];
+
+        // Benim konumum
+        if (myLocation) {
+            allCoords.push({
+                latitude: myLocation.coords.latitude,
+                longitude: myLocation.coords.longitude
+            });
+        }
+
+        // Tüm çalışanlar
+        membersWithLocations.forEach(m => {
+            if (m.location?.lat && m.location?.lng) {
+                allCoords.push({ latitude: m.location.lat, longitude: m.location.lng });
+            }
+        });
+
+        // Grup merkezi
+        if (groupInfo?.lat && groupInfo?.lng) {
+            allCoords.push({ latitude: groupInfo.lat, longitude: groupInfo.lng });
+        }
+
+        if (allCoords.length > 0) {
+            mapRef.current.fitToCoordinates(allCoords, {
+                edgePadding: { top: 100, right: 50, bottom: 200, left: 50 },
+                animated: true,
+            });
+        }
+    }, [myLocation, membersWithLocations, groupInfo]);
+
+    React.useEffect(() => {
+        // Wait for map to be ready and data to be loaded
+        if (!mapLoading && membersWithLocations.length > 0) {
+            const timer = setTimeout(() => {
+                fitAllLocations();
+            }, 1000); // slight delay to ensure map layout
+            return () => clearTimeout(timer);
+        }
+    }, [mapLoading, membersWithLocations, fitAllLocations]);
+
+
     // --- Render ---
+
+    if (mapLoading || !region) {
+        return (
+            <View style={styles.loadingContainer}>
+                <StatusBar barStyle="light-content" />
+                <LinearGradient
+                    colors={['#0f172a', '#1e293b']}
+                    style={StyleSheet.absoluteFill}
+                />
+                <ActivityIndicator size="large" color="#8b5cf6" />
+                <Text style={styles.loadingText}>Harita Hazırlanıyor...</Text>
+            </View>
+        );
+    }
+
     return (
-        <SafeAreaView style={styles.container} edges={["top"]}>
-            <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+        <SafeAreaView style={styles.container} edges={['top']}>
+            <StatusBar barStyle="light-content" />
 
-            <LinearGradient colors={["#0EA5E9", "#0ea5a4"]} style={styles.header} start={[0, 0]} end={[1, 1]}>
+            {/* Premium Header */}
+            <LinearGradient
+                colors={['#0f172a', 'rgba(15, 23, 42, 0.95)', 'rgba(15, 23, 42, 0.8)']}
+                style={styles.headerOverlay}
+            >
                 <View style={styles.headerContent}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Pressable onPress={() => {
-                            router.back();
-                        }} style={styles.backBtn} accessibilityLabel="Geri dön">
-                            <Ionicons name="chevron-back" size={22} color="#042f35" />
-                        </Pressable>
-                        <View style={{ marginLeft: 8 }}>
-                            <Text style={styles.title}>{groupInfo?.name || 'Grup Haritası'}</Text>
-                            <Text style={styles.subtitle}>
-                                {groupInfo?.memberCount || 0} üye • {Object.keys(locations).length} aktif
-                                {distanceToCenter !== null && (
-                                    <Text style={{ color: distanceToCenter > 1000 ? '#f59e0b' : '#10b981', flexDirection: 'row', alignItems: 'center' }}>
-                                        {' • '}<Ionicons name="location" size={12} color={distanceToCenter > 1000 ? '#f59e0b' : '#10b981'} />{' '}{formatDistance(distanceToCenter)}
-                                    </Text>
-                                )}
-                            </Text>
-                        </View>
+                    <Pressable
+                        onPress={() => router.back()}
+                        style={({ pressed }) => [styles.backButton, pressed && { backgroundColor: 'rgba(255,255,255,0.1)' }]}
+                    >
+                        <Ionicons name="arrow-back" size={24} color="#fff" />
+                    </Pressable>
+                    <View style={{ alignItems: 'center' }}>
+                        <Text style={styles.headerTitle}>{groupInfo?.name || 'Grup Haritası'}</Text>
+                        <Text style={styles.headerSubtitle}>
+                            {onlineCount} aktif • {membersWithLocations.length} üye
+                        </Text>
                     </View>
-
-                    <View style={styles.headerActions}>
-                        {/* Hepsini Göster butonu */}
-                        <Pressable
-                            onPress={fitAllLocations}
-                            style={styles.actionButton}
-                            accessibilityLabel="Hepsini göster"
-                        >
-                            <Ionicons name="scan-outline" size={20} color="#042f35" />
-                        </Pressable>
-
-                        {mapFeatures?.satelliteView && (
-                            <Pressable
-                                onPress={() => setMapType((t) => (t === 'standard' ? 'hybrid' : 'standard'))}
-                                style={[styles.actionButton]}
-                                accessibilityLabel="Harita türü"
-                            >
-                            </Pressable>
-                        )}
-                        {mapFeatures?.exportMap && (
-                            <Pressable
-                                onPress={async () => {
-                                    try {
-                                        const { exportMap } = await import('../utils/mapFeatures');
-                                        await exportMap(null, 'png', [], []);
-                                        showSuccess('Harita export ediliyor...');
-                                    } catch (e) {
-                                        showError('Harita export edilemedi');
-                                    }
-                                }}
-                                style={[styles.actionButton]}
-                                accessibilityLabel="Harita export"
-                            >
-                                <Ionicons name="download-outline" size={18} color="#042f35" />
-                            </Pressable>
-                        )}
-
-                        {/* persistent toggle (press to toggle persist) */}
-                        <Pressable
-                            onPress={async () => {
-                                const next = !persistShare;
-                                setPersistShare(next);
-                                try {
-                                    if (next) await SecureStore.setItemAsync(PERSIST_KEY(groupId), '1');
-                                    else await SecureStore.deleteItemAsync(PERSIST_KEY(groupId));
-                                } catch (e) { console.warn('persist toggle error', e); }
-                            }}
-                            onLongPress={() => showInfo('Açık ise uygulama yeniden başlatıldığında konum paylaşımı otomatik devam eder.')}
-                            style={[styles.persistBtn, persistShare && styles.persistBtnActive]}
-                            accessibilityLabel="Kalıcı paylaşım"
-                        >
-                            <Ionicons name="save" size={16} color={persistShare ? '#fff' : '#0EA5E9'} />
-                        </Pressable>
-
-                        <Pressable
-                            onPress={toggleLocationSharing}
-                            style={[styles.actionButton, isSharing && styles.actionButtonActive]}
-                            accessibilityLabel="Konum paylaşımını değiştir"
-                            disabled={sharingLoading}
-                        >
-                            {sharingLoading ? (
-                                <ActivityIndicator size="small" color={isSharing ? '#fff' : '#0EA5E9'} />
-                            ) : (
-                                <Ionicons name={isSharing ? 'location' : 'location-outline'} size={18} color={isSharing ? '#fff' : '#0EA5E9'} />
-                            )}
-                        </Pressable>
-                    </View>
+                    <Pressable
+                        onPress={() => {
+                            onRefresh();
+                            fitAllLocations();
+                        }}
+                        style={({ pressed }) => [styles.refreshButton, pressed && { opacity: 0.7 }]}
+                    >
+                        <Ionicons name="refresh" size={20} color="#8b5cf6" />
+                    </Pressable>
                 </View>
             </LinearGradient>
 
-            <View style={styles.mapContainer}>
-                <LeafletMap
-                    centerLat={groupInfo?.lat ?? 38.9637}
-                    centerLng={groupInfo?.lng ?? 35.2433}
-                    height={mapHeight}
-                    onReady={() => setMapLoading(false)}
-                    markers={(() => {
-                        const allMarkers = [];
-
-                        // Grup merkezi
-                        if (groupInfo?.lat && groupInfo?.lng) {
-                            allMarkers.push({
-                                lat: groupInfo.lat,
-                                lng: groupInfo.lng,
-                                label: groupInfo.name,
-                                color: '#7c3aed',
-                                icon: '🚩'
-                            });
-                        }
-
-                        // Benim konumum
-                        if (myLocation) {
-                            allMarkers.push({
-                                lat: myLocation.coords.latitude,
-                                lng: myLocation.coords.longitude,
-                                label: 'Benim Konumum',
-                                color: '#0EA5E9',
-                                icon: '📍'
-                            });
-                        }
-
-                        // Diğer üyelerin konumları
-                        Object.entries(locations).forEach(([uid, loc]) => {
-                            if (uid !== userId) {
-                                const member = membersWithLocations.find(m => m.userId === uid);
-                                const isAdmin = member?.role === 'admin';
-                                let inWork = false;
-                                if (groupInfo?.lat && groupInfo?.lng) {
-                                    const distance = haversineMeters(groupInfo.lat, groupInfo.lng, loc.lat, loc.lng);
-                                    inWork = distance <= (groupInfo.workRadius ?? 150);
+            <View style={{ flex: 1, backgroundColor: '#0f172a' }}>
+                <MapView
+                    ref={mapRef}
+                    provider={PROVIDER_GOOGLE}
+                    style={StyleSheet.absoluteFill}
+                    initialRegion={region}
+                    showsUserLocation={true}
+                    showsMyLocationButton={false} // Custom button later if needed
+                    showsCompass={false}
+                    onMapReady={() => setMapLoading(false)}
+                    customMapStyle={[
+                        {
+                            "elementType": "geometry",
+                            "stylers": [
+                                {
+                                    "color": "#242f3e"
                                 }
-
-                                allMarkers.push({
-                                    lat: loc.lat,
-                                    lng: loc.lng,
-                                    label: member?.displayName || uid.slice(0, 8),
-                                    color: inWork ? '#10b981' : '#ef4444',
-                                    icon: isAdmin ? '👑' : '👤'
-                                });
-                            }
-                        });
-
-                        return allMarkers;
-                    })()}
-                />
-
-                {mapLoading && (
-                    <View style={styles.mapLoaderOverlay} pointerEvents="none">
-                        <ActivityIndicator size="large" color="#0EA5E9" />
-                    </View>
-                )}
-
-                <View style={styles.statusBar}>
-                    <View style={styles.statusItem}>
-                        <Ionicons name={isSharing ? 'radio-button-on' : 'radio-button-off'} size={16} color={isSharing ? '#10b981' : '#ef4444'} />
-                        <Text style={[styles.statusText, isSharing && styles.statusTextActive]}>{isSharing ? 'Paylaşılıyor' : 'Paylaşılmıyor'}</Text>
-                    </View>
-
-                    {distanceToCenter !== null && (
-                        <View style={styles.statusItem}>
-                            <Ionicons name="navigate" size={16} color={distanceToCenter > 1000 ? '#f59e0b' : '#10b981'} />
-                            <Text style={[styles.statusText, { color: distanceToCenter > 1000 ? '#f59e0b' : '#10b981', fontWeight: '700' }]}>
-                                {formatDistance(distanceToCenter)}
-                            </Text>
-                        </View>
-                    )}
-
-                    <Text style={styles.statusText}>{Object.keys(locations).length} aktif üye</Text>
-                </View>
-            </View>
-
-            {/* İstatistikler Paneli */}
-            <Animated.View style={[styles.statsPanel, {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }, { scale: statsScaleAnim }]
-            }]}>
-                <View style={styles.statCard}>
-                    <Ionicons name="people" size={20} color="#0EA5E9" />
-                    <Text style={styles.statValue}>{membersWithLocations.length}</Text>
-                    <Text style={styles.statLabel}>Toplam Üye</Text>
-                </View>
-                <View style={styles.statCard}>
-                    <Ionicons name="radio-button-on" size={20} color="#10b981" />
-                    <Text style={styles.statValue}>{onlineCount}</Text>
-                    <Text style={styles.statLabel}>Online</Text>
-                </View>
-                <View style={styles.statCard}>
-                    <Ionicons name="shield-checkmark" size={20} color="#f59e0b" />
-                    <Text style={styles.statValue}>{adminCount}</Text>
-                    <Text style={styles.statLabel}>Admin</Text>
-                </View>
-                {distanceToCenter !== null && (
-                    <View style={styles.statCard}>
-                        <Ionicons name="navigate" size={20} color={distanceToCenter > 1000 ? '#f59e0b' : '#10b981'} />
-                        <Text style={styles.statValue}>{formatDistance(distanceToCenter)}</Text>
-                        <Text style={styles.statLabel}>Mesafe</Text>
-                    </View>
-                )}
-            </Animated.View>
-
-            <View style={styles.membersContainer}>
-                <View style={styles.membersHeader}>
-                    <Text style={styles.membersTitle}>Grup Üyeleri ({membersWithLocations.length})</Text>
-                    <View style={styles.statsRow}>
-                        <View style={styles.statBadge}>
-                            <Ionicons name="radio-button-on" size={12} color="#10b981" />
-                            <Text style={styles.statText}>{onlineCount} online</Text>
-                        </View>
-                        <View style={styles.statBadge}>
-                            <Ionicons name="shield-checkmark" size={12} color="#f59e0b" />
-                            <Text style={styles.statText}>{adminCount} admin</Text>
-                        </View>
-                    </View>
-                </View>
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.membersList}
-                    refreshControl={
-                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-                    }
+                            ]
+                        },
+                        {
+                            "elementType": "labels.text.fill",
+                            "stylers": [
+                                {
+                                    "color": "#746855"
+                                }
+                            ]
+                        },
+                        {
+                            "elementType": "labels.text.stroke",
+                            "stylers": [
+                                {
+                                    "color": "#242f3e"
+                                }
+                            ]
+                        },
+                        {
+                            "featureType": "administrative.locality",
+                            "elementType": "labels.text.fill",
+                            "stylers": [
+                                {
+                                    "color": "#d59563"
+                                }
+                            ]
+                        },
+                        {
+                            "featureType": "poi",
+                            "elementType": "labels.text.fill",
+                            "stylers": [
+                                {
+                                    "color": "#d59563"
+                                }
+                            ]
+                        },
+                        {
+                            "featureType": "poi.park",
+                            "elementType": "geometry",
+                            "stylers": [
+                                {
+                                    "color": "#263c3f"
+                                }
+                            ]
+                        },
+                        {
+                            "featureType": "poi.park",
+                            "elementType": "labels.text.fill",
+                            "stylers": [
+                                {
+                                    "color": "#6b9a76"
+                                }
+                            ]
+                        },
+                        {
+                            "featureType": "road",
+                            "elementType": "geometry",
+                            "stylers": [
+                                {
+                                    "color": "#38414e"
+                                }
+                            ]
+                        },
+                        {
+                            "featureType": "road",
+                            "elementType": "geometry.stroke",
+                            "stylers": [
+                                {
+                                    "color": "#212a37"
+                                }
+                            ]
+                        },
+                        {
+                            "featureType": "road",
+                            "elementType": "labels.text.fill",
+                            "stylers": [
+                                {
+                                    "color": "#9ca5b3"
+                                }
+                            ]
+                        },
+                        {
+                            "featureType": "road.highway",
+                            "elementType": "geometry",
+                            "stylers": [
+                                {
+                                    "color": "#746855"
+                                }
+                            ]
+                        },
+                        {
+                            "featureType": "road.highway",
+                            "elementType": "geometry.stroke",
+                            "stylers": [
+                                {
+                                    "color": "#1f2835"
+                                }
+                            ]
+                        },
+                        {
+                            "featureType": "road.highway",
+                            "elementType": "labels.text.fill",
+                            "stylers": [
+                                {
+                                    "color": "#f3d19c"
+                                }
+                            ]
+                        },
+                        {
+                            "featureType": "transit",
+                            "elementType": "geometry",
+                            "stylers": [
+                                {
+                                    "color": "#2f3948"
+                                }
+                            ]
+                        },
+                        {
+                            "featureType": "transit.station",
+                            "elementType": "labels.text.fill",
+                            "stylers": [
+                                {
+                                    "color": "#d59563"
+                                }
+                            ]
+                        },
+                        {
+                            "featureType": "water",
+                            "elementType": "geometry",
+                            "stylers": [
+                                {
+                                    "color": "#17263c"
+                                }
+                            ]
+                        },
+                        {
+                            "featureType": "water",
+                            "elementType": "labels.text.fill",
+                            "stylers": [
+                                {
+                                    "color": "#515c6d"
+                                }
+                            ]
+                        },
+                        {
+                            "featureType": "water",
+                            "elementType": "labels.text.stroke",
+                            "stylers": [
+                                {
+                                    "color": "#17263c"
+                                }
+                            ]
+                        }
+                    ]}
                 >
-                    {membersWithLocations.map((member) => (
-                        <Pressable
-                            key={member.userId}
-                            style={({ pressed }) => [
-                                styles.memberCard,
-                                pressed && { transform: [{ scale: 0.95 }], opacity: 0.8 }
-                            ]}
-                            onPress={() => focusOnMember(member)}
-                            android_ripple={{ color: 'rgba(6, 182, 212, 0.2)', borderless: false }}
-                        >
-                            <View style={[styles.memberAvatar, member.isOnline && styles.memberAvatarOnline]}>
-                                <Text style={styles.memberAvatarText}>{member.displayName.slice(0, 2).toUpperCase()}</Text>
-                                {member.isOnline && <View style={styles.onlineIndicator} />}
-                            </View>
-                            <Text style={styles.memberName} numberOfLines={1}>{member.displayName}</Text>
-                            <Text style={styles.memberRole}>{member.role === 'admin' ? '👑 Admin' : '👤 Üye'}</Text>
-                            {member.location && (
-                                <>
-                                    {member.location.geocode && (
-                                        <Text style={[styles.memberLocation, { color: '#0EA5E9', fontWeight: '700' }]}>
-                                            {member.location.geocode.city || ''}
-                                            {member.location.geocode.province ? `, ${member.location.geocode.province}` : ''}
-                                        </Text>
-                                    )}
-                                    <Text style={styles.memberLocation}>
-                                        {new Date(member.location.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                    {membersWithLocations.map(m => {
+                        if (!m.location?.lat || !m.location?.lng) return null;
+                        return (
+                            <Marker
+                                key={m.userId}
+                                coordinate={{
+                                    latitude: m.location.lat,
+                                    longitude: m.location.lng
+                                }}
+                                title={m.displayName}
+                                description={m.isOnline ? 'Çevrimiçi' : `Son görülme: ${new Date(m.lastSeen || Date.now()).toLocaleTimeString()}`}
+                                onPress={() => focusOnMember(m)}
+                            >
+                                <View style={[styles.customMarker, m.isOnline ? styles.markerOnline : styles.markerOffline]}>
+                                    <Text style={styles.markerText}>
+                                        {m.displayName ? m.displayName.charAt(0).toUpperCase() : '?'}
                                     </Text>
-                                </>
-                            )}
-                            {!member.isOnline && member.lastSeen && (
-                                <Text style={styles.memberOffline}>
-                                    {Math.floor((Date.now() - member.lastSeen) / 60000)}dk önce
+                                </View>
+                                <View style={styles.markerArrow} />
+                            </Marker>
+                        );
+                    })}
+                </MapView>
+
+                {/* Bottom Sheet / Controls */}
+                <View style={styles.bottomControls}>
+                    <LinearGradient
+                        colors={['transparent', 'rgba(15, 23, 42, 0.8)', '#0f172a']}
+                        style={StyleSheet.absoluteFill}
+                    />
+
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.memberList}
+                    >
+                        {membersWithLocations.map(member => (
+                            <Pressable
+                                key={member.userId}
+                                onPress={() => focusOnMember(member)}
+                                style={[
+                                    styles.memberCard,
+                                    selectedMember?.userId === member.userId && styles.selectedMember
+                                ]}
+                            >
+                                <View style={[styles.statusDot, { backgroundColor: member.isOnline ? '#22c55e' : '#64748b' }]} />
+                                <View style={styles.avatarPlaceholder}>
+                                    <Text style={styles.avatarInitial}>{member.displayName?.charAt(0).toUpperCase() || '?'}</Text>
+                                </View>
+                                <Text style={styles.memberName} numberOfLines={1}>{member.displayName}</Text>
+                                <Text style={styles.memberStatus}>
+                                    {member.isOnline ? 'Çevrimiçi' : 'Çevrimdışı'}
                                 </Text>
-                            )}
-                        </Pressable>
-                    ))}
-                </ScrollView>
+                            </Pressable>
+                        ))}
+                    </ScrollView>
+
+                    <Pressable
+                        onPress={toggleLocationSharing}
+                        style={[styles.shareButton, isSharing && styles.sharingActive]}
+                    >
+                        <LinearGradient
+                            colors={isSharing ? ['#ef4444', '#dc2626'] : ['#22c55e', '#16a34a']}
+                            style={StyleSheet.absoluteFill}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                        />
+                        <Ionicons name={isSharing ? "stop-circle" : "navigate"} size={24} color="#fff" />
+                        <Text style={styles.shareButtonText}>
+                            {isSharing ? 'Konum Paylaşımını Durdur' : 'Konum Paylaşımını Başlat'}
+                        </Text>
+                        {sharingLoading && <ActivityIndicator color="#fff" style={{ marginLeft: 10 }} />}
+                    </Pressable>
+                </View>
             </View>
 
-            {/* Üye Detay Modal */}
-            <Modal
+            {/* Member Detail Modal */}
+            <MemberDetailModal
                 visible={showMemberModal}
-                animationType="slide"
-                transparent
-                onRequestClose={() => setShowMemberModal(false)}
-            >
-                <Pressable
-                    style={styles.modalOverlay}
-                    onPress={() => setShowMemberModal(false)}
-                >
-                    <View style={styles.modalContent}>
-                        {selectedMember && (
-                            <>
-                                <View style={styles.modalHeader}>
-                                    <View style={[styles.modalAvatar, selectedMember.isOnline && styles.modalAvatarOnline]}>
-                                        <Text style={styles.modalAvatarText}>
-                                            {selectedMember.displayName.slice(0, 2).toUpperCase()}
-                                        </Text>
-                                        {selectedMember.isOnline && <View style={styles.onlineIndicatorLarge} />}
-                                    </View>
-                                    <Pressable
-                                        onPress={() => setShowMemberModal(false)}
-                                        style={styles.modalClose}
-                                    >
-                                        <Ionicons name="close" size={24} color="#64748b" />
-                                    </Pressable>
-                                </View>
-
-                                <Text style={styles.modalName}>{selectedMember.displayName}</Text>
-                                <Text style={styles.modalEmail}>{selectedMember.email || selectedMember.userId}</Text>
-
-                                <View style={styles.modalInfo}>
-                                    <View style={styles.infoRow}>
-                                        <Ionicons name="shield-checkmark" size={20} color="#f59e0b" />
-                                        <Text style={styles.infoLabel}>Rol:</Text>
-                                        <Text style={styles.infoValue}>
-                                            {selectedMember.role === 'admin' ? 'Admin' : 'Üye'}
-                                        </Text>
-                                    </View>
-
-                                    <View style={styles.infoRow}>
-                                        <Ionicons
-                                            name={selectedMember.isOnline ? "radio-button-on" : "radio-button-off"}
-                                            size={20}
-                                            color={selectedMember.isOnline ? "#10b981" : "#ef4444"}
-                                        />
-                                        <Text style={styles.infoLabel}>Durum:</Text>
-                                        <Text style={[styles.infoValue, selectedMember.isOnline && styles.infoValueOnline]}>
-                                            {selectedMember.isOnline ? 'Online' : 'Offline'}
-                                        </Text>
-                                    </View>
-
-                                    {selectedMember.location && (
-                                        <>
-                                            {selectedMember.location.geocode && (
-                                                <>
-                                                    <View style={styles.infoRow}>
-                                                        <Ionicons name="business" size={20} color="#0EA5E9" />
-                                                        <Text style={styles.infoLabel}>Şehir:</Text>
-                                                        <Text style={styles.infoValue}>
-                                                            {selectedMember.location.geocode.city || 'Bilinmiyor'}
-                                                        </Text>
-                                                    </View>
-                                                    <View style={styles.infoRow}>
-                                                        <Ionicons name="map" size={20} color="#0EA5E9" />
-                                                        <Text style={styles.infoLabel}>İl:</Text>
-                                                        <Text style={styles.infoValue}>
-                                                            {selectedMember.location.geocode.province || 'Bilinmiyor'}
-                                                        </Text>
-                                                    </View>
-                                                    {selectedMember.location.geocode.district && (
-                                                        <View style={styles.infoRow}>
-                                                            <Ionicons name="location" size={20} color="#64748b" />
-                                                            <Text style={styles.infoLabel}>İlçe:</Text>
-                                                            <Text style={styles.infoValue}>
-                                                                {selectedMember.location.geocode.district}
-                                                            </Text>
-                                                        </View>
-                                                    )}
-                                                </>
-                                            )}
-                                            <View style={styles.infoRow}>
-                                                <Ionicons name="location" size={20} color="#0EA5E9" />
-                                                <Text style={styles.infoLabel}>Koordinat:</Text>
-                                                <Text style={styles.infoValue}>
-                                                    {selectedMember.location.lat.toFixed(6)}, {selectedMember.location.lng.toFixed(6)}
-                                                </Text>
-                                            </View>
-                                            {selectedMember.location.geocode?.fullAddress && (
-                                                <View style={styles.infoRow}>
-                                                    <Ionicons name="map-outline" size={20} color="#64748b" />
-                                                    <Text style={styles.infoLabel}>Adres:</Text>
-                                                    <Text style={[styles.infoValue, { fontSize: 12 }]}>
-                                                        {selectedMember.location.geocode.fullAddress}
-                                                    </Text>
-                                                </View>
-                                            )}
-                                            {selectedMember.location.accuracy && (
-                                                <View style={styles.infoRow}>
-                                                    <Ionicons name="radio" size={20} color="#7c3aed" />
-                                                    <Text style={styles.infoLabel}>Doğruluk:</Text>
-                                                    <Text style={styles.infoValue}>
-                                                        ±{Math.round(selectedMember.location.accuracy)}m
-                                                    </Text>
-                                                </View>
-                                            )}
-                                            <View style={styles.infoRow}>
-                                                <Ionicons name="time" size={20} color="#64748b" />
-                                                <Text style={styles.infoLabel}>Son Güncelleme:</Text>
-                                                <Text style={styles.infoValue}>
-                                                    {new Date(selectedMember.location.timestamp).toLocaleString('tr-TR')}
-                                                </Text>
-                                            </View>
-                                        </>
-                                    )}
-
-                                    <View style={styles.infoRow}>
-                                        <Ionicons name="calendar" size={20} color="#64748b" />
-                                        <Text style={styles.infoLabel}>Katılma:</Text>
-                                        <Text style={styles.infoValue}>
-                                            {new Date(selectedMember.joinedAt).toLocaleDateString('tr-TR')}
-                                        </Text>
-                                    </View>
-                                </View>
-
-                                {selectedMember.location && (
-                                    <Pressable
-                                        style={styles.focusButton}
-                                        onPress={() => {
-                                            focusOnMember(selectedMember);
-                                            setShowMemberModal(false);
-                                        }}
-                                    >
-                                        <Ionicons name="navigate" size={20} color="#fff" />
-                                        <Text style={styles.focusButtonText}>Haritada Göster</Text>
-                                    </Pressable>
-                                )}
-                            </>
-                        )}
-                    </View>
-                </Pressable>
-            </Modal>
-
-            <Toast
-                message={toast.message}
-                type={toast.type}
-                visible={toast.visible}
-                onHide={hideToast}
+                member={selectedMember}
+                onClose={() => setShowMemberModal(false)}
+                onShowOnMap={() => {
+                    if (selectedMember) focusOnMember(selectedMember);
+                }}
+                onOpenChat={handleOpenChat}
             />
         </SafeAreaView>
     );
@@ -1238,87 +1146,145 @@ export default function GroupMapScreen() {
 // --- styles ---
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#0f172a' },
-    header: { paddingTop: StatusBar.currentHeight ?? 18, paddingHorizontal: 14, paddingBottom: 12, borderBottomLeftRadius: 14, borderBottomRightRadius: 14 },
-    headerContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    backBtn: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.9)' },
-    title: { fontSize: 18, fontWeight: '800', color: '#042f35' },
-    subtitle: { fontSize: 12, color: 'rgba(4,47,53,0.85)' },
-    headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 
-    persistBtn: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.9)', marginRight: 8 },
-    persistBtnActive: { backgroundColor: '#042f35' },
-
-    actionButton: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.9)', alignItems: 'center', justifyContent: 'center' },
-    actionButtonActive: { backgroundColor: '#042f35' },
-
-    mapContainer: {
-        flex: 1,
-        position: 'relative',
-        borderRadius: 20,
-        overflow: 'hidden',
-        margin: 14,
-        marginTop: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.5,
-        shadowRadius: 16,
-        elevation: 16,
+    // Header
+    headerOverlay: {
+        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 50,
+        paddingTop: (StatusBar.currentHeight || 20) + 10,
+        paddingBottom: 20,
+        paddingHorizontal: 16,
+        borderBottomLeftRadius: 24,
+        borderBottomRightRadius: 24,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
+        elevation: 8
     },
-    map: { flex: 1 },
-    centerMarker: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#ef4444', alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff' },
+    headerContent: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'
+    },
+    headerTitle: {
+        fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center'
+    },
+    headerSubtitle: {
+        fontSize: 12, color: '#94a3b8', marginTop: 2
+    },
+    backButton: {
+        width: 40, height: 40, borderRadius: 20,
+        alignItems: 'center', justifyContent: 'center',
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)'
+    },
+    refreshButton: {
+        width: 40, height: 40, borderRadius: 20,
+        alignItems: 'center', justifyContent: 'center',
+        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+        borderWidth: 1, borderColor: 'rgba(139, 92, 246, 0.3)'
+    },
 
-    myMarkerWrap: { alignItems: 'center', justifyContent: 'center' },
-    myMarkerDot: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#0EA5E9', alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff' },
+    // Map Markers
+    customMarker: {
+        width: 24, height: 24, borderRadius: 12,
+        alignItems: 'center', justifyContent: 'center',
+        borderWidth: 2, borderColor: '#fff',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+        elevation: 5
+    },
+    markerOnline: { backgroundColor: '#22c55e' },
+    markerOffline: { backgroundColor: '#94a3b8' },
+    markerInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff' },
+    markerText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+    markerArrow: {
+        width: 0, height: 0,
+        backgroundColor: 'transparent',
+        borderStyle: 'solid',
+        borderLeftWidth: 6,
+        borderRightWidth: 6,
+        borderTopWidth: 8,
+        borderLeftColor: 'transparent',
+        borderRightColor: 'transparent',
+        borderTopColor: '#fff',
+        marginTop: 2,
+        alignSelf: 'center',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
+        elevation: 2
+    },
 
-    memberMarker: { padding: 8, borderRadius: 12, backgroundColor: '#10b981', borderWidth: 2, borderColor: '#fff' },
-    adminMarker: { backgroundColor: '#f59e0b' },
-    highlightMarker: { borderColor: '#f59e0b' },
+    // Bottom Controls
+    bottomControls: {
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        padding: 24, paddingBottom: 34,
+        zIndex: 50,
+    },
+    memberList: {
+        paddingVertical: 10, gap: 12, paddingHorizontal: 4
+    },
+    memberCard: {
+        alignItems: 'center', justifyContent: 'center',
+        marginRight: 16, width: 70
+    },
+    selectedMember: {
+        opacity: 1, transform: [{ scale: 1.1 }]
+    },
+    avatarPlaceholder: {
+        width: 56, height: 56, borderRadius: 28,
+        backgroundColor: '#1e293b',
+        alignItems: 'center', justifyContent: 'center',
+        borderWidth: 2, borderColor: '#334155',
+        marginBottom: 8,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+        elevation: 5
+    },
+    avatarInitial: {
+        fontSize: 20, fontWeight: 'bold', color: '#94a3b8'
+    },
+    statusDot: {
+        position: 'absolute', top: 2, right: 8, zIndex: 10,
+        width: 14, height: 14, borderRadius: 7,
+        borderWidth: 2, borderColor: '#0f172a'
+    },
+    memberName: {
+        fontSize: 12, fontWeight: '600', color: '#e2e8f0', textAlign: 'center'
+    },
+    memberStatus: {
+        fontSize: 10, color: '#64748b', textAlign: 'center', marginTop: 2
+    },
 
-    statusBar: { position: 'absolute', top: 16, left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.95)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
-    statusItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    statusText: { fontSize: 12, color: '#666', fontWeight: '600' },
-    statusTextActive: { color: '#10b981' },
+    // Share Button
+    shareButton: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        paddingVertical: 16, paddingHorizontal: 24,
+        borderRadius: 16, marginTop: 20,
+        overflow: 'hidden',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 8
+    },
+    sharingActive: {
+        // dynamic style handled in props usually, but here for override if needed
+    },
+    shareButtonText: {
+        color: '#fff', fontSize: 16, fontWeight: '700', marginLeft: 10
+    },
 
-    statsPanel: { flexDirection: 'row', paddingHorizontal: 14, paddingVertical: 12, gap: 10, backgroundColor: '#0f172a' },
-    statCard: { flex: 1, backgroundColor: '#1e293b', borderRadius: 12, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: '#334155' },
-    statValue: { fontSize: 20, fontWeight: '900', color: '#fff', marginTop: 4 },
-    statLabel: { fontSize: 11, color: '#94a3b8', marginTop: 2, textAlign: 'center' },
-
-    membersContainer: { backgroundColor: '#1e293b', borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 18, maxHeight: 180, borderWidth: 1, borderColor: '#334155' },
-    membersHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-    membersTitle: { fontSize: 16, fontWeight: '900', color: '#fff' },
-    statsRow: { flexDirection: 'row', gap: 8 },
-    statBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#334155', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-    statText: { fontSize: 10, fontWeight: '700', color: '#94a3b8' },
-    membersList: { flexDirection: 'row' },
-
-    memberCard: { alignItems: 'center', marginRight: 16, minWidth: 80 },
-    memberAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#334155', alignItems: 'center', justifyContent: 'center', marginBottom: 8, position: 'relative' },
-    memberAvatarOnline: { backgroundColor: '#065f46' },
-    memberAvatarText: { fontSize: 14, fontWeight: 'bold', color: '#0EA5E9' },
-    onlineIndicator: { position: 'absolute', bottom: 2, right: 2, width: 12, height: 12, borderRadius: 6, backgroundColor: '#10b981', borderWidth: 2, borderColor: '#fff' },
-    memberName: { fontSize: 12, fontWeight: '700', color: '#fff', marginBottom: 2, textAlign: 'center' },
-    memberRole: { fontSize: 10, color: '#94a3b8', marginBottom: 2 },
-    memberLocation: { fontSize: 10, color: '#64748b' },
-    memberOffline: { fontSize: 9, color: '#ef4444', marginTop: 2 },
-
-    // Modal styles
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-    modalContent: { backgroundColor: '#1e293b', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '80%' },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
-    modalAvatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#334155', alignItems: 'center', justifyContent: 'center', position: 'relative' },
-    modalAvatarOnline: { backgroundColor: '#065f46' },
-    modalAvatarText: { fontSize: 24, fontWeight: 'bold', color: '#0EA5E9' },
-    onlineIndicatorLarge: { position: 'absolute', bottom: 4, right: 4, width: 16, height: 16, borderRadius: 8, backgroundColor: '#10b981', borderWidth: 3, borderColor: '#fff' },
-    modalClose: { padding: 8 },
-    modalName: { fontSize: 24, fontWeight: '900', color: '#fff', marginBottom: 4 },
-    modalEmail: { fontSize: 14, color: '#64748b', marginBottom: 24 },
-    modalInfo: { gap: 16 },
-    infoRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    infoLabel: { fontSize: 14, fontWeight: '700', color: '#94a3b8', width: 120 },
-    infoValue: { fontSize: 14, color: '#fff', flex: 1 },
-    infoValueOnline: { color: '#10b981', fontWeight: 'bold' },
-    focusButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#0EA5E9', paddingVertical: 16, borderRadius: 12, marginTop: 24 },
-    focusButtonText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
-    mapLoaderOverlay: { position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(15,23,42,0.55)', zIndex: 40 },
+    // Loading
+    loadingContainer: {
+        flex: 1, alignItems: 'center', justifyContent: 'center',
+        backgroundColor: '#0f172a'
+    },
+    loadingText: {
+        marginTop: 16, fontSize: 16, color: '#94a3b8', fontWeight: '500'
+    }
 });
